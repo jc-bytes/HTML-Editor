@@ -6,6 +6,7 @@ import {
   cssColorToHex,
   directResizeOptions,
   installEditorCanvasLayoutGuards,
+  resizeOptionsForComponent,
 } from './OpenSourceEditor'
 import { appendGridItem, createGridLayoutPlugin, ensurePageGrid } from './grid-layout'
 import grapesjs from 'grapesjs'
@@ -86,9 +87,17 @@ describe('direct canvas resizing', () => {
     })
   })
 
-  it('allows ordinary nested containers to resize independently', () => {
-    expect(directResizeOptions('div')).toMatchObject({ ratioDefault: false })
-    expect(directResizeOptions('section')).toMatchObject({ ratioDefault: false })
+  it('keeps nested container height automatic while allowing horizontal resizing', () => {
+    expect(directResizeOptions('div')).toMatchObject({
+      bc: false,
+      keepAutoHeight: true,
+      tc: false,
+    })
+    expect(directResizeOptions('section')).toMatchObject({
+      bc: false,
+      keepAutoHeight: true,
+      tc: false,
+    })
   })
 
   it('allows full resizing for media while Shift controls aspect ratio', () => {
@@ -99,7 +108,7 @@ describe('direct canvas resizing', () => {
     expect(directResizeOptions('body', 'wrapper')).toBe(false)
   })
 
-  it('protects layout columns and top-level sections while allowing their nested card', () => {
+  it('protects layout columns and top-level sections while allowing nested card width changes', () => {
     const editor = grapesjs.init({ headless: true, storageManager: false, plugins: [createGridLayoutPlugin] })
     ensurePageGrid(editor)
     const section = appendGridItem(editor, '<section><div><p>Contenido</p></div></section>')!
@@ -109,8 +118,19 @@ describe('direct canvas resizing', () => {
 
     expect(item.get('resizable')).toBe(false)
     expect(section.get('resizable')).toBe(false)
-    expect(section.components().at(0)?.get('resizable')).toMatchObject({ ratioDefault: false })
+    expect(section.components().at(0)?.get('resizable')).toMatchObject({ keepAutoHeight: true })
     expect(section.components().at(0)?.components().at(0)?.get('resizable')).toMatchObject({ keepAutoHeight: true })
+    editor.destroy()
+  })
+
+  it('allows images and embeds directly inside a layout column to resize', () => {
+    const editor = grapesjs.init({ headless: true, storageManager: false, plugins: [createGridLayoutPlugin] })
+    ensurePageGrid(editor)
+    const image = appendGridItem(editor, { type: 'image', attributes: { src: 'example.png' } })!
+
+    expect(resizeOptionsForComponent(image)).toMatchObject({ ratioDefault: false })
+    applyComponentResizePolicy(image)
+    expect(image.get('resizable')).toMatchObject({ ratioDefault: false })
     editor.destroy()
   })
 })

@@ -166,6 +166,9 @@ const SUPABASE_BLOCK_ICONS = {
 } as const
 
 const NON_RESIZABLE_TAGS = new Set(['body', 'html', 'head', 'script', 'style', 'meta', 'link'])
+const STRUCTURAL_CONTAINER_TAGS = new Set([
+  'article', 'aside', 'div', 'footer', 'form', 'header', 'main', 'nav', 'ol', 'section', 'ul',
+])
 const WIDTH_ONLY_RESIZE_TAGS = new Set([
   'a', 'blockquote', 'button', 'figcaption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'label', 'li', 'p', 'small', 'span', 'strong',
@@ -210,7 +213,7 @@ export function directResizeOptions(tagName: string, componentType = ''): Resize
   const type = componentType.toLowerCase()
   if (type === 'wrapper' || NON_RESIZABLE_TAGS.has(tag)) return false
 
-  const widthOnly = type === 'text' || WIDTH_ONLY_RESIZE_TAGS.has(tag)
+  const widthOnly = type === 'text' || WIDTH_ONLY_RESIZE_TAGS.has(tag) || STRUCTURAL_CONTAINER_TAGS.has(tag)
   return {
     minDim: 10,
     ratioDefault: false,
@@ -230,9 +233,10 @@ export function directResizeOptions(tagName: string, componentType = ''): Resize
 export function resizeOptionsForComponent(component: Component): ResizerOptions | false {
   if (isGridSection(component) || isGridContent(component) || isGridItem(component)) return false
   const owningGridItem = gridItemFor(component)
-  if (owningGridItem && component.parent() === owningGridItem) return false
+  const tagName = String(component.get('tagName') ?? '').toLowerCase()
+  if (owningGridItem && component.parent() === owningGridItem && STRUCTURAL_CONTAINER_TAGS.has(tagName)) return false
   return directResizeOptions(
-    String(component.get('tagName') ?? ''),
+    tagName,
     String(component.get('type') ?? ''),
   )
 }
@@ -1411,6 +1415,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         }
       })
       editor.on('component:selected', (component: Component) => {
+        component.set('resizable', resizeOptionsForComponent(component))
         syncSelectedElement(component)
       })
       editor.on('component:deselected', () => {

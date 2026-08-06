@@ -234,6 +234,8 @@ describe('page layout rows', () => {
     expect(GRID_LAYOUT_STYLES).toContain('repeat(2')
     expect(GRID_LAYOUT_STYLES).toContain('repeat(3')
     expect(GRID_LAYOUT_STYLES).toContain('@media (max-width: 767px)')
+    expect(GRID_LAYOUT_STYLES).toContain('align-items: start')
+    expect(GRID_LAYOUT_STYLES).toContain('min-height: 0')
     expect(GRID_LAYOUT_STYLES).not.toContain('Arrastra un elemento aquí')
     expect(GRID_EDITOR_STYLES).toContain('Arrastra un elemento aquí')
   })

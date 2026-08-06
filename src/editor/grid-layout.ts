@@ -54,7 +54,7 @@ export const GRID_LAYOUT_STYLES = `
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--psl-layout-gap, 20px);
-  align-items: stretch;
+  align-items: start;
   width: 100%;
   min-width: 0;
   min-height: var(--psl-layout-min-height, 120px);
@@ -66,7 +66,7 @@ export const GRID_LAYOUT_STYLES = `
 .psl-layout-row[data-psl-layout-preset="sidebar-right"] { grid-template-columns: minmax(0, 7fr) minmax(0, 3fr); }
 .psl-layout-column {
   min-width: 0;
-  min-height: inherit;
+  min-height: 0;
   box-sizing: border-box;
 }
 .psl-layout-column > * { max-width: 100%; box-sizing: border-box; }
@@ -93,7 +93,7 @@ export const GRID_EDITOR_STYLES = `
   outline-offset: -1px;
 }
 [data-psl-layout-column]:empty {
-  min-height: 120px;
+  min-height: var(--psl-layout-min-height, 120px);
   border: 2px dashed rgba(111, 82, 220, .5);
   border-radius: 10px;
   background: rgba(111, 82, 220, .055);
