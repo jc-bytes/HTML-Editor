@@ -86,9 +86,9 @@ describe('direct canvas resizing', () => {
     })
   })
 
-  it('keeps structural containers controlled by their grid cell', () => {
-    expect(directResizeOptions('div')).toBe(false)
-    expect(directResizeOptions('section')).toBe(false)
+  it('allows ordinary nested containers to resize independently', () => {
+    expect(directResizeOptions('div')).toMatchObject({ ratioDefault: false })
+    expect(directResizeOptions('section')).toMatchObject({ ratioDefault: false })
   })
 
   it('allows full resizing for media while Shift controls aspect ratio', () => {
@@ -99,7 +99,7 @@ describe('direct canvas resizing', () => {
     expect(directResizeOptions('body', 'wrapper')).toBe(false)
   })
 
-  it('persistently disables resize handles on a grid item and its top-level starter section', () => {
+  it('protects layout columns and top-level sections while allowing their nested card', () => {
     const editor = grapesjs.init({ headless: true, storageManager: false, plugins: [createGridLayoutPlugin] })
     ensurePageGrid(editor)
     const section = appendGridItem(editor, '<section><div><p>Contenido</p></div></section>')!
@@ -109,7 +109,7 @@ describe('direct canvas resizing', () => {
 
     expect(item.get('resizable')).toBe(false)
     expect(section.get('resizable')).toBe(false)
-    expect(section.components().at(0)?.get('resizable')).toBe(false)
+    expect(section.components().at(0)?.get('resizable')).toMatchObject({ ratioDefault: false })
     expect(section.components().at(0)?.components().at(0)?.get('resizable')).toMatchObject({ keepAutoHeight: true })
     editor.destroy()
   })

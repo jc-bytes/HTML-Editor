@@ -99,7 +99,6 @@ import { MotionPanel, MotionSettingsDialog } from './MotionPanel'
 import { AuthSettingsDialog } from './AuthSettingsDialog'
 import { configureStarterBlocks } from './starter-blocks'
 import { GridLayoutPanel } from './GridLayoutPanel'
-import { mountGridCanvasControls } from './grid-canvas-controls'
 import {
   appendGridItem,
   createGridLayoutPlugin,
@@ -112,6 +111,7 @@ import {
   isGridContent,
   isGridItem,
   isGridSection,
+  isLayoutRow,
   isPageGrid,
   placeComponentInGrid,
   readSiteMargin,
@@ -166,9 +166,6 @@ const SUPABASE_BLOCK_ICONS = {
 } as const
 
 const NON_RESIZABLE_TAGS = new Set(['body', 'html', 'head', 'script', 'style', 'meta', 'link'])
-const STRUCTURAL_CONTAINER_TAGS = new Set([
-  'article', 'aside', 'div', 'footer', 'form', 'header', 'main', 'nav', 'ol', 'section', 'ul',
-])
 const WIDTH_ONLY_RESIZE_TAGS = new Set([
   'a', 'blockquote', 'button', 'figcaption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'label', 'li', 'p', 'small', 'span', 'strong',
@@ -211,7 +208,7 @@ const INTERACTION_STYLES = `
 export function directResizeOptions(tagName: string, componentType = ''): ResizerOptions | false {
   const tag = tagName.toLowerCase()
   const type = componentType.toLowerCase()
-  if (type === 'wrapper' || NON_RESIZABLE_TAGS.has(tag) || STRUCTURAL_CONTAINER_TAGS.has(tag)) return false
+  if (type === 'wrapper' || NON_RESIZABLE_TAGS.has(tag)) return false
 
   const widthOnly = type === 'text' || WIDTH_ONLY_RESIZE_TAGS.has(tag)
   return {
@@ -872,7 +869,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     ) return
 
     let canvasResizeObserver: ResizeObserver | undefined
-    let gridCanvasControlsCleanup: () => void = () => undefined
     const canvasDoubleClickCleanups: Array<() => void> = []
     const canvasDoubleClickDocuments = new WeakSet<Document>()
     const authDoubleClickElements = new WeakSet<HTMLElement>()
@@ -1146,7 +1142,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         const summary = summarizeComponent(component)
         const motionComponent = findMotionActivityComponent(component)
         setSelectedElement(summary)
-        setSelectedGridItem(gridItemFor(component) ?? null)
+        setSelectedGridItem(gridItemFor(component) ?? (component && isLayoutRow(component) ? component : null))
         setSelectedMotionComponent(motionComponent)
         if (!motionComponent) setMotionNotice('')
         setFlowTargetPageId(summary?.targetPageId ?? '')
@@ -1156,21 +1152,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           : summary && ['BUTTON', 'A'].includes(summary.tag)
             ? 'flow'
             : current === 'motion' ? 'properties' : current)
-      }
-
-      const refreshGridCanvasControls = (component?: Component | null) => {
-        gridCanvasControlsCleanup()
-        gridCanvasControlsCleanup = mountGridCanvasControls(editor, component ?? editor.getSelected(), {
-          onCommit: () => {
-            void editor.store().catch((cause: unknown) => {
-              setError(cause instanceof Error ? cause.message : 'No se pudo guardar la posición del elemento.')
-            })
-          },
-          onUpdate: (item) => {
-            setSelectedGridItem(item)
-            setGridLayoutRevision((current) => current + 1)
-          },
-        })
       }
 
       const installDataComponentDoubleClick = () => {
@@ -1333,7 +1314,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         stabilizeEditorCanvas()
         installGridEditorStyles(editor)
         installDataComponentDoubleClick()
-        requestAnimationFrame(() => refreshGridCanvasControls())
       }
       editor.on('canvas:frame:load:head', installEditorViewport)
       editor.on('canvas:frame:load:body', handleCanvasBodyLoad)
@@ -1401,7 +1381,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       editor.on('page:remove', syncPages)
       editor.on('page:select', () => {
         syncPages()
-        gridCanvasControlsCleanup()
         const pageGrid = ensurePageGrid(editor)
         const selectedRoot = editor.Pages.getSelected()?.getMainComponent()
         if (selectedRoot) applyComponentResizePolicy(selectedRoot)
@@ -1413,13 +1392,11 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         requestAnimationFrame(() => {
           installGridEditorStyles(editor)
           installDataComponentDoubleClick()
-          refreshGridCanvasControls()
         })
       })
       editor.on('page:update', syncPages)
       editor.on('device:select', (device: Device | null | undefined, previousDevice: Device | null | undefined) => {
         syncPreviewViewport(device, previousDevice)
-        requestAnimationFrame(() => refreshGridCanvasControls())
       })
       editor.on('canvas:zoom', ({ options }: { options?: { from?: string } }) => {
         const zoom = clampCanvasZoom(editor.Canvas.getZoom())
@@ -1435,11 +1412,9 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       })
       editor.on('component:selected', (component: Component) => {
         syncSelectedElement(component)
-        requestAnimationFrame(() => refreshGridCanvasControls(component))
       })
       editor.on('component:deselected', () => {
         syncSelectedElement(editor.getSelected())
-        requestAnimationFrame(() => refreshGridCanvasControls())
       })
       editor.on('component:add', (component: Component) => requestAnimationFrame(() => {
         applyComponentResizePolicy(component)
@@ -1493,9 +1468,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           setMotionDialogOpen(true)
         }
         if (block.getId() === DATA_COMPONENT_BLOCK_ID) {
-          const gridItem = component.parent()
           component.remove()
-          if (gridItem?.getAttributes()['data-psl-grid-item'] !== undefined) gridItem.remove()
           setDataComponentRequest((current) => current + 1)
           return
         }
@@ -1570,7 +1543,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     return () => {
       window.clearTimeout(resizeNoticeTimerRef.current)
       canvasResizeObserver?.disconnect()
-      gridCanvasControlsCleanup()
       canvasDoubleClickCleanups.forEach((cleanup) => cleanup())
       ;(editorRef.current as (Editor & { __removePanShortcuts?: () => void }) | null)?.__removePanShortcuts?.()
       ;(editorRef.current as (Editor & { __removeCanvasGestures?: () => void }) | null)?.__removeCanvasGestures?.()
@@ -2013,7 +1985,9 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     const editor = editorRef.current
     if (!editor) return
     if (options.margin !== undefined) setSiteMargin(options.margin)
-    if (options.select) setSelectedGridItem(gridItemFor(options.select) ?? null)
+    if (options.select) {
+      setSelectedGridItem(gridItemFor(options.select) ?? (isLayoutRow(options.select) ? options.select : null))
+    }
     setGridLayoutRevision((current) => current + 1)
     void editor.store().catch((cause: unknown) => {
       setError(cause instanceof Error ? cause.message : 'No se pudo guardar el diseño de cuadrícula.')

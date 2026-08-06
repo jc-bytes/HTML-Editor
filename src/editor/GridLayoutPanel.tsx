@@ -1,17 +1,17 @@
 import type { Component, Editor } from 'grapesjs'
 import {
-  alignGridItem,
-  appendGridSlot,
-  GRID_DESKTOP_COLUMNS,
-  gridItemOrder,
-  moveGridItem,
-  placeGridItemBesidePrevious,
-  readGridItemPlacement,
-  updateGridItemPlacement,
+  appendLayoutRow,
+  type LayoutPreset,
+  LAYOUT_PRESETS,
+  layoutRowFor,
+  layoutRowOrder,
+  moveLayoutRow,
+  readLayoutSettings,
+  updateLayoutGap,
+  updateLayoutMinHeight,
+  updateLayoutPreset,
   updateSiteMargin,
 } from './grid-layout'
-
-const GRID_WIDTHS = [3, 4, 6, 8, 12]
 
 export function GridLayoutPanel({
   editor,
@@ -24,19 +24,26 @@ export function GridLayoutPanel({
   margin: number
   onChange: (options?: { margin?: number; select?: Component }) => void
 }) {
-  const placement = readGridItemPlacement(item)
-  const order = gridItemOrder(item)
+  const row = layoutRowFor(item)
+  const settings = readLayoutSettings(row)
+  const order = layoutRowOrder(row)
 
   const applyMargin = (value: number) => {
     if (!editor) return
-    const nextMargin = updateSiteMargin(editor, value)
-    onChange({ margin: nextMargin })
+    onChange({ margin: updateSiteMargin(editor, value) })
   }
 
-  const commit = (action: () => Component | boolean | GridItemPlacement | undefined) => {
+  const commit = (action: () => unknown, select = row) => {
     if (!editor) return
     action()
-    onChange()
+    onChange({ select })
+  }
+
+  const addRow = (preset: LayoutPreset) => {
+    if (!editor) return
+    const addedRow = appendLayoutRow(editor, preset)
+    if (addedRow) editor.select(addedRow)
+    onChange({ select: addedRow })
   }
 
   return (
@@ -46,7 +53,7 @@ export function GridLayoutPanel({
           <span aria-hidden="true">↔</span>
           <div>
             <strong>Margen general</strong>
-            <small>Se adapta automáticamente en tableta y móvil.</small>
+            <small>Espacio exterior común para toda la página.</small>
           </div>
           <output>{margin}px</output>
         </div>
@@ -72,90 +79,90 @@ export function GridLayoutPanel({
         </div>
       </section>
 
-      {item && (
+      {row && (
         <section className="gjs-grid-layout-card">
           <div className="gjs-grid-layout-heading">
-            <span aria-hidden="true">▦</span>
+            <span aria-hidden="true">▥</span>
             <div>
-              <strong>Elemento en cuadrícula</strong>
-              <small>Fila {placement.row} · Columnas {placement.start}–{placement.start + placement.span - 1} de {GRID_DESKTOP_COLUMNS}</small>
+              <strong>Fila de diseño</strong>
+              <small>Solo modifica las columnas de esta fila.</small>
             </div>
           </div>
-          <p className="gjs-grid-direct-hint">Usa el control morado ✥ para mover la celda completa. Suelta a los lados de otra celda para colocarlas juntas.</p>
 
-          <label className="gjs-grid-layout-label">Ancho en escritorio</label>
-          <div className="gjs-grid-width-options">
-            {GRID_WIDTHS.map((span) => (
+          <label className="gjs-grid-layout-label">Distribución</label>
+          <div className="gjs-layout-preset-options">
+            {LAYOUT_PRESETS.map((preset) => (
               <button
-                aria-pressed={placement.span === span}
-                className={placement.span === span ? 'active' : ''}
-                key={span}
-                onClick={() => commit(() => updateGridItemPlacement(item, { span }))}
+                aria-pressed={settings.preset === preset.id}
+                className={settings.preset === preset.id ? 'active' : ''}
+                key={preset.id}
+                onClick={() => commit(() => updateLayoutPreset(row, preset.id))}
                 type="button"
-              >{span}</button>
+              >
+                <span className={`gjs-layout-preset-icon preset-${preset.id}`} aria-hidden="true">
+                  {Array.from({ length: preset.columns }, (_, index) => <i key={index} />)}
+                </span>
+                {preset.label}
+              </button>
             ))}
           </div>
 
-          <label className="gjs-grid-layout-label">Alineación</label>
-          <div className="gjs-grid-align-options">
-            <button onClick={() => commit(() => alignGridItem(item, 'left'))} type="button">Izquierda</button>
-            <button onClick={() => commit(() => alignGridItem(item, 'center'))} type="button">Centro</button>
-            <button onClick={() => commit(() => alignGridItem(item, 'right'))} type="button">Derecha</button>
-          </div>
+          <label className="gjs-grid-layout-label" htmlFor="psl-layout-gap">Espacio entre columnas · {settings.gap}px</label>
+          <input
+            id="psl-layout-gap"
+            max="64"
+            min="0"
+            onInput={(event) => commit(() => updateLayoutGap(row, Number(event.currentTarget.value)))}
+            step="4"
+            type="range"
+            value={settings.gap}
+          />
 
-          <label className="gjs-grid-layout-label">Posición horizontal</label>
-          <div className="gjs-grid-order-options">
-            <button
-              disabled={placement.start <= 1}
-              onClick={() => commit(() => updateGridItemPlacement(item, { start: placement.start - 1 }))}
-              type="button"
-            >← Una columna</button>
-            <button
-              disabled={placement.start >= GRID_DESKTOP_COLUMNS - placement.span + 1}
-              onClick={() => commit(() => updateGridItemPlacement(item, { start: placement.start + 1 }))}
-              type="button"
-            >Una columna →</button>
-          </div>
+          <label className="gjs-grid-layout-label" htmlFor="psl-layout-height">Altura mínima de la fila · {settings.minHeight}px</label>
+          <input
+            id="psl-layout-height"
+            max="640"
+            min="48"
+            onInput={(event) => commit(() => updateLayoutMinHeight(row, Number(event.currentTarget.value)))}
+            step="8"
+            type="range"
+            value={settings.minHeight}
+          />
+          <p className="gjs-grid-direct-hint">La fila crece automáticamente si su contenido necesita más altura. En móvil, las columnas se apilan.</p>
 
-          <label className="gjs-grid-layout-label">Orden vertical</label>
+          <label className="gjs-grid-layout-label">Orden de la fila</label>
           <div className="gjs-grid-order-options">
             <button
               disabled={order.index <= 0}
-              onClick={() => commit(() => moveGridItem(item, -1))}
+              onClick={() => commit(() => moveLayoutRow(row, -1))}
               type="button"
             >↑ Subir</button>
             <button
               disabled={order.index < 0 || order.index >= order.count - 1}
-              onClick={() => commit(() => moveGridItem(item, 1))}
+              onClick={() => commit(() => moveLayoutRow(row, 1))}
               type="button"
             >↓ Bajar</button>
-          </div>
-
-          <label className="gjs-grid-layout-label">Disposición rápida</label>
-          <div className="gjs-grid-quick-options">
-            <button
-              disabled={order.index <= 0}
-              onClick={() => commit(() => placeGridItemBesidePrevious(item))}
-              type="button"
-            >Colocar junto al anterior · 6 + 6</button>
           </div>
         </section>
       )}
 
-      <button
-        className="gjs-grid-add-section"
-        disabled={!editor}
-        onClick={() => {
-          if (!editor) return
-          const slot = appendGridSlot(editor)
-          if (slot) editor.select(slot)
-          onChange({ select: slot })
-        }}
-        type="button"
-      >+ Añadir espacio de cuadrícula</button>
-      <p className="gjs-grid-section-note">La página usa una sola cuadrícula fija. Los elementos se colocan por columnas y crean nuevas filas automáticamente.</p>
+      <section className="gjs-grid-layout-card">
+        <div className="gjs-grid-layout-heading">
+          <span aria-hidden="true">＋</span>
+          <div>
+            <strong>Añadir fila</strong>
+            <small>Elige una distribución preparada.</small>
+          </div>
+        </div>
+        <div className="gjs-layout-add-options">
+          {LAYOUT_PRESETS.map((preset) => (
+            <button disabled={!editor} key={preset.id} onClick={() => addRow(preset.id)} type="button">
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      </section>
+      <p className="gjs-grid-section-note">Las filas se apilan verticalmente. Arrastra elementos entre sus columnas para colocarlos lado a lado.</p>
     </div>
   )
 }
-
-type GridItemPlacement = ReturnType<typeof readGridItemPlacement>
