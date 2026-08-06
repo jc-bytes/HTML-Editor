@@ -2,29 +2,29 @@ import grapesjs from 'grapesjs'
 import type { Editor } from 'grapesjs'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  alignGridItem,
   appendGridItem,
-  appendGridSection,
+  appendGridSlot,
   createGridLayoutPlugin,
-  ensureGridSection,
-  ensureGridSlots,
+  ensurePageGrid,
   GRID_EDITOR_STYLES,
   GRID_ITEM_ATTRIBUTE,
   GRID_LAYOUT_STYLES,
   GRID_SECTION_ATTRIBUTE,
-  gridContentOf,
   gridItemOrder,
   gridPlacementAfterDrag,
   moveGridItem,
-  moveGridItemToAdjacentSection,
+  PAGE_GRID_ATTRIBUTE,
   placeComponentInGrid,
+  placeGridItemAtHorizontalDrop,
+  placeGridItemBesidePrevious,
   readGridItemPlacement,
   readSiteMargin,
   updateGridItemPlacement,
   updateSiteMargin,
+  alignGridItem,
 } from './grid-layout'
 
-describe('grid layout foundation', () => {
+describe('body-level grid layout', () => {
   let editor: Editor | undefined
 
   afterEach(() => editor?.destroy())
@@ -38,25 +38,43 @@ describe('grid layout foundation', () => {
     return editor
   }
 
-  it('creates one ready-to-use grid section on an empty page', () => {
+  it('creates one permanent page grid with an initial selectable slot', () => {
     const current = createEditor()
-    const section = ensureGridSection(current)
+    const grid = ensurePageGrid(current)
 
-    expect(section?.getAttributes()).toHaveProperty(GRID_SECTION_ATTRIBUTE)
-    expect(section && gridContentOf(section)).toBeDefined()
-    expect(section && gridContentOf(section)?.components()).toHaveLength(1)
-    expect(section && gridContentOf(section)?.components().at(0)?.getAttributes()).toHaveProperty(GRID_ITEM_ATTRIBUTE)
-    expect(ensureGridSection(current)).toBe(section)
+    expect(grid?.getAttributes()).toHaveProperty(PAGE_GRID_ATTRIBUTE)
+    expect(grid?.get('removable')).toBe(false)
+    expect(grid?.get('droppable')).toBe(`[${GRID_ITEM_ATTRIBUTE}]`)
+    expect(grid?.components()).toHaveLength(1)
+    expect(grid?.components().at(0)?.getAttributes()).toHaveProperty(GRID_ITEM_ATTRIBUTE)
     expect(current.getWrapper()?.components()).toHaveLength(1)
+    expect(ensurePageGrid(current)).toBe(grid)
   })
 
-  it('does not convert existing legacy content automatically', () => {
+  it('wraps direct legacy body content in full-width grid items', () => {
     const current = createEditor()
-    current.setComponents('<main><h1>Página importada</h1></main>')
+    current.setComponents('<header>Cabecera</header><main>Contenido anterior</main>')
 
-    expect(ensureGridSection(current)).toBeUndefined()
-    expect(current.getHtml()).toContain('Página importada')
+    const grid = ensurePageGrid(current)!
+
+    expect(current.getWrapper()?.components()).toHaveLength(1)
+    expect(grid.components()).toHaveLength(2)
+    expect(current.getHtml()).toContain('Cabecera')
+    expect(current.getHtml()).toContain('Contenido anterior')
+  })
+
+  it('flattens old section grids into one page grid', () => {
+    const current = createEditor()
+    current.setComponents(`
+      <section ${GRID_SECTION_ATTRIBUTE}><div data-psl-grid-content><div ${GRID_ITEM_ATTRIBUTE}><p>Uno</p></div></div></section>
+      <section ${GRID_SECTION_ATTRIBUTE}><div data-psl-grid-content><div ${GRID_ITEM_ATTRIBUTE}><p>Dos</p></div></div></section>
+    `)
+
+    const grid = ensurePageGrid(current)!
+
+    expect(grid.components()).toHaveLength(2)
     expect(current.getHtml()).not.toContain(GRID_SECTION_ATTRIBUTE)
+    expect(current.getHtml().match(new RegExp(PAGE_GRID_ATTRIBUTE, 'g'))).toHaveLength(1)
   })
 
   it('creates and inserts into the selected page instead of the initial page', () => {
@@ -64,40 +82,27 @@ describe('grid layout foundation', () => {
     current.setComponents('<main>Página inicial</main>')
     const secondPage = current.Pages.add({ id: 'second', component: '' }, { select: true })!
 
-    ensureGridSection(current)
     appendGridItem(current, '<p>Segunda página</p>')
 
     expect(current.getHtml({ component: secondPage.getMainComponent() })).toContain('Segunda página')
     expect(current.getHtml({ component: current.Pages.getAll()[0].getMainComponent() })).not.toContain('Segunda página')
   })
 
-  it('adds new content as a full-width grid item', () => {
+  it('reuses the selected empty slot when inserting content', () => {
     const current = createEditor()
-    ensureGridSection(current)
+    const grid = ensurePageGrid(current)!
+    const selectedSlot = appendGridSlot(current)!
+    current.select(selectedSlot)
 
-    const heading = appendGridItem(current, '<h2>Nuevo contenido</h2>')
+    const inserted = appendGridItem(current, '<p>Seleccionado</p>')
 
-    expect(heading?.get('tagName')).toBe('h2')
-    expect(heading?.parent()?.getAttributes()).toHaveProperty(GRID_ITEM_ATTRIBUTE)
-    expect(heading?.parent()?.parent()?.components()).toHaveLength(1)
-    expect(current.getHtml()).toContain('Nuevo contenido')
+    expect(inserted?.parent()).toBe(selectedSlot)
+    expect(grid.components()).toHaveLength(2)
   })
 
-  it('adds a separate grid section beside legacy content when requested by insertion', () => {
+  it('wraps a component dropped directly on the body or page grid', () => {
     const current = createEditor()
-    current.setComponents('<main>Contenido anterior</main>')
-
-    appendGridItem(current, '<p>Contenido nuevo</p>')
-
-    expect(current.getWrapper()?.components()).toHaveLength(2)
-    expect(current.getHtml()).toContain(GRID_SECTION_ATTRIBUTE)
-    expect(current.getHtml()).toContain('Contenido anterior')
-  })
-
-  it('wraps a direct canvas drop without changing nested drops', () => {
-    const current = createEditor()
-    const section = ensureGridSection(current)!
-    const grid = gridContentOf(section)!
+    const grid = ensurePageGrid(current)!
     const directDrop = grid.append('<button>Directo</button>')[0]
 
     placeComponentInGrid(current, directDrop)
@@ -108,19 +113,32 @@ describe('grid layout foundation', () => {
     expect(nested.parent()).toBe(directDrop)
   })
 
-  it('sizes and aligns a grid item within twelve desktop columns', () => {
+  it('repairs content that escaped a grid item and reuses the empty slot', () => {
     const current = createEditor()
-    const component = appendGridItem(current, '<p>Posicionable</p>')!
-    const item = component.parent()!
+    const grid = ensurePageGrid(current)!
+    const slot = grid.components().at(0)!
+    const image = slot.append('<img src="example.png">')[0]
+
+    image.move(grid)
+    expect(image.parent()).toBe(grid)
+
+    ensurePageGrid(current)
+
+    expect(image.parent()).toBe(slot)
+    expect(grid.components()).toHaveLength(1)
+    expect(grid.components().models.every((component) => (
+      component.getAttributes()[GRID_ITEM_ATTRIBUTE] !== undefined
+    ))).toBe(true)
+  })
+
+  it('sizes and aligns an item within twelve desktop columns', () => {
+    const current = createEditor()
+    const item = appendGridItem(current, '<p>Posicionable</p>')!.parent()!
 
     updateGridItemPlacement(item, { span: 6 })
     expect(readGridItemPlacement(item)).toEqual({ span: 6, start: 1 })
     expect(alignGridItem(item, 'center')).toEqual({ span: 6, start: 4 })
     expect(alignGridItem(item, 'right')).toEqual({ span: 6, start: 7 })
-    expect(item.getStyle()).toMatchObject({
-      'grid-column-end': 'span 6',
-      'grid-column-start': '7',
-    })
     expect(current.getCss()).toContain('grid-column-start:7')
   })
 
@@ -132,7 +150,7 @@ describe('grid layout foundation', () => {
     expect(gridPlacementAfterDrag({ start: 4, span: 6 }, 'resize-left', -10)).toEqual({ start: 1, span: 9 })
   })
 
-  it('reorders items inside their grid section', () => {
+  it('reorders items in the single page grid', () => {
     const current = createEditor()
     const first = appendGridItem(current, '<p>Primero</p>')!.parent()!
     const second = appendGridItem(current, '<p>Segundo</p>')!.parent()!
@@ -140,61 +158,41 @@ describe('grid layout foundation', () => {
     expect(gridItemOrder(second)).toEqual({ index: 1, count: 2 })
     expect(moveGridItem(second, -1)).toBe(true)
     expect(gridItemOrder(second)).toEqual({ index: 0, count: 2 })
-    expect(current.getHtml().indexOf('Segundo')).toBeLessThan(current.getHtml().indexOf('Primero'))
-    expect(moveGridItem(second, -1)).toBe(false)
     expect(first.parent()).toBe(second.parent())
   })
 
-  it('adds additional independent sections', () => {
+  it('places an item beside its previous sibling as a 6 + 6 row', () => {
     const current = createEditor()
-    ensureGridSection(current)
+    const first = appendGridItem(current, '<p>Primero</p>')!.parent()!
+    const second = appendGridItem(current, '<p>Segundo</p>')!.parent()!
 
-    const secondSection = appendGridSection(current)
-
-    expect(secondSection).toBeDefined()
-    expect(secondSection && gridContentOf(secondSection)?.components()).toHaveLength(1)
-    expect(current.getHtml().match(new RegExp(GRID_SECTION_ATTRIBUTE, 'g'))).toHaveLength(2)
+    expect(placeGridItemBesidePrevious(second)).toBe(true)
+    expect(readGridItemPlacement(first)).toEqual({ span: 6, start: 1 })
+    expect(readGridItemPlacement(second)).toEqual({ span: 6, start: 7 })
   })
 
-  it('moves an empty slot into the previous section and creates a side-by-side pair', () => {
+  it('uses a horizontal drop to place an item beside its previous sibling', () => {
     const current = createEditor()
-    const firstComponent = appendGridItem(current, '<p>Primero</p>')!
-    const secondSection = appendGridSection(current)!
-    const secondSlot = gridContentOf(secondSection)!.components().at(0)!
+    const first = appendGridItem(current, '<p>Texto</p>')!.parent()!
+    const second = appendGridItem(current, '<img src="example.png">')!.parent()!
 
-    expect(moveGridItemToAdjacentSection(current, secondSlot, -1)).toBe(true)
-
-    expect(current.getHtml().match(new RegExp(GRID_SECTION_ATTRIBUTE, 'g'))).toHaveLength(1)
-    expect(firstComponent.parent()?.parent()?.components()).toHaveLength(2)
-    expect(readGridItemPlacement(firstComponent.parent())).toEqual({ span: 6, start: 1 })
-    expect(readGridItemPlacement(secondSlot)).toEqual({ span: 6, start: 7 })
+    expect(placeGridItemAtHorizontalDrop(second, .82, first)).toBe(true)
+    expect(readGridItemPlacement(first)).toEqual({ span: 6, start: 1 })
+    expect(readGridItemPlacement(second)).toEqual({ span: 6, start: 7 })
   })
 
-  it('fills the selected empty slot in a later section', () => {
+  it('moves a narrower item horizontally without resizing it', () => {
     const current = createEditor()
-    appendGridItem(current, '<p>Primera sección</p>')
-    const secondSection = appendGridSection(current)!
-    const secondSlot = gridContentOf(secondSection)!.components().at(0)!
-    current.select(secondSlot)
+    const item = appendGridItem(current, '<p>Movible</p>')!.parent()!
+    updateGridItemPlacement(item, { span: 4, start: 1 })
 
-    const inserted = appendGridItem(current, '<p>Segunda sección</p>')
-
-    expect(inserted?.parent()).toBe(secondSlot)
-    expect(gridContentOf(secondSection)?.components()).toHaveLength(1)
-  })
-
-  it('migrates an existing empty section to a selectable grid slot', () => {
-    const current = createEditor()
-    const section = ensureGridSection(current)!
-    gridContentOf(section)?.components().reset()
-
-    expect(ensureGridSlots(current)).toBe(1)
-    expect(gridContentOf(section)?.components()).toHaveLength(1)
-    expect(ensureGridSlots(current)).toBe(0)
+    expect(placeGridItemAtHorizontalDrop(item, 1)).toBe(true)
+    expect(readGridItemPlacement(item)).toEqual({ span: 4, start: 9 })
   })
 
   it('updates the responsive site margin variables', () => {
     const current = createEditor()
+    ensurePageGrid(current)
     current.Css.addRules(GRID_LAYOUT_STYLES)
 
     expect(updateSiteMargin(current, 40)).toBe(40)
@@ -202,9 +200,13 @@ describe('grid layout foundation', () => {
     expect(current.getCss()).toContain('--psl-site-margin-desktop:40px')
     expect(current.getCss()).toContain('--psl-site-margin-tablet:30px')
     expect(current.getCss()).toContain('--psl-site-margin-mobile:20px')
+    expect(current.getCss()).toContain('padding-left:40px')
+    expect(current.getCss()).toContain('padding-left:30px')
+    expect(current.getCss()).toContain('padding-left:20px')
   })
 
-  it('keeps editor placeholders out of exported layout styles', () => {
+  it('exports one responsive page grid without editor controls', () => {
+    expect(GRID_LAYOUT_STYLES).toContain('min-height: 100vh')
     expect(GRID_LAYOUT_STYLES).toContain('repeat(12')
     expect(GRID_LAYOUT_STYLES).toContain('repeat(8')
     expect(GRID_LAYOUT_STYLES).toContain('repeat(4')

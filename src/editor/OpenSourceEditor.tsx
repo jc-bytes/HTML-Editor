@@ -104,7 +104,7 @@ import {
   appendGridItem,
   createGridLayoutPlugin,
   DEFAULT_SITE_MARGIN,
-  ensureGridSection,
+  ensurePageGrid,
   ensureGridSlots,
   gridItemFor,
   GRID_LAYOUT_STYLES,
@@ -112,7 +112,9 @@ import {
   isGridContent,
   isGridItem,
   isGridSection,
+  isPageGrid,
   placeComponentInGrid,
+  placeGridItemAtHorizontalDrop,
   readSiteMargin,
   updateSiteMargin,
 } from './grid-layout'
@@ -850,6 +852,15 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
 
     let canvasResizeObserver: ResizeObserver | undefined
     let gridCanvasControlsCleanup: () => void = () => undefined
+    let nativeGridDrag: {
+      document: Document
+      item: Component
+      previous?: Component
+      next?: Component
+      startX?: number
+      lastX?: number
+      trackPointer: (event: MouseEvent) => void
+    } | null = null
     const canvasDoubleClickCleanups: Array<() => void> = []
     const canvasDoubleClickDocuments = new WeakSet<Document>()
     const authDoubleClickElements = new WeakSet<HTMLElement>()
@@ -1317,8 +1328,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       editor.onReady(() => {
         syncPages()
         syncPreviewViewport()
-        const initialGridSection = ensureGridSection(editor)
-        ensureGridSlots(editor)
+        const initialPageGrid = ensurePageGrid(editor)
         const savedSiteMargin = readSiteMargin(editor)
         editor.Css.addRules(GRID_LAYOUT_STYLES)
         setSiteMargin(updateSiteMargin(editor, savedSiteMargin))
@@ -1333,7 +1343,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
             setError(cause instanceof Error ? cause.message : 'No se pudieron guardar los espacios de diseño.')
           })
         }
-        if (initialGridSection) {
+        if (initialPageGrid) {
           void editor.store().catch((cause: unknown) => {
             setError(cause instanceof Error ? cause.message : 'No se pudo guardar la cuadrícula inicial.')
           })
@@ -1378,9 +1388,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       editor.on('page:select', () => {
         syncPages()
         gridCanvasControlsCleanup()
-        const gridSection = ensureGridSection(editor)
-        ensureGridSlots(editor)
-        if (gridSection) {
+        const pageGrid = ensurePageGrid(editor)
+        if (pageGrid) {
           void editor.store().catch((cause: unknown) => {
             setError(cause instanceof Error ? cause.message : 'No se pudo guardar la cuadrícula de la página.')
           })
@@ -1416,7 +1425,73 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         syncSelectedElement(editor.getSelected())
         requestAnimationFrame(() => refreshGridCanvasControls())
       })
-      editor.on('component:add', () => requestAnimationFrame(installDataComponentDoubleClick))
+      editor.on('component:add', (component: Component) => requestAnimationFrame(() => {
+        if (editorRef.current !== editor) return
+        installDataComponentDoubleClick()
+        placeComponentInGrid(editor, component)
+      }))
+      editor.on('component:drag:start', ({ target, component }: {
+        target?: Component
+        component?: Component
+      }) => {
+        const movedComponent = target ?? component
+        const item = gridItemFor(movedComponent)
+        const parent = item?.parent()
+        const document = editor.Canvas.getDocument()
+        if (!item || !parent || !isPageGrid(parent) || !document) return
+        const siblings = parent.components().models
+        const index = siblings.indexOf(item)
+        const trackPointer = (event: MouseEvent) => {
+          if (!nativeGridDrag) return
+          nativeGridDrag.startX ??= event.clientX
+          nativeGridDrag.lastX = event.clientX
+        }
+        nativeGridDrag = {
+          document,
+          item,
+          previous: siblings[index - 1],
+          next: siblings[index + 1],
+          trackPointer,
+        }
+        document.addEventListener('mousemove', trackPointer, true)
+        document.body.classList.add('psl-grid-guides')
+      })
+      editor.on('component:drag:end', ({ target, component }: {
+        target?: Component
+        component?: Component
+      }) => {
+        const movedComponent = target ?? component
+        if (movedComponent) placeComponentInGrid(editor, movedComponent)
+        const drag = nativeGridDrag
+        nativeGridDrag = null
+        if (!drag) return
+        drag.document.removeEventListener('mousemove', drag.trackPointer, true)
+        drag.document.body.classList.remove('psl-grid-guides')
+        const gridElement = drag.item.parent()?.getEl()
+        const horizontalDistance = Math.abs((drag.lastX ?? 0) - (drag.startX ?? drag.lastX ?? 0))
+        if (!gridElement || drag.lastX === undefined || horizontalDistance < 18) return
+        const gridRect = gridElement.getBoundingClientRect()
+        const relativeX = (drag.lastX - gridRect.left) / Math.max(1, gridRect.width)
+        if (!placeGridItemAtHorizontalDrop(drag.item, relativeX, drag.previous, drag.next)) return
+        setSelectedGridItem(drag.item)
+        setGridLayoutRevision((current) => current + 1)
+        requestAnimationFrame(() => refreshGridCanvasControls(drag.item))
+        void editor.store().catch((cause: unknown) => {
+          setError(cause instanceof Error ? cause.message : 'No se pudo guardar la posición del elemento.')
+        })
+      })
+      editor.on('component:remove', (removedComponent: Component) => requestAnimationFrame(() => {
+        if (editorRef.current !== editor) return
+        const removedPageGrid = isPageGrid(removedComponent)
+        const pageGrid = ensurePageGrid(editor)
+        const addedSlotCount = ensureGridSlots(editor)
+        installGridEditorStyles(editor)
+        if (pageGrid && (removedPageGrid || addedSlotCount > 0)) {
+          void editor.store().catch((cause: unknown) => {
+            setError(cause instanceof Error ? cause.message : 'No se pudo restaurar la cuadrícula de la página.')
+          })
+        }
+      }))
       editor.on('component:resize:init', (options: {
         component: Component
         resizable: boolean | ResizerOptions
@@ -1537,6 +1612,11 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     return () => {
       window.clearTimeout(resizeNoticeTimerRef.current)
       canvasResizeObserver?.disconnect()
+      if (nativeGridDrag) {
+        nativeGridDrag.document.removeEventListener('mousemove', nativeGridDrag.trackPointer, true)
+        nativeGridDrag.document.body.classList.remove('psl-grid-guides')
+        nativeGridDrag = null
+      }
       gridCanvasControlsCleanup()
       canvasDoubleClickCleanups.forEach((cleanup) => cleanup())
       ;(editorRef.current as (Editor & { __removePanShortcuts?: () => void }) | null)?.__removePanShortcuts?.()
@@ -1967,7 +2047,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       name: `Página ${pageNumber}`,
       component: '',
     }, { select: true })
-    ensureGridSection(editor)
+    ensurePageGrid(editor)
     void editor.store().catch((cause: unknown) => {
       setError(cause instanceof Error ? cause.message : 'No se pudo guardar la página nueva.')
     })

@@ -1,12 +1,11 @@
 import type { Component, Editor } from 'grapesjs'
 import {
   alignGridItem,
-  appendGridSection,
+  appendGridSlot,
   GRID_DESKTOP_COLUMNS,
   gridItemOrder,
-  gridItemSectionOrder,
   moveGridItem,
-  moveGridItemToAdjacentSection,
+  placeGridItemBesidePrevious,
   readGridItemPlacement,
   updateGridItemPlacement,
   updateSiteMargin,
@@ -27,7 +26,6 @@ export function GridLayoutPanel({
 }) {
   const placement = readGridItemPlacement(item)
   const order = gridItemOrder(item)
-  const sectionOrder = editor ? gridItemSectionOrder(editor, item) : { index: -1, count: 0 }
 
   const applyMargin = (value: number) => {
     if (!editor) return
@@ -133,18 +131,13 @@ export function GridLayoutPanel({
             >↓ Bajar</button>
           </div>
 
-          <label className="gjs-grid-layout-label">Mover entre secciones</label>
-          <div className="gjs-grid-order-options">
+          <label className="gjs-grid-layout-label">Disposición rápida</label>
+          <div className="gjs-grid-quick-options">
             <button
-              disabled={sectionOrder.index <= 0}
-              onClick={() => commit(() => editor ? moveGridItemToAdjacentSection(editor, item, -1) : false)}
+              disabled={order.index <= 0}
+              onClick={() => commit(() => placeGridItemBesidePrevious(item))}
               type="button"
-            >↑ Sección anterior</button>
-            <button
-              disabled={sectionOrder.index < 0 || sectionOrder.index >= sectionOrder.count - 1}
-              onClick={() => commit(() => editor ? moveGridItemToAdjacentSection(editor, item, 1) : false)}
-              type="button"
-            >↓ Sección siguiente</button>
+            >Colocar junto al anterior · 6 + 6</button>
           </div>
         </section>
       )}
@@ -154,13 +147,13 @@ export function GridLayoutPanel({
         disabled={!editor}
         onClick={() => {
           if (!editor) return
-          const section = appendGridSection(editor)
-          if (section) editor.select(section)
-          onChange({ select: section })
+          const slot = appendGridSlot(editor)
+          if (slot) editor.select(slot)
+          onChange({ select: slot })
         }}
         type="button"
-      >+ Añadir sección debajo</button>
-      <p className="gjs-grid-section-note">Las secciones se apilan verticalmente. Para colocar elementos lado a lado, muévelos dentro de la misma sección.</p>
+      >+ Añadir espacio de cuadrícula</button>
+      <p className="gjs-grid-section-note">La página usa una sola cuadrícula fija. Los elementos se colocan por columnas y crean nuevas filas automáticamente.</p>
     </div>
   )
 }

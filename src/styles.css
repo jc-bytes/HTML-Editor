@@ -794,8 +794,9 @@ body {
 .gjs-grid-width-options { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 4px; }
 .gjs-grid-align-options,.gjs-grid-order-options { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; }
 .gjs-grid-order-options { grid-template-columns: repeat(2,minmax(0,1fr)); }
-.gjs-grid-width-options button,.gjs-grid-align-options button,.gjs-grid-order-options button,.gjs-grid-margin-options button { min-height: 30px; padding: 5px; color: #c9ccd3; background: #23252b; border: 1px solid #373a43; border-radius: 5px; font-size: 9px; font-weight: 700; cursor: pointer; }
-.gjs-grid-width-options button:hover,.gjs-grid-align-options button:hover,.gjs-grid-order-options button:hover,.gjs-grid-margin-options button:hover { color: white; border-color: #7255e7; }
+.gjs-grid-quick-options { display: grid; }
+.gjs-grid-width-options button,.gjs-grid-align-options button,.gjs-grid-order-options button,.gjs-grid-quick-options button,.gjs-grid-margin-options button { min-height: 30px; padding: 5px; color: #c9ccd3; background: #23252b; border: 1px solid #373a43; border-radius: 5px; font-size: 9px; font-weight: 700; cursor: pointer; }
+.gjs-grid-width-options button:hover,.gjs-grid-align-options button:hover,.gjs-grid-order-options button:hover,.gjs-grid-quick-options button:hover,.gjs-grid-margin-options button:hover { color: white; border-color: #7255e7; }
 .gjs-grid-width-options button.active,.gjs-grid-margin-options button.active { color: white; background: #6f52dc; border-color: #886ff0; }
 .gjs-grid-width-options button:disabled,.gjs-grid-align-options button:disabled,.gjs-grid-order-options button:disabled { opacity: .38; cursor: default; }
 .gjs-grid-add-section { min-height: 36px; color: #eeeaff; background: rgba(111,82,220,.15); border: 1px dashed #7255e7; border-radius: 7px; font-size: 10px; font-weight: 800; cursor: pointer; }

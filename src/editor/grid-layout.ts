@@ -1,5 +1,6 @@
 import type { Component, ComponentAdd, ComponentDefinition, Editor } from 'grapesjs'
 
+export const PAGE_GRID_ATTRIBUTE = 'data-psl-page-grid'
 export const GRID_SECTION_ATTRIBUTE = 'data-psl-grid-section'
 export const GRID_CONTENT_ATTRIBUTE = 'data-psl-grid-content'
 export const GRID_ITEM_ATTRIBUTE = 'data-psl-grid-item'
@@ -15,24 +16,19 @@ export const GRID_LAYOUT_STYLES = `
   --psl-site-margin-tablet: 24px;
   --psl-site-margin-mobile: 16px;
 }
-.psl-grid-section {
-  --psl-site-margin: var(--psl-site-margin-desktop);
-  --psl-site-max-width: 1200px;
-  --psl-grid-gap: 20px;
-  --psl-section-space: 32px;
-  position: relative;
-  width: 100%;
-  padding-top: 32px;
-  padding-bottom: 32px;
-  box-sizing: border-box;
-}
-.psl-grid-content {
+.psl-page-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-flow: row;
+  align-content: start;
   column-gap: 20px;
   row-gap: 20px;
-  width: min(calc(100% - (2 * var(--psl-site-margin))), var(--psl-site-max-width));
-  margin-inline: auto;
+  width: 100%;
+  min-height: 100vh;
+  padding-top: 32px;
+  padding-right: 32px;
+  padding-bottom: 32px;
+  padding-left: 32px;
   box-sizing: border-box;
 }
 .psl-grid-item {
@@ -41,22 +37,19 @@ export const GRID_LAYOUT_STYLES = `
   grid-column-end: span 12;
   box-sizing: border-box;
 }
-.psl-grid-item > * { max-width: 100%; }
+.psl-grid-item > * { width: 100%; max-width: 100%; box-sizing: border-box; }
 @media (max-width: 991px) {
-  .psl-grid-section { --psl-site-margin: var(--psl-site-margin-tablet); }
-  .psl-grid-content { grid-template-columns: repeat(8, minmax(0, 1fr)); }
-  .psl-grid-item { grid-column-end: span 8; }
+  .psl-page-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); padding-top: 24px; padding-right: 24px; padding-bottom: 24px; padding-left: 24px; }
+  .psl-grid-item { grid-column-start: auto !important; grid-column-end: span 8 !important; }
 }
 @media (max-width: 767px) {
-  .psl-grid-section { --psl-site-margin: var(--psl-site-margin-mobile); padding-top: 24px; padding-bottom: 24px; }
-  .psl-grid-content { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .psl-page-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); padding-top: 16px; padding-right: 16px; padding-bottom: 16px; padding-left: 16px; column-gap: 16px; row-gap: 16px; }
   .psl-grid-item { grid-column-start: auto !important; grid-column-end: span 4 !important; }
 }
 `
 
 export const GRID_EDITOR_STYLES = `
-[data-psl-grid-section] { min-height: 112px; }
-[data-psl-grid-content]:empty,
+[data-psl-page-grid] { outline: 1px dashed rgba(111, 82, 220, .2); outline-offset: -1px; }
 [data-psl-grid-item]:empty {
   position: relative;
   min-height: 144px;
@@ -65,7 +58,6 @@ export const GRID_EDITOR_STYLES = `
   border-radius: 12px;
   background: rgba(111, 82, 220, .055);
 }
-[data-psl-grid-content]:empty::before,
 [data-psl-grid-item]:empty::before {
   content: "Arrastra un elemento aquí";
   position: absolute;
@@ -76,11 +68,7 @@ export const GRID_EDITOR_STYLES = `
   font: 750 18px/1.4 Inter, ui-sans-serif, system-ui, sans-serif;
   pointer-events: none;
 }
-[data-psl-grid-content]:not(:empty) {
-  outline: 1px dashed rgba(111, 82, 220, .16);
-  outline-offset: 6px;
-}
-body.psl-grid-guides [data-psl-grid-content] {
+body.psl-grid-guides [data-psl-page-grid] {
   background-image: repeating-linear-gradient(to right, rgba(111, 82, 220, .1) 0, rgba(111, 82, 220, .1) calc((100% - 220px) / 12), transparent calc((100% - 220px) / 12), transparent calc((100% + 20px) / 12));
 }
 .psl-grid-canvas-controls {
@@ -122,23 +110,26 @@ export function gridItemDefinition(): ComponentDefinition {
       [GRID_ITEM_ATTRIBUTE]: '',
       class: 'psl-grid-item',
     },
-    draggable: `[${GRID_CONTENT_ATTRIBUTE}]`,
+    draggable: `[${PAGE_GRID_ATTRIBUTE}]`,
     droppable: true,
     resizable: false,
   }
 }
 
-function gridContentDefinition(): ComponentDefinition {
+export function pageGridDefinition(): ComponentDefinition {
   return {
-    type: 'psl-grid-content',
+    type: 'psl-page-grid',
     tagName: 'div',
-    name: 'Cuadrícula',
+    name: 'Diseño de página · fijo',
     attributes: {
+      [PAGE_GRID_ATTRIBUTE]: '',
       [GRID_CONTENT_ATTRIBUTE]: '',
-      class: 'psl-grid-content',
+      class: 'psl-page-grid',
     },
     draggable: false,
-    droppable: true,
+    droppable: `[${GRID_ITEM_ATTRIBUTE}]`,
+    removable: false,
+    copyable: false,
     selectable: false,
     hoverable: false,
     resizable: false,
@@ -146,24 +137,36 @@ function gridContentDefinition(): ComponentDefinition {
   }
 }
 
-export function gridSectionDefinition(): ComponentDefinition {
+function legacyGridContentDefinition(): ComponentDefinition {
+  return {
+    type: 'psl-grid-content',
+    tagName: 'div',
+    name: 'Cuadrícula anterior',
+    attributes: { [GRID_CONTENT_ATTRIBUTE]: '', class: 'psl-grid-content' },
+    draggable: false,
+    droppable: true,
+    resizable: false,
+  }
+}
+
+function legacyGridSectionDefinition(): ComponentDefinition {
   return {
     type: 'psl-grid-section',
     tagName: 'section',
-    name: 'Sección de cuadrícula',
-    attributes: {
-      [GRID_SECTION_ATTRIBUTE]: '',
-      class: 'psl-grid-section',
-    },
-    draggable: true,
+    name: 'Sección anterior',
+    attributes: { [GRID_SECTION_ATTRIBUTE]: '', class: 'psl-grid-section' },
+    draggable: false,
     droppable: false,
     resizable: false,
-    components: [gridContentDefinition()],
   }
 }
 
 function hasAttribute(component: Component, attribute: string) {
   return Object.prototype.hasOwnProperty.call(component.getAttributes(), attribute)
+}
+
+export function isPageGrid(component?: Component | null) {
+  return Boolean(component && hasAttribute(component, PAGE_GRID_ATTRIBUTE))
 }
 
 export function isGridSection(component?: Component | null) {
@@ -200,60 +203,94 @@ export function gridContentOf(section: Component) {
     ?? section.find(`[${GRID_CONTENT_ATTRIBUTE}]`)[0]
 }
 
-export function firstGridContent(editor: Editor) {
-  const wrapper = currentPageRoot(editor)
-  if (!wrapper) return undefined
-  return directChildren(wrapper).find(isGridSection)
-    ? wrapper.find(`[${GRID_CONTENT_ATTRIBUTE}]`)[0]
-    : undefined
+function emptyGridSlot(grid: Component) {
+  return directChildren(grid).find((candidate) => isGridItem(candidate) && directChildren(candidate).length === 0)
 }
 
-export function ensureGridSection(editor: Editor, options: { allowAlongsideLegacy?: boolean } = {}) {
-  const wrapper = currentPageRoot(editor)
-  if (!wrapper) return undefined
-  const existing = directChildren(wrapper).find(isGridSection)
-  if (existing) {
-    ensureGridSlot(existing)
-    return existing
-  }
-
-  const hasLegacyContent = directChildren(wrapper).some((component) => !isGridSection(component))
-  if (hasLegacyContent && !options.allowAlongsideLegacy) return undefined
-  return wrapper.append(gridSectionDefinition())[0]
+function appendWrappedComponent(grid: Component, component: Component) {
+  const item = emptyGridSlot(grid) ?? grid.append(gridItemDefinition())[0]
+  component.move(item)
+  return item
 }
 
-export function appendGridSection(editor: Editor) {
-  return currentPageRoot(editor)?.append(gridSectionDefinition())[0]
+function repairDirectPageGridChildren(grid: Component) {
+  let repaired = 0
+  ;[...directChildren(grid)].forEach((component) => {
+    if (isGridItem(component)) return
+    appendWrappedComponent(grid, component)
+    repaired += 1
+  })
+  return repaired
 }
 
-export function ensureGridSlot(section: Component) {
-  const grid = gridContentOf(section)
+function migrateRootChildren(root: Component, grid: Component) {
+  let migrated = 0
+  const rootChildren = [...directChildren(root)]
+  rootChildren.forEach((component) => {
+    if (component === grid) return
+    if (isGridSection(component)) {
+      const legacyGrid = gridContentOf(component)
+      const legacyItems = legacyGrid ? [...directChildren(legacyGrid)] : []
+      legacyItems.forEach((legacyItem) => {
+        if (isGridItem(legacyItem)) legacyItem.move(grid)
+        else appendWrappedComponent(grid, legacyItem)
+        migrated += 1
+      })
+      component.remove()
+      return
+    }
+    if (isGridContent(component)) {
+      ;[...directChildren(component)].forEach((legacyItem) => {
+        if (isGridItem(legacyItem)) legacyItem.move(grid)
+        else appendWrappedComponent(grid, legacyItem)
+        migrated += 1
+      })
+      component.remove()
+      return
+    }
+    appendWrappedComponent(grid, component)
+    migrated += 1
+  })
+  if (migrated > 0) emptyGridSlot(grid)?.remove()
+  return migrated
+}
+
+export function ensurePageGrid(editor: Editor) {
+  const root = currentPageRoot(editor)
+  if (!root) return undefined
+  let grid = directChildren(root).find(isPageGrid)
+  if (!grid) grid = root.append(pageGridDefinition())[0]
   if (!grid) return undefined
-  return directChildren(grid).find(isGridItem) ?? grid.append(gridItemDefinition())[0]
+  grid.addAttributes({ [PAGE_GRID_ATTRIBUTE]: '', [GRID_CONTENT_ATTRIBUTE]: '' })
+  grid.setClass('psl-page-grid')
+  migrateRootChildren(root, grid)
+  repairDirectPageGridChildren(grid)
+  if (!directChildren(grid).some(isGridItem)) grid.append(gridItemDefinition())
+  return grid
+}
+
+export function firstGridContent(editor: Editor) {
+  return ensurePageGrid(editor)
 }
 
 export function ensureGridSlots(editor: Editor) {
-  const root = currentPageRoot(editor)
-  if (!root) return 0
-  let added = 0
-  directChildren(root).filter(isGridSection).forEach((section) => {
-    const grid = gridContentOf(section)
-    if (!grid || directChildren(grid).some(isGridItem)) return
-    grid.append(gridItemDefinition())
-    added += 1
-  })
-  return added
+  const grid = ensurePageGrid(editor)
+  if (!grid || directChildren(grid).some(isGridItem)) return 0
+  grid.append(gridItemDefinition())
+  return 1
+}
+
+export function appendGridSlot(editor: Editor) {
+  return ensurePageGrid(editor)?.append(gridItemDefinition())[0]
 }
 
 export function appendGridItem(editor: Editor, content: ComponentAdd) {
-  const section = ensureGridSection(editor, { allowAlongsideLegacy: true })
-  const grid = section ? gridContentOf(section) : undefined
+  const grid = ensurePageGrid(editor)
   if (!grid) return undefined
   const selectedSlot = gridItemFor(editor.getSelected())
-  const item = selectedSlot && directChildren(selectedSlot).length === 0
+  const item = selectedSlot && selectedSlot.parent() === grid && directChildren(selectedSlot).length === 0
     ? selectedSlot
-    : directChildren(grid).find((candidate) => isGridItem(candidate) && directChildren(candidate).length === 0)
-    ?? grid.append(gridItemDefinition())[0]
+    : emptyGridSlot(grid) ?? grid.append(gridItemDefinition())[0]
   if (!item) return undefined
   const inserted = item.append(content)[0]
   if (!inserted) item.remove()
@@ -261,21 +298,15 @@ export function appendGridItem(editor: Editor, content: ComponentAdd) {
 }
 
 export function placeComponentInGrid(editor: Editor, component?: Component | null) {
-  if (!component || isGridSection(component) || isGridItem(component)) return component ?? undefined
+  if (!component || isPageGrid(component) || isGridItem(component)) return component ?? undefined
   const parent = component.parent()
-  const wrapper = currentPageRoot(editor)
+  const root = currentPageRoot(editor)
   if (!parent || isGridItem(parent)) return component
-  if (!isGridContent(parent) && parent !== wrapper) return component
-
-  const section = isGridContent(parent)
-    ? parent.parent()
-    : ensureGridSection(editor, { allowAlongsideLegacy: true })
-  const grid = section ? gridContentOf(section) : undefined
+  if (!isPageGrid(parent) && parent !== root) return component
+  const grid = ensurePageGrid(editor)
   if (!grid) return component
-  const item = directChildren(grid).find((candidate) => isGridItem(candidate) && directChildren(candidate).length === 0)
-    ?? grid.append(gridItemDefinition())[0]
-  if (!item) return component
-  item.append(component)
+  const item = emptyGridSlot(grid) ?? grid.append(gridItemDefinition())[0]
+  component.move(item)
   return component
 }
 
@@ -297,32 +328,16 @@ export function updateGridItemPlacement(item: Component, placement: Partial<Grid
   const current = readGridItemPlacement(item)
   const span = clampedInteger(placement.span ?? current.span, 1, GRID_DESKTOP_COLUMNS)
   const start = clampedInteger(placement.start ?? current.start, 1, GRID_DESKTOP_COLUMNS - span + 1)
-  item.addAttributes({
-    [GRID_SPAN_ATTRIBUTE]: String(span),
-    [GRID_START_ATTRIBUTE]: String(start),
-  })
-  item.addStyle({
-    'grid-column-start': String(start),
-    'grid-column-end': `span ${span}`,
-  })
+  item.addAttributes({ [GRID_SPAN_ATTRIBUTE]: String(span), [GRID_START_ATTRIBUTE]: String(start) })
+  item.addStyle({ 'grid-column-start': String(start), 'grid-column-end': `span ${span}` })
   return { span, start }
 }
 
-export function gridPlacementAfterDrag(
-  placement: GridItemPlacement,
-  action: GridDragAction,
-  columnDelta: number,
-) {
+export function gridPlacementAfterDrag(placement: GridItemPlacement, action: GridDragAction, columnDelta: number) {
   const span = clampedInteger(placement.span, 1, GRID_DESKTOP_COLUMNS)
   const start = clampedInteger(placement.start, 1, GRID_DESKTOP_COLUMNS - span + 1)
-  if (action === 'move') return {
-    span,
-    start: clampedInteger(start + columnDelta, 1, GRID_DESKTOP_COLUMNS - span + 1),
-  }
-  if (action === 'resize-right') return {
-    start,
-    span: clampedInteger(span + columnDelta, 1, GRID_DESKTOP_COLUMNS - start + 1),
-  }
+  if (action === 'move') return { span, start: clampedInteger(start + columnDelta, 1, GRID_DESKTOP_COLUMNS - span + 1) }
+  if (action === 'resize-right') return { start, span: clampedInteger(span + columnDelta, 1, GRID_DESKTOP_COLUMNS - start + 1) }
   const rightEdge = start + span - 1
   const nextStart = clampedInteger(start + columnDelta, 1, rightEdge)
   return { start: nextStart, span: rightEdge - nextStart + 1 }
@@ -337,7 +352,7 @@ export function alignGridItem(item: Component, alignment: 'left' | 'center' | 'r
 
 export function moveGridItem(item: Component, direction: -1 | 1) {
   const parent = item.parent()
-  if (!parent || !isGridContent(parent)) return false
+  if (!parent || !isPageGrid(parent)) return false
   const siblings = directChildren(parent)
   const index = siblings.indexOf(item)
   const nextIndex = index + direction
@@ -348,56 +363,68 @@ export function moveGridItem(item: Component, direction: -1 | 1) {
 
 export function gridItemOrder(item?: Component | null) {
   const parent = item?.parent()
-  if (!item || !parent || !isGridContent(parent)) return { index: -1, count: 0 }
+  if (!item || !parent || !isPageGrid(parent)) return { index: -1, count: 0 }
   const siblings = directChildren(parent)
   return { index: siblings.indexOf(item), count: siblings.length }
 }
 
-export function moveGridItemToGrid(item: Component, targetGrid: Component) {
-  const sourceGrid = item.parent()
-  if (!sourceGrid || !isGridContent(sourceGrid) || !isGridContent(targetGrid) || sourceGrid === targetGrid) return false
-  const itemWasEmpty = directChildren(item).length === 0
-  directChildren(targetGrid)
-    .filter((candidate) => isGridItem(candidate) && directChildren(candidate).length === 0)
-    .forEach((candidate) => candidate.remove())
-  item.move(targetGrid)
-  const sourceSection = sourceGrid.parent()
-  if (itemWasEmpty && sourceSection && directChildren(sourceGrid).length === 0) sourceSection.remove()
-  else if (sourceSection) ensureGridSlot(sourceSection)
+export function placeGridItemBesidePrevious(item: Component) {
+  const parent = item.parent()
+  if (!parent || !isPageGrid(parent)) return false
+  const siblings = directChildren(parent)
+  const index = siblings.indexOf(item)
+  const previous = siblings[index - 1]
+  if (!previous || !isGridItem(previous)) return false
+  updateGridItemPlacement(previous, { span: 6, start: 1 })
+  updateGridItemPlacement(item, { span: 6, start: 7 })
   return true
 }
 
-export function gridItemSectionOrder(editor: Editor, item?: Component | null) {
-  const root = currentPageRoot(editor)
-  const section = item?.parent()?.parent()
-  if (!root || !section || !isGridSection(section)) return { index: -1, count: 0 }
-  const sections = directChildren(root).filter(isGridSection)
-  return { index: sections.indexOf(section), count: sections.length }
-}
+export function placeGridItemAtHorizontalDrop(
+  item: Component,
+  relativeX: number,
+  preferredPrevious?: Component,
+  preferredNext?: Component,
+) {
+  const parent = item.parent()
+  if (!parent || !isPageGrid(parent)) return false
+  const ratio = Math.min(1, Math.max(0, relativeX))
+  const siblings = directChildren(parent)
+  const index = siblings.indexOf(item)
+  const previous = preferredPrevious?.parent() === parent ? preferredPrevious : siblings[index - 1]
+  const next = preferredNext?.parent() === parent ? preferredNext : siblings[index + 1]
+  const placement = readGridItemPlacement(item)
 
-export function moveGridItemToAdjacentSection(editor: Editor, item: Component, direction: -1 | 1) {
-  const root = currentPageRoot(editor)
-  const sourceSection = item.parent()?.parent()
-  if (!root || !sourceSection || !isGridSection(sourceSection)) return false
-  const sections = directChildren(root).filter(isGridSection)
-  const targetSection = sections[sections.indexOf(sourceSection) + direction]
-  const targetGrid = targetSection ? gridContentOf(targetSection) : undefined
-  if (!targetGrid) return false
-  const targetItems = directChildren(targetGrid).filter((candidate) => isGridItem(candidate) && directChildren(candidate).length > 0)
-  const targetItem = targetItems.length === 1 ? targetItems[0] : undefined
-  const shouldSplit = targetItem
-    && readGridItemPlacement(targetItem).span === GRID_DESKTOP_COLUMNS
-    && readGridItemPlacement(item).span === GRID_DESKTOP_COLUMNS
-  if (!moveGridItemToGrid(item, targetGrid)) return false
-  if (shouldSplit && targetItem) {
-    updateGridItemPlacement(targetItem, { span: 6, start: 1 })
-    updateGridItemPlacement(item, { span: 6, start: 7 })
+  if (ratio >= .5 && previous && isGridItem(previous)) {
+    const previousPlacement = readGridItemPlacement(previous)
+    if (previousPlacement.start === 1 && previousPlacement.span <= 6) {
+      updateGridItemPlacement(item, { start: 7, span: Math.min(placement.span, 6) })
+    } else {
+      updateGridItemPlacement(previous, { start: 1, span: 6 })
+      updateGridItemPlacement(item, { start: 7, span: 6 })
+    }
+    return true
   }
+
+  if (ratio < .5 && next && isGridItem(next)) {
+    const nextPlacement = readGridItemPlacement(next)
+    if (nextPlacement.start >= 7 && nextPlacement.span <= 6) {
+      updateGridItemPlacement(item, { start: 1, span: Math.min(placement.span, 6) })
+    } else {
+      updateGridItemPlacement(item, { start: 1, span: 6 })
+      updateGridItemPlacement(next, { start: 7, span: 6 })
+    }
+    return true
+  }
+
+  const start = Math.round(ratio * (GRID_DESKTOP_COLUMNS - placement.span)) + 1
+  updateGridItemPlacement(item, { start })
   return true
 }
 
 export function readSiteMargin(editor: Editor) {
-  const value = editor.Css.getRule(':root')?.getStyle()['--psl-site-margin-desktop']
+  const value = editor.Css.getRule('.psl-page-grid')?.getStyle()['padding-left']
+    ?? editor.Css.getRule(':root')?.getStyle()['--psl-site-margin-desktop']
   return clampedInteger(Number.parseFloat(String(value ?? DEFAULT_SITE_MARGIN)), 0, 96)
 }
 
@@ -408,6 +435,23 @@ export function updateSiteMargin(editor: Editor, margin: number) {
     '--psl-site-margin-tablet': `${Math.round(desktop * .75)}px`,
     '--psl-site-margin-mobile': `${Math.round(desktop * .5)}px`,
   }, { addStyles: true })
+  const paddingStyle = (value: number) => ({
+    'padding-top': `${value}px`,
+    'padding-right': `${value}px`,
+    'padding-bottom': `${value}px`,
+    'padding-left': `${value}px`,
+  })
+  editor.Css.setRule('.psl-page-grid', paddingStyle(desktop), { addStyles: true })
+  editor.Css.setRule('.psl-page-grid', paddingStyle(Math.round(desktop * .75)), {
+    addStyles: true,
+    atRuleType: 'media',
+    atRuleParams: '(max-width: 991px)',
+  })
+  editor.Css.setRule('.psl-page-grid', paddingStyle(Math.round(desktop * .5)), {
+    addStyles: true,
+    atRuleType: 'media',
+    atRuleParams: '(max-width: 767px)',
+  })
   return desktop
 }
 
@@ -421,13 +465,17 @@ export function installGridEditorStyles(editor: Editor) {
 }
 
 export function createGridLayoutPlugin(editor: Editor) {
+  editor.DomComponents.addType('psl-page-grid', {
+    isComponent: (element) => element.hasAttribute?.(PAGE_GRID_ATTRIBUTE),
+    model: { defaults: pageGridDefinition() },
+  })
   editor.DomComponents.addType('psl-grid-section', {
     isComponent: (element) => element.hasAttribute?.(GRID_SECTION_ATTRIBUTE),
-    model: { defaults: gridSectionDefinition() },
+    model: { defaults: legacyGridSectionDefinition() },
   })
   editor.DomComponents.addType('psl-grid-content', {
     isComponent: (element) => element.hasAttribute?.(GRID_CONTENT_ATTRIBUTE),
-    model: { defaults: gridContentDefinition() },
+    model: { defaults: legacyGridContentDefinition() },
   })
   editor.DomComponents.addType('psl-grid-item', {
     isComponent: (element) => element.hasAttribute?.(GRID_ITEM_ATTRIBUTE),

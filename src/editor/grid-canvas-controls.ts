@@ -1,11 +1,9 @@
 import type { Component, Editor } from 'grapesjs'
 import {
   GRID_DESKTOP_COLUMNS,
-  GRID_CONTENT_ATTRIBUTE,
   type GridDragAction,
   gridItemFor,
   gridPlacementAfterDrag,
-  moveGridItemToGrid,
   readGridItemPlacement,
   updateGridItemPlacement,
 } from './grid-layout'
@@ -71,9 +69,6 @@ export function mountGridCanvasControls(
     const initial = readGridItemPlacement(item)
     updateGridItemPlacement(item, initial)
     const initialX = event.clientX
-    let activeGrid = grid
-    let initialGrid = grid
-
     const gridStep = (gridElement: Element) => {
       const gridStyle = document.defaultView!.getComputedStyle(gridElement)
       const gap = Number.parseFloat(gridStyle.columnGap) || 20
@@ -81,32 +76,9 @@ export function mountGridCanvasControls(
       return Math.max(1, columnWidth + gap)
     }
 
-    const componentForGrid = (gridElement: Element) => editor.Pages.getSelected()?.getMainComponent()
-      .find(`[${GRID_CONTENT_ATTRIBUTE}]`)
-      .find((candidate) => candidate.getEl() === gridElement)
-
     const handleMove = (moveEvent: MouseEvent) => {
-      if (action === 'move') {
-        const targetGrid = document.elementsFromPoint(moveEvent.clientX, moveEvent.clientY)
-          .map((candidate) => candidate.closest(`[${GRID_CONTENT_ATTRIBUTE}]`))
-          .find((candidate): candidate is HTMLElement => candidate instanceof document.defaultView!.HTMLElement)
-        if (targetGrid && targetGrid !== activeGrid) {
-          const oldGridComponent = componentForGrid(activeGrid)
-          const targetGridComponent = componentForGrid(targetGrid)
-          if (oldGridComponent && targetGridComponent) {
-            if (moveGridItemToGrid(item, targetGridComponent)) {
-              activeGrid = targetGrid
-              initialGrid = targetGrid
-            }
-          }
-        }
-        const activeRect = activeGrid.getBoundingClientRect()
-        const start = Math.round((moveEvent.clientX - activeRect.left) / gridStep(activeGrid)) + 1
-        updateGridItemPlacement(item, { span: initial.span, start })
-      } else {
-        const columnDelta = Math.round((moveEvent.clientX - initialX) / gridStep(initialGrid))
-        updateGridItemPlacement(item, gridPlacementAfterDrag(initial, action, columnDelta))
-      }
+      const columnDelta = Math.round((moveEvent.clientX - initialX) / gridStep(grid))
+      updateGridItemPlacement(item, gridPlacementAfterDrag(initial, action, columnDelta))
       callbacks.onUpdate(item)
       positionOverlay()
     }
