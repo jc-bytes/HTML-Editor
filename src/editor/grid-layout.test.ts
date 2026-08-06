@@ -9,15 +9,18 @@ import {
   GRID_EDITOR_STYLES,
   GRID_ITEM_ATTRIBUTE,
   GRID_LAYOUT_STYLES,
+  GRID_ROW_ATTRIBUTE,
   GRID_SECTION_ATTRIBUTE,
   gridItemOrder,
   gridPlacementAfterDrag,
+  insertGridItemAtRow,
   moveGridItem,
   PAGE_GRID_ATTRIBUTE,
   placeComponentInGrid,
-  placeGridItemAtHorizontalDrop,
+  placeGridItemBesidePeer,
   placeGridItemBesidePrevious,
   readGridItemPlacement,
+  resolveGridItemDrop,
   readSiteMargin,
   updateGridItemPlacement,
   updateSiteMargin,
@@ -97,6 +100,7 @@ describe('body-level grid layout', () => {
     const inserted = appendGridItem(current, '<p>Seleccionado</p>')
 
     expect(inserted?.parent()).toBe(selectedSlot)
+    expect(inserted?.get('draggable')).toBe(false)
     expect(grid.components()).toHaveLength(2)
   })
 
@@ -136,18 +140,18 @@ describe('body-level grid layout', () => {
     const item = appendGridItem(current, '<p>Posicionable</p>')!.parent()!
 
     updateGridItemPlacement(item, { span: 6 })
-    expect(readGridItemPlacement(item)).toEqual({ span: 6, start: 1 })
-    expect(alignGridItem(item, 'center')).toEqual({ span: 6, start: 4 })
-    expect(alignGridItem(item, 'right')).toEqual({ span: 6, start: 7 })
+    expect(readGridItemPlacement(item)).toEqual({ span: 6, start: 1, row: 1 })
+    expect(alignGridItem(item, 'center')).toEqual({ span: 6, start: 4, row: 1 })
+    expect(alignGridItem(item, 'right')).toEqual({ span: 6, start: 7, row: 1 })
     expect(current.getCss()).toContain('grid-column-start:7')
   })
 
   it('calculates bounded move and resize gestures in column steps', () => {
-    expect(gridPlacementAfterDrag({ start: 4, span: 6 }, 'move', 2)).toEqual({ start: 6, span: 6 })
-    expect(gridPlacementAfterDrag({ start: 4, span: 6 }, 'move', 20)).toEqual({ start: 7, span: 6 })
-    expect(gridPlacementAfterDrag({ start: 4, span: 6 }, 'resize-right', -2)).toEqual({ start: 4, span: 4 })
-    expect(gridPlacementAfterDrag({ start: 4, span: 6 }, 'resize-left', 2)).toEqual({ start: 6, span: 4 })
-    expect(gridPlacementAfterDrag({ start: 4, span: 6 }, 'resize-left', -10)).toEqual({ start: 1, span: 9 })
+    expect(gridPlacementAfterDrag({ start: 4, span: 6, row: 3 }, 'move', 2)).toEqual({ start: 6, span: 6, row: 3 })
+    expect(gridPlacementAfterDrag({ start: 4, span: 6, row: 3 }, 'move', 20)).toEqual({ start: 7, span: 6, row: 3 })
+    expect(gridPlacementAfterDrag({ start: 4, span: 6, row: 3 }, 'resize-right', -2)).toEqual({ start: 4, span: 4, row: 3 })
+    expect(gridPlacementAfterDrag({ start: 4, span: 6, row: 3 }, 'resize-left', 2)).toEqual({ start: 6, span: 4, row: 3 })
+    expect(gridPlacementAfterDrag({ start: 4, span: 6, row: 3 }, 'resize-left', -10)).toEqual({ start: 1, span: 9, row: 3 })
   })
 
   it('reorders items in the single page grid', () => {
@@ -158,6 +162,8 @@ describe('body-level grid layout', () => {
     expect(gridItemOrder(second)).toEqual({ index: 1, count: 2 })
     expect(moveGridItem(second, -1)).toBe(true)
     expect(gridItemOrder(second)).toEqual({ index: 0, count: 2 })
+    expect(readGridItemPlacement(second).row).toBe(1)
+    expect(readGridItemPlacement(first).row).toBe(2)
     expect(first.parent()).toBe(second.parent())
   })
 
@@ -167,27 +173,80 @@ describe('body-level grid layout', () => {
     const second = appendGridItem(current, '<p>Segundo</p>')!.parent()!
 
     expect(placeGridItemBesidePrevious(second)).toBe(true)
-    expect(readGridItemPlacement(first)).toEqual({ span: 6, start: 1 })
-    expect(readGridItemPlacement(second)).toEqual({ span: 6, start: 7 })
+    expect(readGridItemPlacement(first)).toEqual({ span: 6, start: 1, row: 1 })
+    expect(readGridItemPlacement(second)).toEqual({ span: 6, start: 7, row: 1 })
   })
 
-  it('uses a horizontal drop to place an item beside its previous sibling', () => {
+  it('resolves a deliberate right-side collision as a 6 + 6 row', () => {
     const current = createEditor()
     const first = appendGridItem(current, '<p>Texto</p>')!.parent()!
     const second = appendGridItem(current, '<img src="example.png">')!.parent()!
+    updateGridItemPlacement(second, { row: 1 })
 
-    expect(placeGridItemAtHorizontalDrop(second, .82, first)).toBe(true)
-    expect(readGridItemPlacement(first)).toEqual({ span: 6, start: 1 })
-    expect(readGridItemPlacement(second)).toEqual({ span: 6, start: 7 })
+    expect(resolveGridItemDrop(second, 'right')).toBe(true)
+    expect(readGridItemPlacement(first)).toEqual({ span: 6, start: 1, row: 1 })
+    expect(readGridItemPlacement(second)).toEqual({ span: 6, start: 7, row: 1 })
   })
 
-  it('moves a narrower item horizontally without resizing it', () => {
+  it('places only the selected pair side by side and leaves later rows unchanged', () => {
     const current = createEditor()
-    const item = appendGridItem(current, '<p>Movible</p>')!.parent()!
-    updateGridItemPlacement(item, { span: 4, start: 1 })
+    const first = appendGridItem(current, '<p>Texto</p>')!.parent()!
+    const second = appendGridItem(current, '<img src="example.png">')!.parent()!
+    const third = appendGridItem(current, '<p>Debajo</p>')!.parent()!
 
-    expect(placeGridItemAtHorizontalDrop(item, 1)).toBe(true)
-    expect(readGridItemPlacement(item)).toEqual({ span: 4, start: 9 })
+    expect(placeGridItemBesidePeer(second, first, 'right')).toBe(true)
+    expect(readGridItemPlacement(first)).toEqual({ row: 1, start: 1, span: 6 })
+    expect(readGridItemPlacement(second)).toEqual({ row: 1, start: 7, span: 6 })
+    expect(readGridItemPlacement(third)).toEqual({ row: 2, start: 1, span: 12 })
+  })
+
+  it('moves a colliding item to the next free row without an explicit side drop', () => {
+    const current = createEditor()
+    appendGridItem(current, '<p>Primero</p>')
+    const item = appendGridItem(current, '<p>Movible</p>')!.parent()!
+    updateGridItemPlacement(item, { row: 1 })
+
+    expect(resolveGridItemDrop(item)).toBe(true)
+    expect(readGridItemPlacement(item)).toEqual({ span: 12, start: 1, row: 2 })
+  })
+
+  it('inserts an item between logical rows and compacts the row numbers', () => {
+    const current = createEditor()
+    const first = appendGridItem(current, '<p>Primero</p>')!.parent()!
+    const second = appendGridItem(current, '<p>Segundo</p>')!.parent()!
+    const third = appendGridItem(current, '<p>Tercero</p>')!.parent()!
+
+    expect(insertGridItemAtRow(third, 2)).toBe(true)
+    expect(readGridItemPlacement(first).row).toBe(1)
+    expect(readGridItemPlacement(third).row).toBe(2)
+    expect(readGridItemPlacement(second).row).toBe(3)
+  })
+
+  it('adds explicit non-overlapping rows while migrating old grid items', () => {
+    const current = createEditor()
+    current.setComponents(`<div ${PAGE_GRID_ATTRIBUTE} data-psl-grid-content class="psl-page-grid">
+      <div ${GRID_ITEM_ATTRIBUTE} data-psl-grid-span="6" data-psl-grid-start="1"><p>Izquierda</p></div>
+      <div ${GRID_ITEM_ATTRIBUTE} data-psl-grid-span="6" data-psl-grid-start="7"><p>Derecha</p></div>
+      <div ${GRID_ITEM_ATTRIBUTE}><p>Debajo</p></div>
+    </div>`)
+
+    const grid = ensurePageGrid(current)!
+    const rows = grid.components().models.map((item) => item.getAttributes()[GRID_ROW_ATTRIBUTE])
+    expect(rows).toEqual(['1', '1', '2'])
+  })
+
+  it('preserves explicit row, column, and width through serialized HTML', () => {
+    const current = createEditor()
+    const item = appendGridItem(current, '<p>Persistente</p>')!.parent()!
+    updateGridItemPlacement(item, { row: 4, start: 5, span: 4 })
+    const html = current.getHtml()
+    current.destroy()
+
+    const restored = createEditor()
+    restored.setComponents(html)
+    const restoredItem = ensurePageGrid(restored)!.components().at(0)!
+
+    expect(readGridItemPlacement(restoredItem)).toEqual({ row: 4, start: 5, span: 4 })
   })
 
   it('updates the responsive site margin variables', () => {

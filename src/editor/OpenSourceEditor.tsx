@@ -114,7 +114,6 @@ import {
   isGridSection,
   isPageGrid,
   placeComponentInGrid,
-  placeGridItemAtHorizontalDrop,
   readSiteMargin,
   updateSiteMargin,
 } from './grid-layout'
@@ -167,6 +166,9 @@ const SUPABASE_BLOCK_ICONS = {
 } as const
 
 const NON_RESIZABLE_TAGS = new Set(['body', 'html', 'head', 'script', 'style', 'meta', 'link'])
+const STRUCTURAL_CONTAINER_TAGS = new Set([
+  'article', 'aside', 'div', 'footer', 'form', 'header', 'main', 'nav', 'ol', 'section', 'ul',
+])
 const WIDTH_ONLY_RESIZE_TAGS = new Set([
   'a', 'blockquote', 'button', 'figcaption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'label', 'li', 'p', 'small', 'span', 'strong',
@@ -209,7 +211,7 @@ const INTERACTION_STYLES = `
 export function directResizeOptions(tagName: string, componentType = ''): ResizerOptions | false {
   const tag = tagName.toLowerCase()
   const type = componentType.toLowerCase()
-  if (type === 'wrapper' || NON_RESIZABLE_TAGS.has(tag)) return false
+  if (type === 'wrapper' || NON_RESIZABLE_TAGS.has(tag) || STRUCTURAL_CONTAINER_TAGS.has(tag)) return false
 
   const widthOnly = type === 'text' || WIDTH_ONLY_RESIZE_TAGS.has(tag)
   return {
@@ -226,6 +228,25 @@ export function directResizeOptions(tagName: string, componentType = ''): Resize
       bc: false,
     } : {}),
   }
+}
+
+export function resizeOptionsForComponent(component: Component): ResizerOptions | false {
+  if (isGridSection(component) || isGridContent(component) || isGridItem(component)) return false
+  const owningGridItem = gridItemFor(component)
+  if (owningGridItem && component.parent() === owningGridItem) return false
+  return directResizeOptions(
+    String(component.get('tagName') ?? ''),
+    String(component.get('type') ?? ''),
+  )
+}
+
+export function applyComponentResizePolicy(component: Component) {
+  const descendants = (parent: Component): Component[] => parent.components().models.flatMap(
+    (child) => [child, ...descendants(child)],
+  )
+  const components = [component, ...descendants(component)]
+  components.forEach((candidate) => candidate.set('resizable', resizeOptionsForComponent(candidate)))
+  return components.length
 }
 
 type InlineStyleRte = {
@@ -852,15 +873,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
 
     let canvasResizeObserver: ResizeObserver | undefined
     let gridCanvasControlsCleanup: () => void = () => undefined
-    let nativeGridDrag: {
-      document: Document
-      item: Component
-      previous?: Component
-      next?: Component
-      startX?: number
-      lastX?: number
-      trackPointer: (event: MouseEvent) => void
-    } | null = null
     const canvasDoubleClickCleanups: Array<() => void> = []
     const canvasDoubleClickDocuments = new WeakSet<Document>()
     const authDoubleClickElements = new WeakSet<HTMLElement>()
@@ -1329,6 +1341,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         syncPages()
         syncPreviewViewport()
         const initialPageGrid = ensurePageGrid(editor)
+        const selectedRoot = editor.Pages.getSelected()?.getMainComponent()
+        if (selectedRoot) applyComponentResizePolicy(selectedRoot)
         const savedSiteMargin = readSiteMargin(editor)
         editor.Css.addRules(GRID_LAYOUT_STYLES)
         setSiteMargin(updateSiteMargin(editor, savedSiteMargin))
@@ -1389,6 +1403,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         syncPages()
         gridCanvasControlsCleanup()
         const pageGrid = ensurePageGrid(editor)
+        const selectedRoot = editor.Pages.getSelected()?.getMainComponent()
+        if (selectedRoot) applyComponentResizePolicy(selectedRoot)
         if (pageGrid) {
           void editor.store().catch((cause: unknown) => {
             setError(cause instanceof Error ? cause.message : 'No se pudo guardar la cuadrícula de la página.')
@@ -1426,62 +1442,12 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         requestAnimationFrame(() => refreshGridCanvasControls())
       })
       editor.on('component:add', (component: Component) => requestAnimationFrame(() => {
-        if (editorRef.current !== editor) return
+        applyComponentResizePolicy(component)
         installDataComponentDoubleClick()
-        placeComponentInGrid(editor, component)
       }))
-      editor.on('component:drag:start', ({ target, component }: {
-        target?: Component
-        component?: Component
-      }) => {
-        const movedComponent = target ?? component
-        const item = gridItemFor(movedComponent)
-        const parent = item?.parent()
-        const document = editor.Canvas.getDocument()
-        if (!item || !parent || !isPageGrid(parent) || !document) return
-        const siblings = parent.components().models
-        const index = siblings.indexOf(item)
-        const trackPointer = (event: MouseEvent) => {
-          if (!nativeGridDrag) return
-          nativeGridDrag.startX ??= event.clientX
-          nativeGridDrag.lastX = event.clientX
-        }
-        nativeGridDrag = {
-          document,
-          item,
-          previous: siblings[index - 1],
-          next: siblings[index + 1],
-          trackPointer,
-        }
-        document.addEventListener('mousemove', trackPointer, true)
-        document.body.classList.add('psl-grid-guides')
-      })
-      editor.on('component:drag:end', ({ target, component }: {
-        target?: Component
-        component?: Component
-      }) => {
-        const movedComponent = target ?? component
-        if (movedComponent) placeComponentInGrid(editor, movedComponent)
-        const drag = nativeGridDrag
-        nativeGridDrag = null
-        if (!drag) return
-        drag.document.removeEventListener('mousemove', drag.trackPointer, true)
-        drag.document.body.classList.remove('psl-grid-guides')
-        const gridElement = drag.item.parent()?.getEl()
-        const horizontalDistance = Math.abs((drag.lastX ?? 0) - (drag.startX ?? drag.lastX ?? 0))
-        if (!gridElement || drag.lastX === undefined || horizontalDistance < 18) return
-        const gridRect = gridElement.getBoundingClientRect()
-        const relativeX = (drag.lastX - gridRect.left) / Math.max(1, gridRect.width)
-        if (!placeGridItemAtHorizontalDrop(drag.item, relativeX, drag.previous, drag.next)) return
-        setSelectedGridItem(drag.item)
-        setGridLayoutRevision((current) => current + 1)
-        requestAnimationFrame(() => refreshGridCanvasControls(drag.item))
-        void editor.store().catch((cause: unknown) => {
-          setError(cause instanceof Error ? cause.message : 'No se pudo guardar la posición del elemento.')
-        })
-      })
-      editor.on('component:remove', (removedComponent: Component) => requestAnimationFrame(() => {
+      editor.on('component:remove', (removedComponent: Component, options?: { action?: string }) => requestAnimationFrame(() => {
         if (editorRef.current !== editor) return
+        if (options?.action === 'move-component') return
         const removedPageGrid = isPageGrid(removedComponent)
         const pageGrid = ensurePageGrid(editor)
         const addedSlotCount = ensureGridSlots(editor)
@@ -1496,15 +1462,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         component: Component
         resizable: boolean | ResizerOptions
       }) => {
-        const component = options.component
-        if (isGridSection(component) || isGridContent(component) || isGridItem(component)) {
-          options.resizable = false
-          return
-        }
-        options.resizable = directResizeOptions(
-          String(component.get('tagName') ?? ''),
-          String(component.get('type') ?? ''),
-        )
+        options.resizable = resizeOptionsForComponent(options.component)
       })
       const showResizeDimensions = ({ el }: { el: HTMLElement }) => {
         window.clearTimeout(resizeNoticeTimerRef.current)
@@ -1612,11 +1570,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     return () => {
       window.clearTimeout(resizeNoticeTimerRef.current)
       canvasResizeObserver?.disconnect()
-      if (nativeGridDrag) {
-        nativeGridDrag.document.removeEventListener('mousemove', nativeGridDrag.trackPointer, true)
-        nativeGridDrag.document.body.classList.remove('psl-grid-guides')
-        nativeGridDrag = null
-      }
       gridCanvasControlsCleanup()
       canvasDoubleClickCleanups.forEach((cleanup) => cleanup())
       ;(editorRef.current as (Editor & { __removePanShortcuts?: () => void }) | null)?.__removePanShortcuts?.()

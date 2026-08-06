@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  applyComponentResizePolicy,
   applyComponentLineHeight,
   applyInlineTextStyle,
   cssColorToHex,
   directResizeOptions,
   installEditorCanvasLayoutGuards,
 } from './OpenSourceEditor'
+import { appendGridItem, createGridLayoutPlugin, ensurePageGrid } from './grid-layout'
+import grapesjs from 'grapesjs'
 
 describe('inline typography controls', () => {
   it('wraps only the highlighted text with the selected font size', () => {
@@ -83,17 +86,32 @@ describe('direct canvas resizing', () => {
     })
   })
 
-  it('allows full resizing for containers and media while Shift controls aspect ratio', () => {
-    expect(directResizeOptions('div')).toMatchObject({
-      minDim: 10,
-      ratioDefault: false,
-      updateOnMove: true,
-    })
+  it('keeps structural containers controlled by their grid cell', () => {
+    expect(directResizeOptions('div')).toBe(false)
+    expect(directResizeOptions('section')).toBe(false)
+  })
+
+  it('allows full resizing for media while Shift controls aspect ratio', () => {
     expect(directResizeOptions('img', 'image')).toMatchObject({ ratioDefault: false })
   })
 
   it('does not resize the document wrapper', () => {
     expect(directResizeOptions('body', 'wrapper')).toBe(false)
+  })
+
+  it('persistently disables resize handles on a grid item and its top-level starter section', () => {
+    const editor = grapesjs.init({ headless: true, storageManager: false, plugins: [createGridLayoutPlugin] })
+    ensurePageGrid(editor)
+    const section = appendGridItem(editor, '<section><div><p>Contenido</p></div></section>')!
+    const item = section.parent()!
+
+    applyComponentResizePolicy(item)
+
+    expect(item.get('resizable')).toBe(false)
+    expect(section.get('resizable')).toBe(false)
+    expect(section.components().at(0)?.get('resizable')).toBe(false)
+    expect(section.components().at(0)?.components().at(0)?.get('resizable')).toMatchObject({ keepAutoHeight: true })
+    editor.destroy()
   })
 })
 

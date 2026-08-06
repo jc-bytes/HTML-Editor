@@ -78,10 +78,10 @@ export function GridLayoutPanel({
             <span aria-hidden="true">▦</span>
             <div>
               <strong>Elemento en cuadrícula</strong>
-              <small>Columnas {placement.start}–{placement.start + placement.span - 1} de {GRID_DESKTOP_COLUMNS}</small>
+              <small>Fila {placement.row} · Columnas {placement.start}–{placement.start + placement.span - 1} de {GRID_DESKTOP_COLUMNS}</small>
             </div>
           </div>
-          <p className="gjs-grid-direct-hint">En escritorio, arrastra los tiradores morados del lienzo para mover o cambiar el ancho.</p>
+          <p className="gjs-grid-direct-hint">Usa el control morado ✥ para mover la celda completa. Suelta a los lados de otra celda para colocarlas juntas.</p>
 
           <label className="gjs-grid-layout-label">Ancho en escritorio</label>
           <div className="gjs-grid-width-options">
