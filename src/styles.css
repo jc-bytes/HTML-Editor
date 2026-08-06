@@ -777,6 +777,30 @@ body {
 .gjs-styles-container,
 .gjs-traits-container { flex: 1; }
 .gjs-manager-container.hidden { display: none; }
+.gjs-properties-container { flex: 1; min-height: 0; overflow: auto; background: #111216; }
+.gjs-properties-container.hidden { display: none; }
+.gjs-grid-layout-panel { display: grid; gap: 10px; padding: 12px; border-bottom: 1px solid var(--ve-border); }
+.gjs-grid-layout-card { display: grid; gap: 10px; padding: 12px; color: #e6e7eb; background: #1a1c21; border: 1px solid #30323a; border-radius: 8px; }
+.gjs-grid-layout-heading { display: grid; grid-template-columns: 28px minmax(0,1fr) auto; align-items: center; gap: 8px; }
+.gjs-grid-layout-heading > span { width: 28px; height: 28px; display: grid; place-items: center; color: #dcd5ff; background: #6f52dc; border-radius: 6px; font-size: 15px; }
+.gjs-grid-layout-heading > div { min-width: 0; display: grid; gap: 2px; }
+.gjs-grid-layout-heading strong { font-size: 12px; }
+.gjs-grid-layout-heading small { color: #9296a0; font-size: 9px; line-height: 1.35; }
+.gjs-grid-layout-heading output { color: #c7bbff; font-size: 11px; font-weight: 800; }
+.gjs-grid-direct-hint { margin: 0; padding: 8px 9px; color: #bcb5d7; background: rgba(111,82,220,.1); border-radius: 5px; font-size: 9px; line-height: 1.4; }
+.gjs-grid-layout-card input[type="range"] { width: 100%; accent-color: #7959ef; }
+.gjs-grid-margin-options { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; }
+.gjs-grid-layout-label { margin-top: 2px; color: #aaaeb8; font-size: 9px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; }
+.gjs-grid-width-options { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 4px; }
+.gjs-grid-align-options,.gjs-grid-order-options { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; }
+.gjs-grid-order-options { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.gjs-grid-width-options button,.gjs-grid-align-options button,.gjs-grid-order-options button,.gjs-grid-margin-options button { min-height: 30px; padding: 5px; color: #c9ccd3; background: #23252b; border: 1px solid #373a43; border-radius: 5px; font-size: 9px; font-weight: 700; cursor: pointer; }
+.gjs-grid-width-options button:hover,.gjs-grid-align-options button:hover,.gjs-grid-order-options button:hover,.gjs-grid-margin-options button:hover { color: white; border-color: #7255e7; }
+.gjs-grid-width-options button.active,.gjs-grid-margin-options button.active { color: white; background: #6f52dc; border-color: #886ff0; }
+.gjs-grid-width-options button:disabled,.gjs-grid-align-options button:disabled,.gjs-grid-order-options button:disabled { opacity: .38; cursor: default; }
+.gjs-grid-add-section { min-height: 36px; color: #eeeaff; background: rgba(111,82,220,.15); border: 1px dashed #7255e7; border-radius: 7px; font-size: 10px; font-weight: 800; cursor: pointer; }
+.gjs-grid-add-section:hover { background: rgba(111,82,220,.28); }
+.gjs-grid-section-note { margin: -2px 2px 0; color: #858a95; font-size: 9px; line-height: 1.4; }
 .gjs-flow-container {
   flex: 1;
   min-height: 0;

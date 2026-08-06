@@ -98,6 +98,24 @@ import {
 import { MotionPanel, MotionSettingsDialog } from './MotionPanel'
 import { AuthSettingsDialog } from './AuthSettingsDialog'
 import { configureStarterBlocks } from './starter-blocks'
+import { GridLayoutPanel } from './GridLayoutPanel'
+import { mountGridCanvasControls } from './grid-canvas-controls'
+import {
+  appendGridItem,
+  createGridLayoutPlugin,
+  DEFAULT_SITE_MARGIN,
+  ensureGridSection,
+  ensureGridSlots,
+  gridItemFor,
+  GRID_LAYOUT_STYLES,
+  installGridEditorStyles,
+  isGridContent,
+  isGridItem,
+  isGridSection,
+  placeComponentInGrid,
+  readSiteMargin,
+  updateSiteMargin,
+} from './grid-layout'
 
 function normalizedGrapesProjectData(value: Record<string, unknown>): ProjectData {
   return {
@@ -797,6 +815,9 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false)
   const [renamingPage, setRenamingPage] = useState<{ id: string; name: string } | null>(null)
   const [selectedElement, setSelectedElement] = useState<ElementSummary | null>(null)
+  const [selectedGridItem, setSelectedGridItem] = useState<Component | null>(null)
+  const [, setGridLayoutRevision] = useState(0)
+  const [siteMargin, setSiteMargin] = useState(DEFAULT_SITE_MARGIN)
   const [selectedMotionComponent, setSelectedMotionComponent] = useState<Component | null>(null)
   const [motionNotice, setMotionNotice] = useState('')
   const [motionDialogOpen, setMotionDialogOpen] = useState(false)
@@ -828,6 +849,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     ) return
 
     let canvasResizeObserver: ResizeObserver | undefined
+    let gridCanvasControlsCleanup: () => void = () => undefined
     const canvasDoubleClickCleanups: Array<() => void> = []
     const canvasDoubleClickDocuments = new WeakSet<Document>()
     const authDoubleClickElements = new WeakSet<HTMLElement>()
@@ -887,7 +909,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         panels: { defaults: [] },
         blockManager: {
           appendTo: blocksRef.current,
-          appendOnClick: true,
+          appendOnClick: false,
         },
         layerManager: { appendTo: layersRef.current },
         styleManager: { appendTo: stylesRef.current },
@@ -916,6 +938,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         },
         plugins: [
           editorAccountStoragePlugin,
+          createGridLayoutPlugin,
           createMotionAnalysisPlugin(),
           presetWebpage,
           blocksBasic,
@@ -1100,6 +1123,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         const summary = summarizeComponent(component)
         const motionComponent = findMotionActivityComponent(component)
         setSelectedElement(summary)
+        setSelectedGridItem(gridItemFor(component) ?? null)
         setSelectedMotionComponent(motionComponent)
         if (!motionComponent) setMotionNotice('')
         setFlowTargetPageId(summary?.targetPageId ?? '')
@@ -1109,6 +1133,21 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           : summary && ['BUTTON', 'A'].includes(summary.tag)
             ? 'flow'
             : current === 'motion' ? 'properties' : current)
+      }
+
+      const refreshGridCanvasControls = (component?: Component | null) => {
+        gridCanvasControlsCleanup()
+        gridCanvasControlsCleanup = mountGridCanvasControls(editor, component ?? editor.getSelected(), {
+          onCommit: () => {
+            void editor.store().catch((cause: unknown) => {
+              setError(cause instanceof Error ? cause.message : 'No se pudo guardar la posición del elemento.')
+            })
+          },
+          onUpdate: (item) => {
+            setSelectedGridItem(item)
+            setGridLayoutRevision((current) => current + 1)
+          },
+        })
       }
 
       const installDataComponentDoubleClick = () => {
@@ -1269,21 +1308,34 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       }
       const handleCanvasBodyLoad = () => {
         stabilizeEditorCanvas()
+        installGridEditorStyles(editor)
         installDataComponentDoubleClick()
+        requestAnimationFrame(() => refreshGridCanvasControls())
       }
       editor.on('canvas:frame:load:head', installEditorViewport)
       editor.on('canvas:frame:load:body', handleCanvasBodyLoad)
       editor.onReady(() => {
         syncPages()
         syncPreviewViewport()
+        const initialGridSection = ensureGridSection(editor)
+        ensureGridSlots(editor)
+        const savedSiteMargin = readSiteMargin(editor)
+        editor.Css.addRules(GRID_LAYOUT_STYLES)
+        setSiteMargin(updateSiteMargin(editor, savedSiteMargin))
         editor.Css.addRules(dataComponentStyles)
         editor.Css.addRules(INTERACTION_STYLES)
+        installGridEditorStyles(editor)
         installEditorViewport()
         stabilizeEditorCanvas()
         installDataComponentDoubleClick()
         if (ensureDataDesignPlaceholders(editor) > 0) {
           void editor.store().catch((cause: unknown) => {
             setError(cause instanceof Error ? cause.message : 'No se pudieron guardar los espacios de diseño.')
+          })
+        }
+        if (initialGridSection) {
+          void editor.store().catch((cause: unknown) => {
+            setError(cause instanceof Error ? cause.message : 'No se pudo guardar la cuadrícula inicial.')
           })
         }
         editor.stopCommand('open-sm')
@@ -1325,11 +1377,24 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       editor.on('page:remove', syncPages)
       editor.on('page:select', () => {
         syncPages()
-        requestAnimationFrame(installDataComponentDoubleClick)
+        gridCanvasControlsCleanup()
+        const gridSection = ensureGridSection(editor)
+        ensureGridSlots(editor)
+        if (gridSection) {
+          void editor.store().catch((cause: unknown) => {
+            setError(cause instanceof Error ? cause.message : 'No se pudo guardar la cuadrícula de la página.')
+          })
+        }
+        requestAnimationFrame(() => {
+          installGridEditorStyles(editor)
+          installDataComponentDoubleClick()
+          refreshGridCanvasControls()
+        })
       })
       editor.on('page:update', syncPages)
       editor.on('device:select', (device: Device | null | undefined, previousDevice: Device | null | undefined) => {
         syncPreviewViewport(device, previousDevice)
+        requestAnimationFrame(() => refreshGridCanvasControls())
       })
       editor.on('canvas:zoom', ({ options }: { options?: { from?: string } }) => {
         const zoom = clampCanvasZoom(editor.Canvas.getZoom())
@@ -1345,9 +1410,11 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       })
       editor.on('component:selected', (component: Component) => {
         syncSelectedElement(component)
+        requestAnimationFrame(() => refreshGridCanvasControls(component))
       })
       editor.on('component:deselected', () => {
         syncSelectedElement(editor.getSelected())
+        requestAnimationFrame(() => refreshGridCanvasControls())
       })
       editor.on('component:add', () => requestAnimationFrame(installDataComponentDoubleClick))
       editor.on('component:resize:init', (options: {
@@ -1355,6 +1422,10 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         resizable: boolean | ResizerOptions
       }) => {
         const component = options.component
+        if (isGridSection(component) || isGridContent(component) || isGridItem(component)) {
+          options.resizable = false
+          return
+        }
         options.resizable = directResizeOptions(
           String(component.get('tagName') ?? ''),
           String(component.get('type') ?? ''),
@@ -1389,14 +1460,27 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           setMotionDialogOpen(true)
         }
         if (block.getId() === DATA_COMPONENT_BLOCK_ID) {
+          const gridItem = component.parent()
           component.remove()
+          if (gridItem?.getAttributes()['data-psl-grid-item'] !== undefined) gridItem.remove()
           setDataComponentRequest((current) => current + 1)
+          return
         }
+        void editor.store().catch((cause: unknown) => {
+          setError(cause instanceof Error ? cause.message : 'No se pudo guardar el elemento añadido.')
+        })
       }
-      editor.on('block:click', () => {
+      editor.on('block:click', (block: Block) => {
         draggedBlockRef.current = null
         setBlockDropActive(false)
-        setBlocksOpen(false)
+        const blockContent = block.getContent()
+        const content = typeof blockContent === 'function' ? blockContent() : blockContent
+        if (!content) return
+        const component = appendGridItem(editor, content)
+        if (component) {
+          editor.select(component)
+          completeBlockInsertion(component, block)
+        }
       })
       editor.on('block:drag:start', (block: Block) => {
         draggedBlockRef.current = block
@@ -1406,6 +1490,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         draggedBlockRef.current = null
         setBlockDropActive(false)
         if (!component) return
+        placeComponentInGrid(editor, component)
         completeBlockInsertion(component, block)
       })
       if (typeof ResizeObserver !== 'undefined' && canvasColumnRef.current) {
@@ -1452,6 +1537,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     return () => {
       window.clearTimeout(resizeNoticeTimerRef.current)
       canvasResizeObserver?.disconnect()
+      gridCanvasControlsCleanup()
       canvasDoubleClickCleanups.forEach((cleanup) => cleanup())
       ;(editorRef.current as (Editor & { __removePanShortcuts?: () => void }) | null)?.__removePanShortcuts?.()
       ;(editorRef.current as (Editor & { __removeCanvasGestures?: () => void }) | null)?.__removeCanvasGestures?.()
@@ -1511,9 +1597,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     const blockContent = block.getContent()
     const content = typeof blockContent === 'function' ? blockContent() : blockContent
     if (!content) return
-    const wrapper = editor.getWrapper()
-    if (!wrapper) return
-    const component = wrapper.append(content)[0]
+    const component = appendGridItem(editor, content)
     if (!component) return
 
     editor.select(component)
@@ -1785,12 +1869,9 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   ) {
     const editor = editorRef.current
     if (!editor) return
-    const wrapper = editor.getWrapper()
-    if (!wrapper) return
     const markup = createDataComponentMarkup(templateId, tableId, mapping, options)
-    const added = wrapper.append(markup)
+    const component = appendGridItem(editor, markup)
     editor.Css.addRules(dataComponentStyles)
-    const component = added[0]
     if (component) {
       editor.select(component)
       setSelectedElement(summarizeComponent(component))
@@ -1886,6 +1967,24 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       name: `Página ${pageNumber}`,
       component: '',
     }, { select: true })
+    ensureGridSection(editor)
+    void editor.store().catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : 'No se pudo guardar la página nueva.')
+    })
+    requestAnimationFrame(() => {
+      installGridEditorStyles(editor)
+    })
+  }
+
+  function handleGridLayoutChange(options: { margin?: number; select?: Component } = {}) {
+    const editor = editorRef.current
+    if (!editor) return
+    if (options.margin !== undefined) setSiteMargin(options.margin)
+    if (options.select) setSelectedGridItem(gridItemFor(options.select) ?? null)
+    setGridLayoutRevision((current) => current + 1)
+    void editor.store().catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : 'No se pudo guardar el diseño de cuadrícula.')
+    })
   }
 
   function addTemplatePage(templateId: string) {
@@ -2181,10 +2280,15 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
             className={`gjs-manager-container gjs-styles-container ${rightPanel === 'styles' ? '' : 'hidden'}`}
             ref={stylesRef}
           />
-          <div
-            className={`gjs-manager-container gjs-traits-container ${rightPanel === 'properties' ? '' : 'hidden'}`}
-            ref={traitsRef}
-          />
+          <div className={`gjs-properties-container ${rightPanel === 'properties' ? '' : 'hidden'}`}>
+            <GridLayoutPanel
+              editor={editorRef.current}
+              item={selectedGridItem}
+              margin={siteMargin}
+              onChange={handleGridLayoutChange}
+            />
+            <div className="gjs-manager-container gjs-traits-container" ref={traitsRef} />
+          </div>
           <div className={`gjs-motion-container ${rightPanel === 'motion' ? '' : 'hidden'}`}>
             <MotionPanel
               component={selectedMotionComponent}
