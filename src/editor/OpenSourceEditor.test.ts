@@ -4,6 +4,7 @@ import {
   applyComponentLineHeight,
   applyInlineTextStyle,
   cssColorToHex,
+  detachSharedResizeDimensions,
   directResizeOptions,
   installEditorCanvasLayoutGuards,
   resizeOptionsForComponent,
@@ -87,17 +88,9 @@ describe('direct canvas resizing', () => {
     })
   })
 
-  it('keeps nested container height automatic while allowing horizontal resizing', () => {
-    expect(directResizeOptions('div')).toMatchObject({
-      bc: false,
-      keepAutoHeight: true,
-      tc: false,
-    })
-    expect(directResizeOptions('section')).toMatchObject({
-      bc: false,
-      keepAutoHeight: true,
-      tc: false,
-    })
+  it('allows ordinary containers to resize horizontally and vertically', () => {
+    expect(directResizeOptions('div')).toMatchObject({ ratioDefault: false })
+    expect(directResizeOptions('section')).toMatchObject({ ratioDefault: false })
   })
 
   it('allows full resizing for media while Shift controls aspect ratio', () => {
@@ -108,7 +101,7 @@ describe('direct canvas resizing', () => {
     expect(directResizeOptions('body', 'wrapper')).toBe(false)
   })
 
-  it('protects layout columns and top-level sections while allowing nested card width changes', () => {
+  it('protects layout columns while allowing their content to resize independently', () => {
     const editor = grapesjs.init({ headless: true, storageManager: false, plugins: [createGridLayoutPlugin] })
     ensurePageGrid(editor)
     const section = appendGridItem(editor, '<section><div><p>Contenido</p></div></section>')!
@@ -117,9 +110,28 @@ describe('direct canvas resizing', () => {
     applyComponentResizePolicy(item)
 
     expect(item.get('resizable')).toBe(false)
-    expect(section.get('resizable')).toBe(false)
-    expect(section.components().at(0)?.get('resizable')).toMatchObject({ keepAutoHeight: true })
+    expect(section.get('resizable')).toMatchObject({ ratioDefault: false })
+    expect(section.components().at(0)?.get('resizable')).toMatchObject({ ratioDefault: false })
     expect(section.components().at(0)?.components().at(0)?.get('resizable')).toMatchObject({ keepAutoHeight: true })
+    editor.destroy()
+  })
+
+  it('removes legacy dimensions from a class shared by components on different pages', () => {
+    const editor = grapesjs.init({
+      headless: true,
+      selectorManager: { componentFirst: true },
+      storageManager: false,
+    })
+    const first = editor.getWrapper()!.append('<div class="shared-card">Uno</div>')[0]
+    const secondPage = editor.Pages.add({ id: 'second', component: '' })!
+    const second = secondPage.getMainComponent().append('<div class="shared-card">Dos</div>')[0]
+    editor.Css.setRule('.shared-card', { width: '420px', height: '260px', color: 'red' })
+
+    expect(secondPage.getMainComponent().components().at(0)?.getClasses()).toContain('shared-card')
+    expect(detachSharedResizeDimensions(editor, first)).toBe(2)
+    expect(editor.Css.getRule('.shared-card')?.getStyle()).toEqual({ color: 'red' })
+    expect(first.getStyle()).toMatchObject({ width: '420px', height: '260px' })
+    expect(second.getStyle()).toMatchObject({ width: '420px', height: '260px' })
     editor.destroy()
   })
 

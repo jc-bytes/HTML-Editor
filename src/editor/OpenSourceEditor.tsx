@@ -166,9 +166,6 @@ const SUPABASE_BLOCK_ICONS = {
 } as const
 
 const NON_RESIZABLE_TAGS = new Set(['body', 'html', 'head', 'script', 'style', 'meta', 'link'])
-const STRUCTURAL_CONTAINER_TAGS = new Set([
-  'article', 'aside', 'div', 'footer', 'form', 'header', 'main', 'nav', 'ol', 'section', 'ul',
-])
 const WIDTH_ONLY_RESIZE_TAGS = new Set([
   'a', 'blockquote', 'button', 'figcaption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'label', 'li', 'p', 'small', 'span', 'strong',
@@ -213,7 +210,7 @@ export function directResizeOptions(tagName: string, componentType = ''): Resize
   const type = componentType.toLowerCase()
   if (type === 'wrapper' || NON_RESIZABLE_TAGS.has(tag)) return false
 
-  const widthOnly = type === 'text' || WIDTH_ONLY_RESIZE_TAGS.has(tag) || STRUCTURAL_CONTAINER_TAGS.has(tag)
+  const widthOnly = type === 'text' || WIDTH_ONLY_RESIZE_TAGS.has(tag)
   return {
     minDim: 10,
     ratioDefault: false,
@@ -232,13 +229,47 @@ export function directResizeOptions(tagName: string, componentType = ''): Resize
 
 export function resizeOptionsForComponent(component: Component): ResizerOptions | false {
   if (isGridSection(component) || isGridContent(component) || isGridItem(component)) return false
-  const owningGridItem = gridItemFor(component)
   const tagName = String(component.get('tagName') ?? '').toLowerCase()
-  if (owningGridItem && component.parent() === owningGridItem && STRUCTURAL_CONTAINER_TAGS.has(tagName)) return false
   return directResizeOptions(
     tagName,
     String(component.get('type') ?? ''),
   )
+}
+
+export function detachSharedResizeDimensions(editor: Editor, component: Component) {
+  const classes = component.getClasses()
+  if (!classes.length) return 0
+  const descendants = (parent: Component): Component[] => parent.components().models.flatMap(
+    (child) => [child, ...descendants(child)],
+  )
+  const allComponents = editor.Pages.getAll().flatMap((page) => {
+    const root = page.getMainComponent()
+    return [root, ...descendants(root)]
+  })
+  const sharedClasses = classes.filter((className) => allComponents.filter(
+    (candidate) => candidate.getClasses().includes(className),
+  ).length > 1)
+  if (!sharedClasses.length) return 0
+
+  const styleManager = editor.StyleManager as typeof editor.StyleManager & {
+    getModelToStyle: (
+      target: Component,
+      options: { skipAdd: boolean; useClasses: boolean },
+    ) => { getStyle?: () => Record<string, string>; setStyle?: (style: Record<string, string>) => void }
+  }
+  const classRule = styleManager.getModelToStyle(component, { skipAdd: true, useClasses: true })
+  const style = classRule?.getStyle?.()
+  if (!style || (!style.width && !style.height)) return 0
+  const legacyDimensions = {
+    ...(style.width ? { width: style.width } : {}),
+    ...(style.height ? { height: style.height } : {}),
+  }
+  allComponents
+    .filter((candidate) => classes.every((className) => candidate.getClasses().includes(className)))
+    .forEach((candidate) => candidate.addStyle(legacyDimensions))
+  const { width: _width, height: _height, ...preservedStyle } = style
+  classRule.setStyle?.(preservedStyle)
+  return Number(Boolean(style.width)) + Number(Boolean(style.height))
 }
 
 export function applyComponentResizePolicy(component: Component) {
@@ -935,6 +966,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           appendOnClick: false,
         },
         layerManager: { appendTo: layersRef.current },
+        selectorManager: { componentFirst: true },
         styleManager: { appendTo: stylesRef.current },
         traitManager: { appendTo: traitsRef.current },
         colorPicker: {
@@ -1450,6 +1482,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         setResizeDimensions(`${Math.round(rect.width)} × ${Math.round(rect.height)} px`)
       }
       editor.on('component:resize:start', (event: { component: Component; el: HTMLElement }) => {
+        detachSharedResizeDimensions(editor, event.component)
         if (event.el.ownerDocument.defaultView?.getComputedStyle(event.el).display === 'inline') {
           event.component.addStyle({ display: 'inline-block' })
         }
