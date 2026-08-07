@@ -789,6 +789,11 @@ body {
 .gjs-grid-layout-heading output { color: #c7bbff; font-size: 11px; font-weight: 800; }
 .gjs-grid-direct-hint { margin: 0; padding: 8px 9px; color: #bcb5d7; background: rgba(111,82,220,.1); border-radius: 5px; font-size: 9px; line-height: 1.4; }
 .gjs-grid-layout-card input[type="range"] { width: 100%; accent-color: #7959ef; }
+.gjs-grid-layout-card > select { min-height: 32px; padding: 5px 8px; color: #e6e7eb; background: #23252b; border: 1px solid #373a43; border-radius: 5px; }
+.gjs-section-column-widths { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
+.gjs-section-column-widths label { min-width: 0; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 3px; padding: 5px; color: #c9ccd3; background: #23252b; border: 1px solid #373a43; border-radius: 5px; font-size: 9px; }
+.gjs-section-column-widths input { min-width: 0; width: 100%; padding: 3px; color: #fff; background: #17191d; border: 1px solid #40434d; border-radius: 3px; font: inherit; }
+.gjs-section-column-widths input:disabled { color: #b9adc8; opacity: .75; }
 .gjs-grid-margin-options { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; }
 .gjs-grid-layout-label { margin-top: 2px; color: #aaaeb8; font-size: 9px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; }
 .gjs-grid-width-options { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 4px; }

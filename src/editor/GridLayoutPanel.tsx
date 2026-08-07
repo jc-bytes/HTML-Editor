@@ -12,6 +12,15 @@ import {
   updateLayoutPreset,
   updateSiteMargin,
 } from './grid-layout'
+import {
+  readSectionLayoutSettings,
+  sectionGridFor,
+  updateSectionColumnCount,
+  updateSectionColumnWidth,
+  updateSectionGap,
+  updateSectionMargin,
+  updateSectionPadding,
+} from './section-layout'
 
 export function GridLayoutPanel({
   editor,
@@ -27,6 +36,8 @@ export function GridLayoutPanel({
   const row = layoutRowFor(item)
   const settings = readLayoutSettings(row)
   const order = layoutRowOrder(row)
+  const sectionGrid = sectionGridFor(item)
+  const sectionSettings = readSectionLayoutSettings(sectionGrid)
 
   const applyMargin = (value: number) => {
     if (!editor) return
@@ -78,6 +89,85 @@ export function GridLayoutPanel({
           ))}
         </div>
       </section>
+
+      {sectionGrid && (
+        <section className="gjs-grid-layout-card">
+          <div className="gjs-grid-layout-heading">
+            <span aria-hidden="true">▦</span>
+            <div>
+              <strong>Columnas de la sección</strong>
+              <small>Distribuye sus tarjetas sin cambiar otras secciones.</small>
+            </div>
+          </div>
+
+          <label className="gjs-grid-layout-label" htmlFor="psl-section-column-count">Cantidad de columnas</label>
+          <select
+            aria-label="Cantidad de columnas de la sección"
+            id="psl-section-column-count"
+            onChange={(event) => commit(() => updateSectionColumnCount(sectionGrid, Number(event.currentTarget.value)), sectionGrid)}
+            value={sectionSettings.columns.length}
+          >
+            {[1, 2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count}</option>)}
+          </select>
+
+          <label className="gjs-grid-layout-label">Ancho de columnas · 100% total</label>
+          <div className="gjs-section-column-widths">
+            {sectionSettings.columns.map((width, index) => (
+              <label key={index}>
+                <span>{index + 1}</span>
+                <input
+                  aria-label={`Ancho de columna ${index + 1}`}
+                  disabled={index === sectionSettings.columns.length - 1}
+                  max="95"
+                  min="5"
+                  onChange={(event) => commit(
+                    () => updateSectionColumnWidth(sectionGrid, index, Number(event.currentTarget.value)),
+                    sectionGrid,
+                  )}
+                  type="number"
+                  value={width}
+                />
+                <small>%</small>
+              </label>
+            ))}
+          </div>
+          <p className="gjs-grid-direct-hint">La última columna recibe automáticamente el porcentaje restante.</p>
+
+          <label className="gjs-grid-layout-label" htmlFor="psl-section-gap">Espacio entre columnas · {sectionSettings.gap}px</label>
+          <input
+            id="psl-section-gap"
+            max="64"
+            min="0"
+            onInput={(event) => commit(() => updateSectionGap(sectionGrid, Number(event.currentTarget.value)), sectionGrid)}
+            step="4"
+            type="range"
+            value={sectionSettings.gap}
+          />
+
+          <label className="gjs-grid-layout-label" htmlFor="psl-section-margin">Margen vertical de la sección · {sectionSettings.margin}px</label>
+          <input
+            id="psl-section-margin"
+            max="120"
+            min="0"
+            onInput={(event) => commit(() => updateSectionMargin(sectionGrid, Number(event.currentTarget.value)), sectionGrid)}
+            step="4"
+            type="range"
+            value={sectionSettings.margin}
+          />
+
+          <label className="gjs-grid-layout-label" htmlFor="psl-section-padding">Espacio interior de la sección · {sectionSettings.padding}px</label>
+          <input
+            id="psl-section-padding"
+            max="120"
+            min="0"
+            onInput={(event) => commit(() => updateSectionPadding(sectionGrid, Number(event.currentTarget.value)), sectionGrid)}
+            step="4"
+            type="range"
+            value={sectionSettings.padding}
+          />
+          <p className="gjs-grid-direct-hint">En móvil, las columnas se apilan automáticamente.</p>
+        </section>
+      )}
 
       {row && (
         <section className="gjs-grid-layout-card">

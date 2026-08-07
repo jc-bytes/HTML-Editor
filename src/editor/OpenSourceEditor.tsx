@@ -117,6 +117,13 @@ import {
   readSiteMargin,
   updateSiteMargin,
 } from './grid-layout'
+import {
+  createSectionLayoutPlugin,
+  isSectionGrid,
+  SECTION_LAYOUT_OPEN_EVENT,
+  SECTION_LAYOUT_STYLES,
+  sectionGridFor,
+} from './section-layout'
 
 function normalizedGrapesProjectData(value: Record<string, unknown>): ProjectData {
   return {
@@ -917,6 +924,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     const canvasDoubleClickCleanups: Array<() => void> = []
     const canvasDoubleClickDocuments = new WeakSet<Document>()
     const authDoubleClickElements = new WeakSet<HTMLElement>()
+    const sectionDoubleClickElements = new WeakSet<HTMLElement>()
     try {
       const editorAccountStoragePlugin = (editor: Editor) => {
         editor.Storage.add('editor-account', {
@@ -1004,6 +1012,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         plugins: [
           editorAccountStoragePlugin,
           createGridLayoutPlugin,
+          createSectionLayoutPlugin,
           createMotionAnalysisPlugin(),
           presetWebpage,
           blocksBasic,
@@ -1192,7 +1201,9 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         const summary = summarizeComponent(component)
         const motionComponent = findMotionActivityComponent(component)
         setSelectedElement(summary)
-        setSelectedGridItem(gridItemFor(component) ?? (component && isLayoutRow(component) ? component : null))
+        setSelectedGridItem(sectionGridFor(component)
+          ?? gridItemFor(component)
+          ?? (component && isLayoutRow(component) ? component : null))
         setSelectedMotionComponent(motionComponent)
         if (!motionComponent) setMotionNotice('')
         setFlowTargetPageId(summary?.targetPageId ?? '')
@@ -1203,10 +1214,20 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
             ? 'flow'
             : current === 'motion' ? 'properties' : current)
       }
+      editor.on(SECTION_LAYOUT_OPEN_EVENT, (component: Component) => {
+        editor.select(component)
+        syncSelectedElement(component)
+        setRightPanel('properties')
+      })
 
       const installDataComponentDoubleClick = () => {
         const canvasDocument = editor.Canvas.getDocument()
         if (!canvasDocument) return
+        const root = editor.Pages.getSelected()?.getMainComponent()
+        const descendants = (parent: Component): Component[] => parent.components().models.flatMap(
+          (child) => [child, ...descendants(child)],
+        )
+        const pageComponents = root ? [root, ...descendants(root)] : []
         const openAuthComponentOptions = (event: MouseEvent) => {
           const rootElement = event.currentTarget as HTMLElement | null
           if (!rootElement) return
@@ -1233,6 +1254,24 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           if (!element.title) element.title = 'Doble clic para configurar Supabase Auth'
           element.addEventListener('dblclick', openAuthComponentOptions, true)
           canvasDoubleClickCleanups.push(() => element.removeEventListener('dblclick', openAuthComponentOptions, true))
+        })
+        pageComponents.filter(isSectionGrid).forEach((component) => {
+          const element = component.getEl() as HTMLElement | undefined
+          if (!element) return
+          if (sectionDoubleClickElements.has(element)) return
+          sectionDoubleClickElements.add(element)
+          if (!element.title) element.title = 'Doble clic para configurar las columnas de esta sección'
+          const openSectionLayoutOptions = (event: MouseEvent) => {
+            const target = event.target as Element | null
+            if (!target || findDataComponentRoot(target) || target.closest?.(`[data-motion-activity],[${AUTH_ACTION_ATTRIBUTE}]`)) return
+            event.preventDefault()
+            event.stopPropagation()
+            editor.select(component)
+            syncSelectedElement(component)
+            setRightPanel('properties')
+          }
+          element.addEventListener('dblclick', openSectionLayoutOptions, true)
+          canvasDoubleClickCleanups.push(() => element.removeEventListener('dblclick', openSectionLayoutOptions, true))
         })
         if (canvasDoubleClickDocuments.has(canvasDocument)) return
         canvasDoubleClickDocuments.add(canvasDocument)
@@ -1380,6 +1419,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         editor.Css.addRules(dataComponentStyles)
         editor.Css.addRules(INTERACTION_STYLES)
         editor.Css.addRules(STARTER_LAYOUT_RESIZE_STYLES)
+        editor.Css.addRules(SECTION_LAYOUT_STYLES)
         installGridEditorStyles(editor)
         installEditorViewport()
         stabilizeEditorCanvas()
@@ -2040,7 +2080,9 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     if (!editor) return
     if (options.margin !== undefined) setSiteMargin(options.margin)
     if (options.select) {
-      setSelectedGridItem(gridItemFor(options.select) ?? (isLayoutRow(options.select) ? options.select : null))
+      setSelectedGridItem(sectionGridFor(options.select)
+        ?? gridItemFor(options.select)
+        ?? (isLayoutRow(options.select) ? options.select : null))
     }
     setGridLayoutRevision((current) => current + 1)
     void editor.store().catch((cause: unknown) => {
