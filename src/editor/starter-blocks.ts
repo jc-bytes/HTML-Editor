@@ -1,12 +1,12 @@
 import type { Editor } from 'grapesjs'
 
-const starterStyles = `<style>
+export const starterStyles = `<style>
 .psl-starter-section{width:100%;padding:clamp(28px,5vw,64px);color:#17302e;background:#f7faf9;font-family:Inter,ui-sans-serif,system-ui,sans-serif}
-.psl-starter-grid{display:grid;gap:20px;align-items:stretch}
+.psl-starter-grid{display:grid;gap:20px;align-items:start}
 .psl-starter-grid--2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .psl-starter-grid--3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .psl-starter-grid--aside{grid-template-columns:minmax(180px,.35fr) minmax(0,1fr)}
-.psl-starter-card{min-width:0;padding:24px;background:#fff;border:1px solid #d8e3e1;border-radius:16px;box-shadow:0 10px 24px rgba(20,55,52,.07)}
+.psl-starter-card{min-width:0;align-self:start;padding:24px;background:#fff;border:1px solid #d8e3e1;border-radius:16px;box-shadow:0 10px 24px rgba(20,55,52,.07)}
 .psl-starter-card h2,.psl-starter-card h3{margin:0 0 10px;color:#173f3d;line-height:1.15}
 .psl-starter-card p{margin:0;color:#58706c;line-height:1.6}
 .psl-starter-eyebrow{margin:0 0 10px!important;color:#6d53d9!important;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
@@ -39,9 +39,9 @@ export const starterLayoutBlocks = {
   </section>${starterStyles}`,
   column3: `<section class="psl-starter-section" data-gjs-name="Tres tarjetas">
     <div class="psl-starter-grid psl-starter-grid--3">
-      <article class="psl-starter-card"><div class="psl-starter-number">1</div><h3>Primer beneficio</h3><p>Describe una idea principal con una frase breve y fácil de entender.</p></article>
-      <article class="psl-starter-card"><div class="psl-starter-number">2</div><h3>Segundo beneficio</h3><p>Cambia el texto, el color o agrega una imagen para personalizar esta tarjeta.</p></article>
-      <article class="psl-starter-card"><div class="psl-starter-number">3</div><h3>Tercer beneficio</h3><p>Las tarjetas se acomodan automáticamente en pantallas pequeñas.</p></article>
+      <article class="psl-starter-card" data-gjs-name="Tarjeta 1"><div class="psl-starter-number">1</div><h3>Primer beneficio</h3><p>Describe una idea principal con una frase breve y fácil de entender.</p></article>
+      <article class="psl-starter-card" data-gjs-name="Tarjeta 2"><div class="psl-starter-number">2</div><h3>Segundo beneficio</h3><p>Cambia el texto, el color o agrega una imagen para personalizar esta tarjeta.</p></article>
+      <article class="psl-starter-card" data-gjs-name="Tarjeta 3"><div class="psl-starter-number">3</div><h3>Tercer beneficio</h3><p>Las tarjetas se acomodan automáticamente en pantallas pequeñas.</p></article>
     </div>
   </section>${starterStyles}`,
   'column3-7': `<section class="psl-starter-section" data-gjs-name="Barra lateral y contenido">

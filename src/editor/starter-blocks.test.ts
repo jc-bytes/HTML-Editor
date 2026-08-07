@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import grapesjs from 'grapesjs'
 import blocksBasic from 'grapesjs-blocks-basic'
 import pluginForms from 'grapesjs-plugin-forms'
-import { configureStarterBlocks, starterLayoutBlocks } from './starter-blocks'
+import { configureStarterBlocks, starterLayoutBlocks, starterStyles } from './starter-blocks'
 
 describe('starter component blocks', () => {
   it('replaces empty column shells with visible, editable examples', () => {
@@ -16,6 +16,9 @@ describe('starter component blocks', () => {
     expect(String(editor.BlockManager.get('column3')?.getContent())).toContain('Tercer beneficio')
     expect(String(editor.BlockManager.get('column3-7')?.getContent())).toContain('Contenido principal')
     expect(Object.values(starterLayoutBlocks).every((content) => content.includes('@media(max-width:767px)'))).toBe(true)
+    expect(starterStyles).toContain('align-items:start')
+    expect(starterStyles).toContain('align-self:start')
+    expect(starterLayoutBlocks.column3).toContain('data-gjs-name="Tarjeta 1"')
 
     editor.destroy()
     container.remove()

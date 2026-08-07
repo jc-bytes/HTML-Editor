@@ -170,6 +170,10 @@ const WIDTH_ONLY_RESIZE_TAGS = new Set([
   'a', 'blockquote', 'button', 'figcaption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'label', 'li', 'p', 'small', 'span', 'strong',
 ])
+const FIXED_LAYOUT_COMPONENT_CLASSES = new Set([
+  'psl-starter-section',
+  'psl-starter-grid',
+])
 const INLINE_FONT_FAMILIES = [
   ['inherit', 'Predeterminada'],
   ['Arial, sans-serif', 'Arial'],
@@ -205,6 +209,11 @@ const INTERACTION_STYLES = `
   }
 `
 
+export const STARTER_LAYOUT_RESIZE_STYLES = `
+  .psl-starter-grid { align-items: start; }
+  .psl-starter-card { align-self: start; }
+`
+
 export function directResizeOptions(tagName: string, componentType = ''): ResizerOptions | false {
   const tag = tagName.toLowerCase()
   const type = componentType.toLowerCase()
@@ -229,6 +238,7 @@ export function directResizeOptions(tagName: string, componentType = ''): Resize
 
 export function resizeOptionsForComponent(component: Component): ResizerOptions | false {
   if (isGridSection(component) || isGridContent(component) || isGridItem(component)) return false
+  if (component.getClasses().some((className) => FIXED_LAYOUT_COMPONENT_CLASSES.has(className))) return false
   const tagName = String(component.get('tagName') ?? '').toLowerCase()
   return directResizeOptions(
     tagName,
@@ -1052,6 +1062,10 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         },
       })
 
+      // Some GrapesJS plugins initialize their selector settings after the base
+      // configuration. Reassert component-first styling so dimensions always
+      // belong to the selected component instead of a reusable CSS class.
+      editor.SelectorManager.setComponentFirst(true)
       editorRef.current = editor
       editor.Pages.select(BLANK_PAGE.id)
       installInlineTypographyControls(editor)
@@ -1354,6 +1368,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       editor.on('canvas:frame:load:head', installEditorViewport)
       editor.on('canvas:frame:load:body', handleCanvasBodyLoad)
       editor.onReady(() => {
+        editor.SelectorManager.setComponentFirst(true)
         syncPages()
         syncPreviewViewport()
         const initialPageGrid = ensurePageGrid(editor)
@@ -1364,6 +1379,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         setSiteMargin(updateSiteMargin(editor, savedSiteMargin))
         editor.Css.addRules(dataComponentStyles)
         editor.Css.addRules(INTERACTION_STYLES)
+        editor.Css.addRules(STARTER_LAYOUT_RESIZE_STYLES)
         installGridEditorStyles(editor)
         installEditorViewport()
         stabilizeEditorCanvas()

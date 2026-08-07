@@ -116,6 +116,45 @@ describe('direct canvas resizing', () => {
     editor.destroy()
   })
 
+  it('protects starter layout wrappers while keeping each card fully resizable', () => {
+    const editor = grapesjs.init({ headless: true, storageManager: false })
+    const section = editor.getWrapper()!.append(`
+      <section class="psl-starter-section">
+        <div class="psl-starter-grid psl-starter-grid--3">
+          <article class="psl-starter-card">Tarjeta</article>
+        </div>
+      </section>
+    `)[0]
+    const grid = section.components().at(0)!
+    const card = grid.components().at(0)!
+
+    expect(resizeOptionsForComponent(section)).toBe(false)
+    expect(resizeOptionsForComponent(grid)).toBe(false)
+    expect(resizeOptionsForComponent(card)).toMatchObject({ ratioDefault: false })
+    editor.destroy()
+  })
+
+  it('stores dimension changes on one component instead of its shared class', () => {
+    const editor = grapesjs.init({
+      headless: true,
+      selectorManager: { componentFirst: true },
+      storageManager: false,
+    })
+    editor.SelectorManager.setComponentFirst(true)
+    const [first, second] = editor.getWrapper()!.append(`
+      <article class="shared-card">Uno</article>
+      <article class="shared-card">Dos</article>
+    `)
+    const styleTarget = editor.StyleManager.getModelToStyle(first)
+
+    styleTarget.addStyle({ width: '320px', height: '180px' })
+
+    expect(first.getStyle()).toMatchObject({ width: '320px', height: '180px' })
+    expect(second.getStyle()).not.toHaveProperty('width')
+    expect(editor.Css.getRule('.shared-card')?.getStyle()?.width).toBeUndefined()
+    editor.destroy()
+  })
+
   it('removes legacy dimensions from a class shared by components on different pages', () => {
     const editor = grapesjs.init({
       headless: true,
