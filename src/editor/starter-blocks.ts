@@ -1,4 +1,315 @@
-import type { Editor } from 'grapesjs'
+import type { Component, Editor } from 'grapesjs'
+import navbar from 'grapesjs-navbar'
+import {
+  AUTH_ACTION_ATTRIBUTE,
+  AUTH_PRESENTATION_ATTRIBUTE,
+  type AuthLogoutPresentation,
+} from '../core/auth-components'
+
+export const starterNavbarStyles = `
+.builder-navbar {
+  width: 100%;
+  min-height: 72px;
+  color: #17324d;
+  background: #fff;
+  border-bottom: 1px solid #e4ece9;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+.builder-navbar-container {
+  width: min(100% - 36px, 1120px);
+  min-height: 72px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+.builder-navbar-brand {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #17324d;
+  text-decoration: none;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.builder-navbar-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #178579;
+  border-radius: 9px;
+  font-size: 12px;
+  letter-spacing: -.02em;
+}
+.builder-navbar-name { font-size: 15px; letter-spacing: -.015em; }
+.builder-navbar-items-c { margin-left: auto; }
+.builder-navbar-menu {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: #f2f7f5;
+  border-radius: 12px;
+}
+.builder-navbar-menu-link {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 16px;
+  color: #50677a;
+  border-radius: 9px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+  transition: color .18s ease, background .18s ease;
+}
+.builder-navbar-menu-link:hover { color: #176f68; background: #e5efec; }
+.builder-navbar-menu-link.is-active {
+  color: #fff;
+  background: #178579;
+  box-shadow: 0 4px 12px rgba(23, 133, 121, .18);
+}
+.builder-navbar-logout {
+  width: 44px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0;
+  color: #66798a;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: color .18s ease, background .18s ease;
+}
+.builder-navbar-logout:hover { color: #17324d; background: #e5efec; }
+.builder-navbar-logout--text,
+.builder-navbar-logout--both { width: auto; padding: 0 15px; font: inherit; font-size: 14px; font-weight: 700; }
+.builder-navbar-logout--both { gap: 8px; padding: 0 13px; white-space: nowrap; }
+.builder-navbar-logout svg {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+.builder-navbar-logout--both span { line-height: 1; }
+.builder-navbar-burger {
+  width: 42px;
+  height: 42px;
+  margin-left: auto;
+  display: none;
+  padding: 10px;
+  background: #f2f7f5;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.builder-navbar-burger-line {
+  height: 2px;
+  margin: 4px 0;
+  padding: 0;
+  background: #17324d;
+  border-radius: 2px;
+}
+@media (max-width: 820px) {
+  .builder-navbar-container { flex-wrap: wrap; padding: 14px 0; }
+  .builder-navbar-burger { display: block; }
+  .builder-navbar-items-c { width: 100%; margin-left: 0; display: none; }
+  .builder-navbar-menu { width: 100%; display: grid; gap: 3px; }
+  .builder-navbar-menu-link { width: 100%; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .builder-navbar-menu-link, .builder-navbar-logout { transition: none; }
+}`
+
+export const starterNavbarLogoutIcon = '<svg aria-hidden="true" fill="none" height="22" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="22"><path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4M14 8l4 4-4 4M9 12h9"/></svg>'
+
+export const starterNavbarLogoutButton = `<button aria-label="Cerrar sesión" class="builder-navbar-logout" data-builder-auth-action="logout" data-builder-auth-presentation="icon" data-builder-auth-visible="signed-in" data-gjs-name="Cerrar sesión" title="Cerrar sesión" type="button">${starterNavbarLogoutIcon}</button>`
+
+export const starterNavbarBlock = {
+  type: 'navbar',
+  components: [{
+    type: 'navbar-container',
+    components: [{
+      type: 'link',
+      attributes: { 'aria-label': 'Inicio', class: 'builder-navbar-brand', href: '#' },
+      components: [
+        { tagName: 'span', attributes: { class: 'builder-navbar-mark' }, components: 'T' },
+        { tagName: 'span', attributes: { class: 'builder-navbar-name' }, components: 'Tu sitio' },
+      ],
+    }, {
+      type: 'navbar-burger-menu',
+    }, {
+      attributes: { class: 'builder-navbar-items-c', 'data-gjs': 'navbar-items' },
+      components: {
+        type: 'navbar-nav-menu',
+        components: [
+          { type: 'navbar-nav-menu-link', attributes: { class: 'builder-navbar-menu-link is-active', href: '#' }, components: 'Inicio' },
+          { type: 'navbar-nav-menu-link', attributes: { class: 'builder-navbar-menu-link', href: '#servicios' }, components: 'Servicios' },
+          { type: 'navbar-nav-menu-link', attributes: { class: 'builder-navbar-menu-link', href: '#proyectos' }, components: 'Proyectos' },
+          { type: 'navbar-nav-menu-link', attributes: { class: 'builder-navbar-menu-link', href: '#nosotros' }, components: 'Nosotros' },
+          { type: 'navbar-nav-menu-link', attributes: { class: 'builder-navbar-menu-link', href: '#contacto' }, components: 'Contacto' },
+        ],
+      },
+    }],
+  }],
+}
+
+export function resolveNavbarPlugin(candidate: unknown): typeof navbar {
+  let current = candidate
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (typeof current === 'function') return current as typeof navbar
+    if (!current || typeof current !== 'object') break
+    current = (current as { default?: unknown }).default
+  }
+  throw new Error('No se pudo cargar el componente de barra de navegación.')
+}
+
+export function starterNavbarPlugin(editor: Editor) {
+  resolveNavbarPlugin(navbar)(editor, {
+    block: {
+      category: 'Elementos',
+      content: starterNavbarBlock,
+    },
+    classPrefix: 'builder-navbar',
+    label: 'Barra de navegación',
+    style: starterNavbarStyles,
+  })
+}
+
+function navbarLogoutStyle(presentation: AuthLogoutPresentation) {
+  return {
+    display: 'inline-flex',
+    'align-items': 'center',
+    'justify-content': 'center',
+    'flex-direction': 'row',
+    width: presentation === 'icon' ? '44px' : 'auto',
+    height: '38px',
+    padding: presentation === 'icon' ? '0' : presentation === 'both' ? '0 13px' : '0 15px',
+    gap: presentation === 'both' ? '8px' : '0',
+    color: '#66798a',
+    'background-color': 'transparent',
+    border: '0',
+    'border-radius': '9px',
+    cursor: 'pointer',
+    'font-family': 'inherit',
+    'font-size': '14px',
+    'font-weight': '700',
+    'line-height': '1',
+    'white-space': 'nowrap',
+  }
+}
+
+export function normalizeStarterNavbars(editor: Editor) {
+  const classByType: Record<string, string> = {
+    navbar: 'builder-navbar',
+    'navbar-container': 'builder-navbar-container',
+    'navbar-nav-menu': 'builder-navbar-menu',
+    'navbar-nav-menu-link': 'builder-navbar-menu-link',
+    'navbar-burger-menu': 'builder-navbar-burger',
+    'navbar-burger-menu-line': 'builder-navbar-burger-line',
+  }
+  let changed = 0
+  const visit = (component?: Component, insideNavbar = false) => {
+    if (!component) return
+    const type = String(component.get('type') ?? '')
+    const isInsideNavbar = insideNavbar || type === 'navbar'
+    const expectedClass = classByType[type]
+    if (expectedClass) {
+      const legacyClass = type === 'navbar'
+        ? 'navbar'
+        : type === 'navbar-container'
+          ? 'navbar-container'
+          : type === 'navbar-nav-menu'
+            ? 'navbar-menu'
+            : type === 'navbar-nav-menu-link'
+              ? 'navbar-menu-link'
+              : type === 'navbar-burger-menu' ? 'navbar-burger' : 'navbar-burger-line'
+      const classes = component.getClasses()
+      if (classes.includes(legacyClass)) {
+        component.removeClass(legacyClass)
+        changed += 1
+      }
+      if (!component.getClasses().includes(expectedClass)) {
+        component.addClass(expectedClass)
+        changed += 1
+      }
+    }
+    if (isInsideNavbar && component.getAttributes()[AUTH_ACTION_ATTRIBUTE] === 'logout') {
+      const savedPresentation = component.getAttributes()[AUTH_PRESENTATION_ATTRIBUTE]
+      const presentation: AuthLogoutPresentation = savedPresentation === 'icon'
+        || savedPresentation === 'text'
+        || savedPresentation === 'both'
+        ? savedPresentation
+        : component.getInnerHTML().includes('<svg') ? 'icon' : 'text'
+      const style = component.getStyle()
+      const expectedStyle = navbarLogoutStyle(presentation)
+      const markup = component.getInnerHTML()
+      const hasIcon = markup.includes('<svg')
+      const hasLabel = markup.includes('Cerrar sesión')
+      const classes = component.getClasses()
+      const needsRepair = savedPresentation !== presentation
+        || hasIcon !== (presentation !== 'text')
+        || hasLabel !== (presentation !== 'icon')
+        || !classes.includes('builder-navbar-logout')
+        || classes.includes('builder-navbar-logout--text') !== (presentation === 'text')
+        || classes.includes('builder-navbar-logout--both') !== (presentation === 'both')
+        || Object.entries(expectedStyle).some(([property, value]) => style[property] !== value)
+      if (needsRepair) {
+        applyNavbarLogoutPresentation(component, presentation)
+        changed += 1
+      }
+    }
+    component.components().models.forEach((child) => visit(child, isInsideNavbar))
+  }
+  editor.Pages.getAll().forEach((page) => visit(page.getMainComponent()))
+  return changed
+}
+
+export function applyNavbarLogoutPresentation(
+  component: Component,
+  presentation: AuthLogoutPresentation,
+) {
+  component.components(presentation === 'icon'
+    ? starterNavbarLogoutIcon
+    : presentation === 'both'
+      ? `${starterNavbarLogoutIcon}<span>Cerrar sesión</span>`
+      : 'Cerrar sesión')
+  component.addClass('builder-navbar-logout')
+  if (presentation === 'text') component.addClass('builder-navbar-logout--text')
+  else component.removeClass('builder-navbar-logout--text')
+  if (presentation === 'both') component.addClass('builder-navbar-logout--both')
+  else component.removeClass('builder-navbar-logout--both')
+  component.addAttributes({
+    [AUTH_PRESENTATION_ATTRIBUTE]: presentation,
+    'aria-label': 'Cerrar sesión',
+    title: 'Cerrar sesión',
+  })
+  component.setStyle(navbarLogoutStyle(presentation))
+}
+
+export function updateStarterNavbarLink(
+  component: Component,
+  settings: { active: boolean; href?: string; label: string },
+) {
+  const label = settings.label.trim() || 'Enlace'
+  const encodedLabel = document.createElement('span')
+  encodedLabel.textContent = label
+  component.components(encodedLabel.innerHTML)
+  if (settings.href !== undefined) component.addAttributes({ href: settings.href.trim() || '#' })
+  const siblings = component.parent()?.components().models ?? []
+  siblings.forEach((candidate) => candidate.removeClass('is-active'))
+  if (settings.active) component.addClass('is-active')
+}
 
 export const starterStyles = `<style>
 .builder-starter-section{width:100%;padding:clamp(28px,5vw,64px);color:#17302e;background:#f7faf9;font-family:Inter,ui-sans-serif,system-ui,sans-serif}
@@ -111,6 +422,11 @@ export function configureStarterBlocks(editor: Editor) {
   })
   editor.BlockManager.get('video')?.set({ category: 'Elementos', label: 'Video' })
   editor.BlockManager.get('map')?.set({ category: 'Elementos', label: 'Mapa' })
+  editor.BlockManager.get('navbar')?.set({
+    category: 'Elementos',
+    content: starterNavbarBlock,
+    label: 'Barra de navegación',
+  })
 
   editor.BlockManager.get('form')?.set({
     category: 'Formularios',

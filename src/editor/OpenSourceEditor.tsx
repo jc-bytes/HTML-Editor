@@ -12,7 +12,6 @@ import type {
 } from 'grapesjs'
 import blocksBasic from 'grapesjs-blocks-basic'
 import pluginForms from 'grapesjs-plugin-forms'
-import navbar from 'grapesjs-navbar'
 import presetWebpage from 'grapesjs-preset-webpage'
 import tabs from 'grapesjs-tabs'
 import touch from 'grapesjs-touch'
@@ -33,7 +32,11 @@ import {
   readAuthMetadataFields,
   readAuthComponentSettings,
 } from '../core/auth-components'
-import type { AuthComponentSettings, AuthMetadataField } from '../core/auth-components'
+import type {
+  AuthComponentSettings,
+  AuthLogoutPresentation,
+  AuthMetadataField,
+} from '../core/auth-components'
 import {
   FLOW_ACTION_ATTRIBUTE,
   FLOW_ACTIVE_LABEL_ATTRIBUTE,
@@ -121,7 +124,18 @@ import {
 } from './motion-analysis'
 import { MotionPanel, MotionSettingsDialog } from './MotionPanel'
 import { AuthSettingsDialog } from './AuthSettingsDialog'
-import { configureStarterBlocks } from './starter-blocks'
+import {
+  applyNavbarLogoutPresentation,
+  configureStarterBlocks,
+  normalizeStarterNavbars,
+  starterNavbarLogoutButton,
+  starterNavbarPlugin,
+  updateStarterNavbarLink,
+} from './starter-blocks'
+import {
+  NavbarLinkSettingsDialog,
+  type NavbarLinkSettings,
+} from './NavbarLinkSettingsDialog'
 import { GridLayoutPanel } from './GridLayoutPanel'
 import {
   appendGridItem,
@@ -215,6 +229,7 @@ type EditorPageAccess = 'public' | 'authenticated' | 'guestOnly' | 'role'
 type EditorPageSummary = {
   access: EditorPageAccess
   id: string
+  isHome: boolean
   name: string
   roles: string[]
 }
@@ -238,6 +253,8 @@ function pageRoute(pageId: string) {
 
 function editorPageSummaries(editor: Editor): EditorPageSummary[] {
   const allPages = editor.Pages.getAll()
+  const homePageId = allPages.find((page) => page.get('isStartPage') === true)?.getId()
+    ?? allPages[0]?.getId()
   const authPageId = allPages.find((page) => editor.getHtml({
     component: page.getMainComponent(),
   }).includes('data-builder-auth-action="login"'))?.getId()
@@ -253,12 +270,30 @@ function editorPageSummaries(editor: Editor): EditorPageSummary[] {
     return {
       access,
       id: page.getId(),
+      isHome: page.getId() === homePageId,
       name: page.getName() || 'Sin título',
       roles: Array.isArray(storedRoles)
         ? storedRoles.filter((role): role is string => typeof role === 'string')
         : [],
     }
   })
+}
+
+function ensureEditorStartPage(editor: Editor) {
+  const allPages = editor.Pages.getAll()
+  const current = allPages.find((page) => page.get('isStartPage') === true) ?? allPages[0]
+  allPages.forEach((page) => page.set('isStartPage', page === current))
+  return current?.getId()
+}
+
+export function reorderedPageIndex(
+  sourceIndex: number,
+  targetIndex: number,
+  position: 'before' | 'after',
+) {
+  let destination = targetIndex + (position === 'after' ? 1 : 0)
+  if (sourceIndex < destination) destination -= 1
+  return Math.max(0, destination)
 }
 
 const DATA_COMPONENT_BLOCK_ID = 'builder-data-component'
@@ -812,6 +847,16 @@ function saveGuestProjectData(projectData: EditorProjectData) {
   localStorage.setItem(GUEST_PROJECT_STORAGE_KEY, JSON.stringify(projectData))
 }
 
+export function isEditableCanvasTarget(target: Element, components: Component[]) {
+  let element: Element | null = target
+  while (element) {
+    const component = components.find((candidate) => candidate.getEl() === element)
+    if (component?.get('editable')) return true
+    element = element.parentElement
+  }
+  return false
+}
+
 function summarizeComponent(component?: Component | null): ElementSummary | null {
   if (!component) return null
 
@@ -1185,13 +1230,14 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const currentCanvasDeviceRef = useRef('desktop')
   const editingDataComponentRef = useRef<Component | null>(null)
   const authSettingsComponentRef = useRef<Component | null>(null)
+  const navbarLinkSettingsComponentRef = useRef<Component | null>(null)
   const draggedBlockRef = useRef<Block | null>(null)
   const panToolLockedRef = useRef(false)
   const initialSupabaseConfigRef = useRef(EMPTY_SUPABASE_CONFIG)
   const supabaseConfigRef = useRef(initialSupabaseConfigRef.current)
   const [error, setError] = useState<string | null>(null)
   const [pages, setPages] = useState<EditorPageSummary[]>([
-    { access: 'public', id: BLANK_PAGE.id, name: BLANK_PAGE.name, roles: [] },
+    { access: 'public', id: BLANK_PAGE.id, isHome: true, name: BLANK_PAGE.name, roles: [] },
   ])
   const [activePageId, setActivePageId] = useState<string>(BLANK_PAGE.id)
   const [rightPanel, setRightPanel] = useState<'styles' | 'properties' | 'motion' | 'flow'>('styles')
@@ -1205,6 +1251,11 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const [pageMenuId, setPageMenuId] = useState<string | null>(null)
   const [pageMenuPosition, setPageMenuPosition] = useState({ left: 0, top: 0 })
   const [pageAccessMenuOpen, setPageAccessMenuOpen] = useState(false)
+  const [draggingPageId, setDraggingPageId] = useState<string | null>(null)
+  const [pageDropTarget, setPageDropTarget] = useState<{
+    id: string
+    position: 'before' | 'after'
+  } | null>(null)
   const [pageImportOpen, setPageImportOpen] = useState(false)
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false)
   const [renamingPage, setRenamingPage] = useState<{ id: string; name: string } | null>(null)
@@ -1216,6 +1267,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const [motionNotice, setMotionNotice] = useState('')
   const [motionDialogOpen, setMotionDialogOpen] = useState(false)
   const [authSettings, setAuthSettings] = useState<AuthComponentSettings | null>(null)
+  const [navbarLinkSettings, setNavbarLinkSettings] = useState<NavbarLinkSettings | null>(null)
   const [activePageHasAuth, setActivePageHasAuth] = useState(false)
   const [flowTargetPageId, setFlowTargetPageId] = useState('')
   const [flowAction, setFlowAction] = useState<'navigate' | 'toggle-record' | DataActionKind>('navigate')
@@ -1238,6 +1290,12 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     width: '100%',
   })
   const [supabaseConfig, setSupabaseConfig] = useState(initialSupabaseConfigRef.current)
+
+  useEffect(() => {
+    if (!error) return
+    const dismissTimer = window.setTimeout(() => setError(null), 5000)
+    return () => window.clearTimeout(dismissTimer)
+  }, [error])
 
   useEffect(() => {
     if (
@@ -1349,7 +1407,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           presetWebpage,
           blocksBasic,
           pluginForms,
-          navbar,
+          starterNavbarPlugin,
           tabs,
           imageEditor,
           touch,
@@ -1483,7 +1541,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         label: 'Cerrar sesión',
         category: 'Supabase',
         media: SUPABASE_BLOCK_ICONS.logout,
-        content: `<button data-builder-auth-action="logout" data-builder-auth-visible="signed-in" type="button" style="${authButtonStyle}">Cerrar sesión</button>`,
+        content: starterNavbarLogoutButton,
       })
       editor.BlockManager.add('builder-auth-email', {
         label: 'Correo del usuario',
@@ -1673,7 +1731,10 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           if (!element.title) element.title = 'Doble clic para configurar las columnas de esta sección'
           const openSectionLayoutOptions = (event: MouseEvent) => {
             const target = event.target as Element | null
-            if (!target || findDataComponentRoot(target) || target.closest?.(`[data-motion-activity],[${AUTH_ACTION_ATTRIBUTE}]`)) return
+            if (!target
+              || isEditableCanvasTarget(target, pageComponents)
+              || findDataComponentRoot(target)
+              || target.closest?.(`[data-motion-activity],[${AUTH_ACTION_ATTRIBUTE}]`)) return
             event.preventDefault()
             event.stopPropagation()
             editor.select(component)
@@ -1683,8 +1744,31 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           element.addEventListener('dblclick', openSectionLayoutOptions, true)
           canvasDoubleClickCleanups.push(() => element.removeEventListener('dblclick', openSectionLayoutOptions, true))
         })
+        canvasDocument.querySelectorAll<HTMLElement>('.builder-navbar-menu-link').forEach((element) => {
+          element.dataset.builderNavbarConfigurable = 'true'
+          if (!element.title) element.title = 'Doble clic para editar este enlace de navegación'
+        })
         if (canvasDoubleClickDocuments.has(canvasDocument)) return
         canvasDoubleClickDocuments.add(canvasDocument)
+        const openNavbarLinkOptions = (event: MouseEvent) => {
+          const target = event.target as Element | null
+          const linkElement = target?.closest?.('.builder-navbar-menu-link') as HTMLElement | null
+          if (!linkElement) return
+          const currentRoot = editor.Pages.getSelected()?.getMainComponent()
+          const currentComponents = currentRoot ? [currentRoot, ...descendants(currentRoot)] : []
+          const component = currentComponents.find((candidate) => candidate.getEl() === linkElement)
+          if (!component) return
+          event.preventDefault()
+          event.stopPropagation()
+          navbarLinkSettingsComponentRef.current = component
+          editor.select(component)
+          syncSelectedElement(component)
+          setNavbarLinkSettings({
+            active: component.getClasses().includes('is-active'),
+            label: linkElement.textContent?.trim() || 'Enlace',
+          })
+        }
+        canvasDocument.addEventListener('dblclick', openNavbarLinkOptions, true)
         const openDataComponentOptions = (event: MouseEvent) => {
           const target = event.target as Element | null
           if (!target || typeof target.closest !== 'function') return
@@ -1728,6 +1812,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         }
         canvasDocument.addEventListener('dblclick', openMotionComponentOptions, true)
         canvasDoubleClickCleanups.push(() => {
+          canvasDocument.removeEventListener('dblclick', openNavbarLinkOptions, true)
           canvasDocument.removeEventListener('dblclick', openDataComponentOptions, true)
           canvasDocument.removeEventListener('dblclick', openMotionComponentOptions, true)
         })
@@ -1819,9 +1904,13 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       editor.on('canvas:frame:load:body', handleCanvasBodyLoad)
       editor.onReady(() => {
         editor.SelectorManager.setComponentFirst(true)
+        const migratedNavbarClassCount = normalizeStarterNavbars(editor)
+        const hadStartPage = editor.Pages.getAll().some((page) => page.get('isStartPage') === true)
+        ensureEditorStartPage(editor)
         syncPages()
         syncPreviewViewport()
         const initialPageGrid = ensurePageGrid(editor)
+        if (migratedNavbarClassCount > 0 || !hadStartPage) void editor.store()
         const selectedRoot = editor.Pages.getSelected()?.getMainComponent()
         if (selectedRoot) disableCanvasResizing(selectedRoot)
         const savedSiteMargin = readSiteMargin(editor)
@@ -2206,6 +2295,35 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     editorRef.current?.Pages.select(pageId)
   }
 
+  function movePageTo(pageId: string, targetPageId: string, position: 'before' | 'after') {
+    const editor = editorRef.current
+    if (!editor || pageId === targetPageId) return
+    const allPages = editor.Pages.getAll()
+    const sourceIndex = allPages.findIndex((page) => page.getId() === pageId)
+    const targetIndex = allPages.findIndex((page) => page.getId() === targetPageId)
+    if (sourceIndex < 0 || targetIndex < 0) return
+    const destination = Math.min(
+      allPages.length - 1,
+      reorderedPageIndex(sourceIndex, targetIndex, position),
+    )
+    editor.Pages.move(pageId, { at: destination })
+    setPages(editorPageSummaries(editor))
+    setDraggingPageId(null)
+    setPageDropTarget(null)
+    setPageMenuId(null)
+    void editor.store().catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : 'No se pudo guardar el orden de las páginas.')
+    })
+  }
+
+  function movePageBy(pageId: string, offset: -1 | 1) {
+    const allPages = editorRef.current?.Pages.getAll() ?? []
+    const sourceIndex = allPages.findIndex((page) => page.getId() === pageId)
+    const target = allPages[sourceIndex + offset]
+    if (sourceIndex < 0 || !target) return
+    movePageTo(pageId, target.getId(), offset < 0 ? 'before' : 'after')
+  }
+
   function setActivePageAccess(access: Exclude<EditorPageAccess, 'guestOnly'>) {
     const editor = editorRef.current
     const page = editor?.Pages.get(activePageId)
@@ -2300,6 +2418,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     const fallback = editor.Pages.getAll().find((candidate) => candidate.getId() !== pageId)
     if (editor.Pages.getSelected()?.getId() === pageId && fallback) editor.Pages.select(fallback)
     editor.Pages.remove(page)
+    ensureEditorStartPage(editor)
+    setPages(editorPageSummaries(editor))
     void editor.store()
   }
 
@@ -2459,14 +2579,20 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     })
   }
 
-  function saveAuthSettings(destinationPageId: string, metadataFields: AuthMetadataField[]) {
+  function saveAuthSettings(
+    destinationPageId: string,
+    metadataFields: AuthMetadataField[],
+    presentation?: AuthLogoutPresentation,
+  ) {
     const editor = editorRef.current
     const component = authSettingsComponentRef.current
     if (!editor || !component) return
 
     if (destinationPageId) component.addAttributes({ [AUTH_DESTINATION_ATTRIBUTE]: destinationPageId })
     else component.removeAttributes(AUTH_DESTINATION_ATTRIBUTE)
-    if (readAuthComponentSettings(component.getAttributes())?.action === 'signup') {
+    const action = readAuthComponentSettings(component.getAttributes())?.action
+    if (action === 'logout' && presentation) applyNavbarLogoutPresentation(component, presentation)
+    if (action === 'signup') {
       editor.addStyle(AUTH_CHOICE_CARD_CSS)
       component.find(`[${AUTH_METADATA_DEFINITION_ATTRIBUTE}]`).forEach((definition) => definition.remove())
       component.find(`[${AUTH_METADATA_ATTRIBUTE}]`).forEach((fieldComponent) => {
@@ -2484,6 +2610,18 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     authSettingsComponentRef.current = null
     void editor.store().catch((cause: unknown) => {
       setError(cause instanceof Error ? cause.message : 'No se pudo guardar la configuración de acceso.')
+    })
+  }
+
+  function saveNavbarLinkSettings(settings: NavbarLinkSettings) {
+    const editor = editorRef.current
+    const component = navbarLinkSettingsComponentRef.current
+    if (!editor || !component) return
+    updateStarterNavbarLink(component, settings)
+    setNavbarLinkSettings(null)
+    navbarLinkSettingsComponentRef.current = null
+    void editor.store().catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : 'No se pudo guardar el enlace de navegación.')
     })
   }
 
@@ -2807,10 +2945,57 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
               </div>
             </div>
             <nav className="gjs-page-list" aria-label="Páginas">
-              {pages.map((page) => (
-                <div className={`gjs-page-row ${page.id === activePageId ? 'active' : ''}`} key={page.id}>
+              {pages.map((page, pageIndex) => (
+                <div
+                  className={`gjs-page-row ${page.id === activePageId ? 'active' : ''} ${pageDropTarget?.id === page.id ? `drop-${pageDropTarget.position}` : ''}`}
+                  key={page.id}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPageDropTarget(null)
+                  }}
+                  onDragOver={(event) => {
+                    if (!draggingPageId || draggingPageId === page.id) return
+                    event.preventDefault()
+                    const bounds = event.currentTarget.getBoundingClientRect()
+                    setPageDropTarget({
+                      id: page.id,
+                      position: event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after',
+                    })
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    if (draggingPageId && pageDropTarget?.id === page.id) {
+                      movePageTo(draggingPageId, page.id, pageDropTarget.position)
+                    }
+                  }}
+                >
+                  <button
+                    aria-label={`Reordenar ${page.name}`}
+                    className="gjs-page-drag-handle"
+                    draggable
+                    onClick={(event) => event.stopPropagation()}
+                    onDragEnd={() => {
+                      setDraggingPageId(null)
+                      setPageDropTarget(null)
+                    }}
+                    onDragStart={(event) => {
+                      event.stopPropagation()
+                      event.dataTransfer.effectAllowed = 'move'
+                      event.dataTransfer.setData('text/plain', page.id)
+                      setDraggingPageId(page.id)
+                      setPageMenuId(null)
+                    }}
+                    title={`Reordenar ${page.name}`}
+                    type="button"
+                  ><span aria-hidden="true">⠿</span></button>
                   <button className="gjs-page-select" onClick={() => selectPage(page.id)} type="button">
                     <span>{page.name}</span>
+                    {page.isHome && (
+                      <span className="gjs-page-home" title="Página de inicio" aria-label="Página de inicio">
+                        <svg aria-hidden="true" viewBox="0 0 24 24">
+                          <path d="m3 10.5 9-7.5 9 7.5M5.5 9.5V21h13V9.5M9 21v-7h6v7" />
+                        </svg>
+                      </span>
+                    )}
                     <i
                       aria-label={PAGE_ACCESS_LABELS[page.access]}
                       className={`gjs-page-access-indicator ${page.access}`}
@@ -2827,7 +3012,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
                       event.stopPropagation()
                       setCreateMenuOpen(false)
                       const buttonRect = event.currentTarget.getBoundingClientRect()
-                      setPageMenuPosition(floatingMenuPosition(buttonRect, 150, 106))
+                      setPageMenuPosition(floatingMenuPosition(buttonRect, 164, 174))
                       setPageMenuId((current) => current === page.id ? null : page.id)
                     }}
                     type="button"
@@ -2838,6 +3023,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
                       role="menu"
                       style={pageMenuPosition}
                     >
+                      <button disabled={pageIndex === 0} onClick={() => movePageBy(page.id, -1)} role="menuitem" type="button">Mover arriba</button>
+                      <button disabled={pageIndex === pages.length - 1} onClick={() => movePageBy(page.id, 1)} role="menuitem" type="button">Mover abajo</button>
                       <button onClick={() => renamePage(page.id)} role="menuitem" type="button">Renombrar</button>
                       <button onClick={() => duplicatePage(page.id)} role="menuitem" type="button">Duplicar</button>
                       <button className="danger" onClick={() => deletePage(page.id)} role="menuitem" type="button">Eliminar</button>
@@ -3419,6 +3606,16 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           onRename={savePageName}
         />
       )}
+      {navbarLinkSettings && (
+        <NavbarLinkSettingsDialog
+          initialSettings={navbarLinkSettings}
+          onClose={() => {
+            setNavbarLinkSettings(null)
+            navbarLinkSettingsComponentRef.current = null
+          }}
+          onSave={saveNavbarLinkSettings}
+        />
+      )}
       {authSettings && (
         <AuthSettingsDialog
           action={authSettings.action}
@@ -3430,6 +3627,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           }}
           onSave={saveAuthSettings}
           pages={pages}
+          presentation={authSettings.presentation}
           tables={supabaseConfig.tables}
         />
       )}

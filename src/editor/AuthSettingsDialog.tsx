@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AuthAction, AuthMetadataField } from '../core/auth-components'
+import type { AuthAction, AuthLogoutPresentation, AuthMetadataField } from '../core/auth-components'
 import { collectionDisplayName, type SupabaseTableConfig } from './supabase-data'
 import { effectiveDataFields } from './data-component-templates'
 
@@ -8,8 +8,9 @@ interface AuthSettingsDialogProps {
   destinationPageId: string
   metadataFields: AuthMetadataField[]
   onClose: () => void
-  onSave: (destinationPageId: string, metadataFields: AuthMetadataField[]) => void
+  onSave: (destinationPageId: string, metadataFields: AuthMetadataField[], presentation?: AuthLogoutPresentation) => void
   pages: Array<{ id: string; name: string }>
+  presentation?: AuthLogoutPresentation
   tables?: SupabaseTableConfig[]
 }
 
@@ -40,12 +41,14 @@ export function AuthSettingsDialog({
   onClose,
   onSave,
   pages,
+  presentation: initialPresentation = 'icon',
   tables = [],
 }: AuthSettingsDialogProps) {
   const [destination, setDestination] = useState(destinationPageId)
   const [metadataFields, setMetadataFields] = useState(initialMetadataFields)
   const [openFieldIndex, setOpenFieldIndex] = useState<number | null>(initialMetadataFields.length ? 0 : null)
   const [error, setError] = useState('')
+  const [presentation, setPresentation] = useState<AuthLogoutPresentation>(initialPresentation)
   const profileTables = tables.filter((table) => table.access === 'user_owned')
   const collectionLabel = (table: SupabaseTableConfig) => {
     const displayName = collectionDisplayName(table)
@@ -118,7 +121,8 @@ export function AuthSettingsDialog({
       setError('Las listas y opciones visibles necesitan al menos dos respuestas posibles.')
       return
     }
-    onSave(destination, normalized)
+    if (action === 'logout') onSave(destination, normalized, presentation)
+    else onSave(destination, normalized)
   }
 
   return (
@@ -138,6 +142,23 @@ export function AuthSettingsDialog({
               {pages.map((page) => <option key={page.id} value={page.id}>{page.name}</option>)}
             </select>
           </label>
+          {action === 'logout' && (
+            <fieldset className="gjs-auth-presentation-options">
+              <legend>Mostrar botón como</legend>
+              <label className={presentation === 'icon' ? 'selected' : ''}>
+                <input checked={presentation === 'icon'} name="logout-presentation" onChange={() => setPresentation('icon')} type="radio" />
+                <span><strong>Solo icono</strong><small>Botón compacto con el icono de salida.</small></span>
+              </label>
+              <label className={presentation === 'text' ? 'selected' : ''}>
+                <input checked={presentation === 'text'} name="logout-presentation" onChange={() => setPresentation('text')} type="radio" />
+                <span><strong>Texto</strong><small>Muestra “Cerrar sesión” dentro del botón.</small></span>
+              </label>
+              <label className={presentation === 'both' ? 'selected' : ''}>
+                <input checked={presentation === 'both'} name="logout-presentation" onChange={() => setPresentation('both')} type="radio" />
+                <span><strong>Icono y texto</strong><small>Combina el icono de salida con “Cerrar sesión”.</small></span>
+              </label>
+            </fieldset>
+          )}
           {action === 'signup' && <>
             <section className="gjs-auth-metadata-fields" aria-label="Campos adicionales del registro">
               <header>

@@ -59,6 +59,7 @@ export interface EditorExportPage {
   css?: string
   html: string
   id: string
+  isStartPage?: boolean
   js?: string
   name: string
   roles?: string[]
@@ -469,6 +470,7 @@ export function editorProjectBundle(editor: Editor, supabaseConfig?: SupabaseEdi
     body.innerHTML = editor.getHtml({ component })
     return {
       id: page.getId(),
+      isStartPage: page.get('isStartPage') === true,
       name: page.getName() || 'Sin título',
       access: page.get('access') as EditorExportPage['access'],
       roles: Array.isArray(page.get('roles'))
@@ -482,7 +484,7 @@ export function editorProjectBundle(editor: Editor, supabaseConfig?: SupabaseEdi
 
   return buildEditorProjectBundle(
     pages,
-    pages[0]?.id ?? '',
+    pages.find((page) => page.isStartPage)?.id ?? pages[0]?.id ?? '',
     'Sitio creado con Visual Builder',
     supabaseConfig,
   )

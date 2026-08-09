@@ -1,5 +1,6 @@
 export const AUTH_ACTION_ATTRIBUTE = 'data-builder-auth-action'
 export const AUTH_DESTINATION_ATTRIBUTE = 'data-builder-auth-destination'
+export const AUTH_PRESENTATION_ATTRIBUTE = 'data-builder-auth-presentation'
 export const AUTH_METADATA_ATTRIBUTE = 'data-builder-auth-metadata'
 export const AUTH_METADATA_DEFINITION_ATTRIBUTE = 'data-builder-auth-metadata-definition'
 export const AUTH_METADATA_CONTROL_ATTRIBUTE = 'data-builder-auth-metadata-control'
@@ -10,11 +11,13 @@ export const AUTH_METADATA_FIELD_ATTRIBUTE = 'data-builder-auth-metadata-field'
 
 export const AUTH_ACTIONS = ['login', 'signup', 'logout'] as const
 export type AuthAction = typeof AUTH_ACTIONS[number]
+export type AuthLogoutPresentation = 'icon' | 'text' | 'both'
 
 export interface AuthComponentSettings {
   action: AuthAction
   destinationPageId?: string
   metadataFields?: AuthMetadataField[]
+  presentation?: AuthLogoutPresentation
 }
 
 export interface AuthMetadataField {
@@ -35,10 +38,14 @@ export function readAuthComponentSettings(
   const action = attributes[AUTH_ACTION_ATTRIBUTE]
   if (!AUTH_ACTIONS.includes(action as AuthAction)) return null
   const destination = attributes[AUTH_DESTINATION_ATTRIBUTE]
+  const presentation = attributes[AUTH_PRESENTATION_ATTRIBUTE]
   return {
     action: action as AuthAction,
     ...(typeof destination === 'string' && destination.trim()
       ? { destinationPageId: destination.trim() }
+      : {}),
+    ...(action === 'logout' && (presentation === 'icon' || presentation === 'text' || presentation === 'both')
+      ? { presentation }
       : {}),
   }
 }

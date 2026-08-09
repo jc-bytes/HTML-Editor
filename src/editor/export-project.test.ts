@@ -2,10 +2,26 @@ import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { ZipProjectExporter } from '../modules/exporter'
 import { validateStaticArchive } from '../modules/exporter/validation/validateStaticArchive'
-import { buildEditorProjectBundle } from './export-project'
+import { buildEditorProjectBundle, editorProjectBundle } from './export-project'
+import grapesjs from 'grapesjs'
 import { defaultSupabaseConfig } from './supabase-data'
 
 describe('new editor project export', () => {
+  it('keeps the explicit homepage when pages are reordered', () => {
+    const editor = grapesjs.init({ headless: true, storageManager: false })
+    const home = editor.Pages.getAll()[0]
+    home.set({ name: 'Home', isStartPage: true })
+    const homeId = home.getId()
+    const secondary = editor.Pages.add({ id: 'secondary', name: 'Secondary', component: '<main>Secondary</main>' })!
+    editor.Pages.move(secondary, { at: 0 })
+
+    const bundle = editorProjectBundle(editor)
+
+    expect(bundle.manifest.pages.map((page) => page.id)).toEqual(['secondary', homeId])
+    expect(bundle.manifest.startPage).toBe(homeId)
+    editor.destroy()
+  })
+
   it('preserves body classes and background styles', () => {
     const bundle = buildEditorProjectBundle([{
       id: 'home',
