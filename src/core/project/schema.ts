@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import { visionEvaluatorIds, visionTaskIds } from '../vision'
 
 export const PageSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  access: z.enum(['public', 'authenticated', 'guestOnly']).optional(),
+  access: z.enum(['public', 'authenticated', 'guestOnly', 'role']).optional(),
+  roles: z.array(z.string().min(1).max(100)).max(50).optional(),
   file: z.string().min(1).refine((value) => {
     const hasUnsafeSegment = value.split('/').some((segment) => segment === '..')
     return value.toLowerCase().endsWith('.html')
@@ -93,6 +95,19 @@ export const DataRepeaterSchema = z.object({
   errorMessage: z.string().max(300).optional(),
   userFilterColumn: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
   includeUnpublished: z.boolean().optional(),
+  orderColumn: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
+  orderDirection: z.enum(['asc', 'desc']).optional(),
+  fixedFilters: z.array(z.object({
+    field: z.string().regex(/^[a-z][a-z0-9_]*$/),
+    operator: z.enum(['eq', 'contains', 'gte', 'lte']),
+    value: z.string().min(1).max(500),
+  })).max(20).optional(),
+  searchField: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
+  filterControls: z.array(z.object({
+    field: z.string().regex(/^[a-z][a-z0-9_]*$/),
+    kind: z.enum(['text', 'number', 'boolean', 'date']),
+  })).max(20).optional(),
+  visitorSortFields: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)).max(50).optional(),
 })
 
 export const ConnectionSchema = z.object({
@@ -107,6 +122,34 @@ export const ConnectionSchema = z.object({
     const protocol = new URL(value).protocol
     return protocol === 'http:' || protocol === 'https:'
   }, 'URLs must use http or https.').optional(),
+})
+
+export const RecordToggleSchema = z.object({
+  id: z.string().min(1),
+  pageId: z.string().min(1),
+  elementId: z.string().min(1),
+  dataSourceId: z.string().min(1),
+  contextKey: z.string().min(1).default('record'),
+  ownerField: z.string().regex(/^[a-z][a-z0-9_]*$/),
+  recordField: z.string().regex(/^[a-z][a-z0-9_]*$/),
+  activeLabel: z.string().min(1).max(200).default('★ Guardado'),
+  inactiveLabel: z.string().min(1).max(200).default('☆ Guardar'),
+})
+
+export const DataActionSchema = z.object({
+  id: z.string().min(1),
+  pageId: z.string().min(1),
+  elementId: z.string().min(1),
+  dataSourceId: z.string().min(1),
+  action: z.enum(['create', 'update', 'delete']),
+  contextKey: z.string().min(1).max(100).default('record'),
+  fieldMappings: z.array(z.object({
+    field: z.string().regex(/^[a-z][a-z0-9_]*$/),
+    inputName: z.string().regex(/^[a-z][a-z0-9_-]*$/),
+  })).max(50).default([]),
+  ownerField: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
+  successMessage: z.string().min(1).max(300),
+  confirmMessage: z.string().min(1).max(300).optional(),
 })
 
 export const StyleDeclarationSchema = z.object({
@@ -174,11 +217,29 @@ export const ElementOverrideSchema = z.object({
   }).optional(),
 })
 
-const MotionFeatureSelectionSchema = z.object({
+const VisionLandmarkSelectionSchema = z.object({
   hands: z.boolean().default(true),
   pose: z.boolean().default(true),
   face: z.boolean().default(false),
 })
+
+const VisionDetectorSchema = z.object({
+  provider: z.literal('mediapipe'),
+  task: z.enum(visionTaskIds),
+  modelUrl: z.string().url().refine((value) => ['http:', 'https:'].includes(new URL(value).protocol)),
+  delegate: z.enum(['auto', 'gpu', 'cpu']).default('auto'),
+  minConfidence: z.number().min(0).max(1).default(0.5),
+  landmarks: VisionLandmarkSelectionSchema.default({ hands: true, pose: true, face: false }),
+})
+
+const VisionEvaluatorSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('quality') }),
+  z.object({ type: z.literal('sequence'), passingScore: z.number().min(0).max(100).default(75) }),
+  z.object({ type: z.literal('gesture'), expectedLabel: z.string().min(1), passingScore: z.number().min(0).max(100).default(75) }),
+  z.object({ type: z.literal('detection'), expectedLabel: z.string().min(1), minimumCount: z.number().int().min(1).default(1), passingScore: z.number().min(0).max(100).default(75) }),
+  z.object({ type: z.literal('classification'), expectedLabel: z.string().min(1), passingScore: z.number().min(0).max(100).default(75) }),
+  z.object({ type: z.literal('segmentation'), categoryIndex: z.number().int().min(0).default(0), minimumCoverage: z.number().min(0).max(1).default(0.25), passingScore: z.number().min(0).max(100).default(75) }),
+])
 
 const MotionFrameSchema = z.object({
   facePosture: z.array(z.number()),
@@ -210,6 +271,7 @@ const MotionLandmarkFrameSchema = z.object({
 
 const MotionTemplateSchema = z.object({
   approvedAt: z.string().optional(),
+  detectorTask: z.enum(visionTaskIds),
   durationMs: z.number().nonnegative(),
   frames: z.array(MotionFrameSchema).min(1),
   landmarkFrames: z.array(MotionLandmarkFrameSchema).optional(),
@@ -224,7 +286,7 @@ const MotionTemplateSchema = z.object({
     y: z.number().min(0).max(1),
   }).refine((crop) => crop.x + crop.width <= 1.000001
     && crop.y + crop.height <= 1.000001, 'The source crop must stay inside the video.').optional(),
-  version: z.literal(2),
+  version: z.literal(3),
 })
 
 const MotionReferenceSchema = z.discriminatedUnion('type', [
@@ -253,11 +315,13 @@ const MotionInputSchema = z.discriminatedUnion('type', [
     type: z.literal('camera'),
     durationMs: z.number().int().min(1_000).max(10_000),
     facingMode: z.enum(['user', 'environment']).default('user'),
+    continuous: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('element'),
     durationMs: z.number().int().min(1_000).max(10_000),
     selector: z.string().min(1),
+    continuous: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('url'),
@@ -275,6 +339,22 @@ const MotionPersistenceSchema = z.object({
   durationField: z.string().min(1),
 })
 
+const MotionReferenceOutputSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('download') }),
+  z.object({
+    type: z.literal('form'),
+    selector: z.string().min(1).default('[data-motion-template-field]'),
+  }),
+  z.object({
+    type: z.literal('supabase'),
+    dataSourceId: z.string().min(1),
+    contextKey: z.string().min(1).default('record'),
+    recordMode: z.enum(['context', 'specific']).default('context'),
+    recordId: z.string().min(1).optional(),
+    templateField: z.string().min(1),
+  }),
+])
+
 export const MotionActivitySchema = z.object({
   id: z.string().min(1),
   pageId: z.string().min(1),
@@ -283,14 +363,36 @@ export const MotionActivitySchema = z.object({
   componentType: z.enum(['analyze', 'reference-view', 'compare', 'reference-capture']).optional(),
   input: MotionInputSchema,
   reference: MotionReferenceSchema,
-  features: MotionFeatureSelectionSchema,
+  presentation: z.object({
+    referenceDisplay: z.enum(['video', 'reference', 'frame', 'frame-reference', 'video-reference']).default('video-reference'),
+    showResults: z.boolean().default(false),
+  }).default({ referenceDisplay: 'video-reference', showResults: false }),
+  detector: VisionDetectorSchema,
+  evaluator: VisionEvaluatorSchema,
   processing: z.object({
     checkpointReduction: z.boolean().default(true),
-    minConfidence: z.number().min(0).max(1).default(0.5),
     smoothing: z.number().int().min(1).max(9).default(3),
-  }).default({ checkpointReduction: true, minConfidence: 0.5, smoothing: 3 }),
-  passingScore: z.number().min(0).max(100),
+  }).default({ checkpointReduction: true, smoothing: 3 }),
+  referenceOutput: MotionReferenceOutputSchema.default({ type: 'download' }),
   persistence: MotionPersistenceSchema.optional(),
+}).superRefine((activity, context) => {
+  const evaluatorCompatibility: Record<typeof visionTaskIds[number], Array<typeof visionEvaluatorIds[number]>> = {
+    'holistic-landmarker': ['quality', 'sequence'],
+    'pose-landmarker': ['quality', 'sequence'],
+    'hand-landmarker': ['quality', 'sequence'],
+    'face-landmarker': ['quality', 'sequence'],
+    'gesture-recognizer': ['quality', 'gesture'],
+    'object-detector': ['quality', 'detection'],
+    'image-classifier': ['quality', 'classification'],
+    'image-segmenter': ['quality', 'segmentation'],
+  }
+  if (!evaluatorCompatibility[activity.detector.task].includes(activity.evaluator.type)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['evaluator', 'type'],
+      message: `The ${activity.evaluator.type} evaluator is incompatible with ${activity.detector.task}.`,
+    })
+  }
 })
 
 const projectFields = {
@@ -301,6 +403,8 @@ const projectFields = {
   dataSources: z.array(DataSourceSchema).optional(),
   bindings: z.array(DataBindingSchema).optional(),
   repeaters: z.array(DataRepeaterSchema).optional(),
+  recordToggles: z.array(RecordToggleSchema).optional(),
+  dataActions: z.array(DataActionSchema).optional(),
   authentication: AuthenticationSchema.optional(),
   motionActivities: z.array(MotionActivitySchema).optional(),
 }
@@ -314,6 +418,8 @@ function validateReferences(
     dataSources?: Array<z.infer<typeof DataSourceSchema>>
     bindings?: Array<z.infer<typeof DataBindingSchema>>
     repeaters?: Array<z.infer<typeof DataRepeaterSchema>>
+    recordToggles?: Array<z.infer<typeof RecordToggleSchema>>
+    dataActions?: Array<z.infer<typeof DataActionSchema>>
     authentication?: z.infer<typeof AuthenticationSchema>
     motionActivities?: Array<z.infer<typeof MotionActivitySchema>>
   },
@@ -449,6 +555,40 @@ function validateReferences(
     }
   })
 
+  project.recordToggles?.forEach((toggle, index) => {
+    if (!uniquePageIds.has(toggle.pageId)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['recordToggles', index, 'pageId'],
+        message: 'Record toggle actions must reference an existing page.',
+      })
+    }
+    if (!project.dataSources?.some((source) => source.id === toggle.dataSourceId)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['recordToggles', index, 'dataSourceId'],
+        message: 'Record toggle actions must reference an existing data source.',
+      })
+    }
+  })
+
+  project.dataActions?.forEach((action, index) => {
+    if (!uniquePageIds.has(action.pageId)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['dataActions', index, 'pageId'],
+        message: 'Data actions must reference an existing page.',
+      })
+    }
+    if (!project.dataSources?.some((source) => source.id === action.dataSourceId)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['dataActions', index, 'dataSourceId'],
+        message: 'Data actions must reference an existing data source.',
+      })
+    }
+  })
+
   const overrideKeys = new Set<string>()
   project.elementOverrides?.forEach((override, index) => {
     if (!uniquePageIds.has(override.pageId)) {
@@ -489,6 +629,7 @@ function validateReferences(
     }
     const referencedSources = [
       activity.reference.type === 'data' ? activity.reference.dataSourceId : undefined,
+      activity.referenceOutput.type === 'supabase' ? activity.referenceOutput.dataSourceId : undefined,
       activity.persistence?.dataSourceId,
     ].filter((value): value is string => Boolean(value))
     referencedSources.forEach((dataSourceId) => {
@@ -520,6 +661,8 @@ export type ProjectConnection = z.infer<typeof ConnectionSchema>
 export type DataSource = z.infer<typeof DataSourceSchema>
 export type DataBinding = z.infer<typeof DataBindingSchema>
 export type DataRepeater = z.infer<typeof DataRepeaterSchema>
+export type RecordToggle = z.infer<typeof RecordToggleSchema>
+export type DataAction = z.infer<typeof DataActionSchema>
 export type MotionActivity = z.infer<typeof MotionActivitySchema>
 export type NavigationContextValue = z.infer<typeof NavigationContextValueSchema>
 export type NavigationContext = Record<string, NavigationContextValue>

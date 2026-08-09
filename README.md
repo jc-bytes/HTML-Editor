@@ -1,4 +1,4 @@
-# PSL Visual Builder
+# Visual Builder
 
 Editor visual modular para convertir pantallas diseñadas en Figma y exportadas
 como HTML/CSS en aplicaciones web navegables. Incluye autenticación con
@@ -30,7 +30,7 @@ responsive**. Incluye:
 - Inspector de estilos para estados normal, hover, focus y activo.
 - Overrides separados para escritorio, tableta y móvil.
 - Historial de deshacer/rehacer y restablecimiento por elemento.
-- Exportación de contenido editado y CSS generado en `psl-runtime/overrides.css`.
+- Exportación de contenido editado y CSS generado en `builder-runtime/overrides.css`.
 - Advertencias para conexiones cuyos elementos desaparecieron.
 - Modos separados para editar y probar la aplicación.
 - Navegación funcional e historial dentro de la vista previa.

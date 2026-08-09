@@ -1,6 +1,12 @@
 import type { Component, Editor, Plugin } from 'grapesjs'
 import type { MotionActivity } from '../core/project'
 import type { MotionFeatureFrame } from '../core/motion'
+import {
+  supportsVisionEvaluator,
+  visionModelDefinition,
+  visionTaskIds,
+} from '../core/vision'
+import type { VisionEvaluatorId, VisionTaskId } from '../core/vision'
 import { createStableElementId } from '../modules/preview'
 import { supabaseDataSourceId } from './supabase-data'
 import type { SupabaseTableConfig } from './supabase-data'
@@ -75,6 +81,7 @@ export const motionComponentStyles = `
 .motion-controls [role=status]{color:#49615d;font-size:.88rem}
 .motion-results{display:grid;gap:.85rem}
 .motion-results[hidden]{display:none}
+.motion-results[data-motion-design-preview="true"],.motion-results[data-motion-design-preview="true"] .motion-results__stages{display:grid}
 .motion-results__overall{font-size:clamp(1.6rem,4vw,2.4rem)}
 .motion-results__scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:.6rem}
 .motion-results__score{padding:.75rem;background:white;border:1px solid #d8e2e0;border-radius:.55rem}
@@ -125,12 +132,24 @@ export function motionControlsMarkup() {
 
 export function motionResultsMarkup() {
   return `<div data-motion-part="results" data-motion-results class="motion-results" hidden>
-    <strong data-motion-overall class="motion-results__overall">0%</strong>
-    <div data-motion-scores class="motion-results__scores"></div>
-    <p data-motion-feedback class="motion-results__feedback"></p>
+    <strong data-motion-overall class="motion-results__overall">56% de coincidencia</strong>
+    <div data-motion-scores class="motion-results__scores">
+      <div class="motion-results__score"><small>Forma de mano</small><strong>63%</strong></div>
+      <div class="motion-results__score"><small>Ubicación</small><strong>33%</strong></div>
+      <div class="motion-results__score"><small>Orientación</small><strong>73%</strong></div>
+      <div class="motion-results__score"><small>Trayectoria</small><strong>64%</strong></div>
+      <div class="motion-results__score"><small>Rostro y postura</small><strong>43%</strong></div>
+      <div class="motion-results__score"><small>Ritmo</small><strong>47%</strong></div>
+    </div>
+    <p data-motion-feedback class="motion-results__feedback">Compara la altura y la distancia de la palma respecto al rostro, los hombros o el pecho.</p>
     <section data-motion-stage-results class="motion-results__stages" hidden>
       <h3>Etapas del movimiento</h3>
-      <div data-motion-stage-scores class="motion-results__stage-list"></div>
+      <div data-motion-stage-scores class="motion-results__stage-list">
+        <article class="motion-stage-result is-not-scored"><span>Inicio</span><strong>No cuenta</strong><button type="button">Reproducir esta etapa</button></article>
+        <article class="motion-stage-result"><span>Momento clave 1</span><strong>54%</strong><button type="button">Reproducir esta etapa</button></article>
+        <article class="motion-stage-result"><span>Momento clave 2</span><strong>57%</strong><button type="button">Reproducir esta etapa</button></article>
+        <article class="motion-stage-result is-not-scored"><span>Final</span><strong>No cuenta</strong><button type="button">Reproducir esta etapa</button></article>
+      </div>
     </section>
     <a data-motion-download class="motion-results__download" hidden>Descargar plantilla</a>
   </div>`
@@ -143,8 +162,8 @@ export const motionComponentTypes: Array<{
   mode: 'analyze' | 'reference' | 'compare'
 }> = [
   { id: 'reference-view', mode: 'analyze', label: 'Ver referencia', description: 'Reproduce una fuente de video y dibuja sus puntos de movimiento.' },
-  { id: 'compare', mode: 'compare', label: 'Comparar movimientos', description: 'Compara una referencia con el video que graba la persona.' },
-  { id: 'analyze', mode: 'analyze', label: 'Analizar movimiento', description: 'Extrae puntos y medidas de una cámara, video o elemento de la página.' },
+  { id: 'compare', mode: 'compare', label: 'Comparar referencias', description: 'Compara una referencia aprobada con el video que graba la persona.' },
+  { id: 'analyze', mode: 'analyze', label: 'Analizar en vivo', description: 'Ejecuta el modelo continuamente hasta que la persona detiene el análisis.' },
   { id: 'reference-capture', mode: 'reference', label: 'Capturar referencia', description: 'Analiza, recorta y guarda una referencia reutilizable.' },
 ]
 
@@ -201,14 +220,28 @@ export function motionAnalysisMarkup(type: MotionComponentType = 'compare') {
     data-motion-reference-template-field="mediapipe_reference"
     data-motion-reference-url=""
     data-motion-reference-template=""
+    data-motion-reference-display="video-reference"
+    data-motion-show-results="false"
+    data-motion-reference-save="download"
+    data-motion-reference-save-table=""
+    data-motion-reference-save-context="record"
+    data-motion-reference-save-record-mode="context"
+    data-motion-reference-save-record-id=""
+    data-motion-reference-save-field="mediapipe_reference"
     data-motion-duration="3000"
-    data-motion-hands="true"
-    data-motion-pose="true"
-    data-motion-face="false"
-    data-motion-confidence="0.5"
-    data-motion-smoothing="3"
-    data-motion-checkpoints="true"
-    data-motion-passing-score="75"
+    data-vision-model="holistic-landmarker"
+    data-vision-model-url="${visionModelDefinition('holistic-landmarker').defaultModelUrl}"
+    data-vision-delegate="auto"
+    data-vision-evaluator="${type === 'analyze' ? 'quality' : 'sequence'}"
+    data-vision-landmarks="hands,pose"
+    data-vision-confidence="0.5"
+    data-vision-smoothing="3"
+    data-vision-checkpoints="true"
+    data-vision-passing-score="75"
+    data-vision-expected-label=""
+    data-vision-minimum-count="1"
+    data-vision-category-index="0"
+    data-vision-minimum-coverage="0.25"
     data-motion-save="false"
     data-motion-result-table=""
     data-motion-result-context="record"
@@ -256,9 +289,16 @@ export function normalizeMotionActivity(component: Component) {
     'data-motion-component-type': componentType,
     'data-motion-mode': component.getAttributes()['data-motion-mode'] || 'compare',
     'data-motion-input-source': component.getAttributes()['data-motion-input-source'] || 'camera',
-    'data-motion-confidence': component.getAttributes()['data-motion-confidence'] || '0.5',
-    'data-motion-smoothing': component.getAttributes()['data-motion-smoothing'] || '3',
-    'data-motion-checkpoints': component.getAttributes()['data-motion-checkpoints'] || 'true',
+    'data-motion-reference-display': component.getAttributes()['data-motion-reference-display'] || 'video-reference',
+    'data-motion-show-results': component.getAttributes()['data-motion-show-results'] || 'false',
+    'data-vision-model': component.getAttributes()['data-vision-model'] || 'holistic-landmarker',
+    'data-vision-model-url': component.getAttributes()['data-vision-model-url'] || visionModelDefinition('holistic-landmarker').defaultModelUrl,
+    'data-vision-delegate': component.getAttributes()['data-vision-delegate'] || 'auto',
+    'data-vision-evaluator': component.getAttributes()['data-vision-evaluator'] || 'sequence',
+    'data-vision-landmarks': component.getAttributes()['data-vision-landmarks'] || 'hands,pose',
+    'data-vision-confidence': component.getAttributes()['data-vision-confidence'] || '0.5',
+    'data-vision-smoothing': component.getAttributes()['data-vision-smoothing'] || '3',
+    'data-vision-checkpoints': component.getAttributes()['data-vision-checkpoints'] || 'true',
     'data-motion-layout-version': '3',
     class: [...new Set(`${component.getAttributes().class ?? ''} motion-activity`.split(/\s+/).filter(Boolean))].join(' '),
   })
@@ -269,10 +309,22 @@ export function normalizeMotionActivity(component: Component) {
     component.setStyle({ ...currentStyle, height: 'auto' })
     repairedResponsiveHeight = true
   }
-  if (hasValidMotionComposition(component)) return repairedResponsiveHeight
+  if (hasValidMotionComposition(component)) {
+    setMotionResultsDesignPreview(component, component.getAttributes()['data-motion-show-results'] === 'true')
+    return repairedResponsiveHeight
+  }
   component.components(motionActivityContents(componentType))
   component.setStyle({})
+  setMotionResultsDesignPreview(component, component.getAttributes()['data-motion-show-results'] === 'true')
   return true
+}
+
+export function setMotionResultsDesignPreview(component: Component, visible: boolean) {
+  const results = component.components().models.find((child) =>
+    child.getAttributes()['data-motion-part'] === 'results')
+  if (!results) return
+  if (visible) results.addAttributes({ 'data-motion-design-preview': 'true' })
+  else results.removeAttributes('data-motion-design-preview')
 }
 
 export function createMotionAnalysisPlugin(): Plugin {
@@ -346,10 +398,11 @@ function trimmed(element: Element, attribute: string, fallback = '') {
 function inlineTemplate(value: string): MotionActivity['reference'] | undefined {
   if (!value) return undefined
   try {
-    const parsed = JSON.parse(decodeURIComponent(value)) as { frames?: MotionFeatureFrame[]; durationMs?: number; version?: number }
-    if (!Array.isArray(parsed.frames) || !parsed.frames.length || parsed.version !== 2) return undefined
+    const parsed = JSON.parse(decodeURIComponent(value)) as { detectorTask?: VisionTaskId; frames?: MotionFeatureFrame[]; durationMs?: number; version?: number }
+    if (!Array.isArray(parsed.frames) || !parsed.frames.length || parsed.version !== 3 || !parsed.detectorTask) return undefined
     return { type: 'template', template: {
-      version: 2,
+      version: 3,
+      detectorTask: parsed.detectorTask,
       durationMs: Number.isFinite(parsed.durationMs) ? Number(parsed.durationMs) : parsed.frames.at(-1)?.t ?? 0,
       frames: parsed.frames,
     } }
@@ -373,10 +426,10 @@ export function readMotionActivities(
       const duration = Number.parseInt(trimmed(element, 'data-motion-duration', '3000'), 10)
       const durationMs = Number.isFinite(duration) ? Math.min(10_000, Math.max(1_000, duration)) : 3_000
       const input: MotionActivity['input'] = inputSource === 'element' && trimmed(element, 'data-motion-input-selector')
-        ? { type: 'element', selector: trimmed(element, 'data-motion-input-selector'), durationMs }
+        ? { type: 'element', selector: trimmed(element, 'data-motion-input-selector'), durationMs, ...(mode === 'analyze' ? { continuous: true } : {}) }
         : inputSource === 'url' && /^https?:\/\//i.test(trimmed(element, 'data-motion-input-url'))
           ? { type: 'url', url: trimmed(element, 'data-motion-input-url') }
-          : { type: 'camera', durationMs, facingMode: trimmed(element, 'data-motion-facing-mode') === 'environment' ? 'environment' : 'user' }
+          : { type: 'camera', durationMs, facingMode: trimmed(element, 'data-motion-facing-mode') === 'environment' ? 'environment' : 'user', ...(mode === 'analyze' ? { continuous: true } : {}) }
       const referenceSource = trimmed(element, 'data-motion-reference-source', 'data')
       const referenceTableId = trimmed(element, 'data-motion-reference-table')
       const referenceUrl = trimmed(element, 'data-motion-reference-url')
@@ -412,9 +465,61 @@ export function readMotionActivities(
             durationField: trimmed(element, 'data-motion-result-duration-field', 'duration_seconds'),
           }
         : undefined
-      const passingScore = Number.parseFloat(trimmed(element, 'data-motion-passing-score', '75'))
-      const minConfidence = Number.parseFloat(trimmed(element, 'data-motion-confidence', '0.5'))
-      const smoothing = Number.parseInt(trimmed(element, 'data-motion-smoothing', '3'), 10)
+      const referenceSaveMode = trimmed(element, 'data-motion-reference-save', 'download')
+      const referenceSaveTableId = trimmed(element, 'data-motion-reference-save-table')
+      const referenceOutput: MotionActivity['referenceOutput'] = referenceSaveMode === 'form'
+        ? { type: 'form', selector: '[data-motion-template-field]' }
+        : referenceSaveMode === 'supabase' && tableIds.has(referenceSaveTableId)
+          ? {
+              type: 'supabase',
+              dataSourceId: supabaseDataSourceId(referenceSaveTableId),
+              contextKey: trimmed(element, 'data-motion-reference-save-context', 'record'),
+              recordMode: trimmed(element, 'data-motion-reference-save-record-mode', 'context') === 'specific'
+                ? 'specific' : 'context',
+              ...(trimmed(element, 'data-motion-reference-save-record-id')
+                ? { recordId: trimmed(element, 'data-motion-reference-save-record-id') }
+                : {}),
+              templateField: trimmed(element, 'data-motion-reference-save-field', 'mediapipe_reference'),
+            }
+          : { type: 'download' }
+      const requestedTask = trimmed(element, 'data-vision-model', 'holistic-landmarker')
+      const task = (visionTaskIds as readonly string[]).includes(requestedTask)
+        ? requestedTask as VisionTaskId
+        : 'holistic-landmarker'
+      const model = visionModelDefinition(task)
+      const requestedEvaluator = trimmed(element, 'data-vision-evaluator', model.defaultEvaluator)
+      const compatibleEvaluator = supportsVisionEvaluator(task, requestedEvaluator)
+        ? requestedEvaluator as VisionEvaluatorId
+        : model.defaultEvaluator
+      const evaluatorType = mode === 'analyze' && compatibleEvaluator === 'sequence'
+        ? 'quality' : compatibleEvaluator
+      const passingScore = Number.parseFloat(trimmed(element, 'data-vision-passing-score', '75'))
+      const normalizedPassingScore = Number.isFinite(passingScore) ? Math.min(100, Math.max(0, passingScore)) : 75
+      const minConfidence = Number.parseFloat(trimmed(element, 'data-vision-confidence', '0.5'))
+      const smoothing = Number.parseInt(trimmed(element, 'data-vision-smoothing', '3'), 10)
+      const landmarkSelection = new Set(trimmed(element, 'data-vision-landmarks', 'hands,pose').split(',').map((value) => value.trim()))
+      const expectedLabel = trimmed(element, 'data-vision-expected-label')
+        || (evaluatorType === 'gesture' ? 'Open_Palm' : evaluatorType === 'detection' ? 'person' : 'object')
+      const evaluator: MotionActivity['evaluator'] = evaluatorType === 'sequence'
+        ? { type: 'sequence', passingScore: normalizedPassingScore }
+        : evaluatorType === 'gesture'
+          ? { type: 'gesture', expectedLabel, passingScore: normalizedPassingScore }
+          : evaluatorType === 'detection'
+            ? {
+                type: 'detection', expectedLabel,
+                minimumCount: Math.max(1, Number.parseInt(trimmed(element, 'data-vision-minimum-count', '1'), 10) || 1),
+                passingScore: normalizedPassingScore,
+              }
+            : evaluatorType === 'classification'
+              ? { type: 'classification', expectedLabel, passingScore: normalizedPassingScore }
+              : evaluatorType === 'segmentation'
+                ? {
+                    type: 'segmentation',
+                    categoryIndex: Math.max(0, Number.parseInt(trimmed(element, 'data-vision-category-index', '0'), 10) || 0),
+                    minimumCoverage: Math.min(1, Math.max(0, Number.parseFloat(trimmed(element, 'data-vision-minimum-coverage', '0.25')) || 0.25)),
+                    passingScore: normalizedPassingScore,
+                  }
+                : { type: 'quality' }
 
       return {
         id: `${pageId}-motion-${index + 1}`,
@@ -427,17 +532,34 @@ export function readMotionActivities(
         input,
         reference: mode === 'compare' || trimmed(element, 'data-motion-component-type') === 'reference-view'
           ? reference : { type: 'none' },
-        features: {
-          hands: enabled(element.getAttribute('data-motion-hands'), true),
-          pose: enabled(element.getAttribute('data-motion-pose'), true),
-          face: enabled(element.getAttribute('data-motion-face')),
+        presentation: {
+          referenceDisplay: ['video', 'reference', 'frame', 'frame-reference', 'video-reference'].includes(trimmed(element, 'data-motion-reference-display', 'video-reference'))
+            ? trimmed(element, 'data-motion-reference-display', 'video-reference') as MotionActivity['presentation']['referenceDisplay']
+            : 'video-reference',
+          showResults: enabled(element.getAttribute('data-motion-show-results')),
         },
-        processing: {
-          checkpointReduction: enabled(element.getAttribute('data-motion-checkpoints'), true),
+        detector: {
+          provider: 'mediapipe',
+          task,
+          modelUrl: /^https?:\/\//i.test(trimmed(element, 'data-vision-model-url'))
+            ? trimmed(element, 'data-vision-model-url')
+            : model.defaultModelUrl,
+          delegate: ['auto', 'gpu', 'cpu'].includes(trimmed(element, 'data-vision-delegate', 'auto'))
+            ? trimmed(element, 'data-vision-delegate', 'auto') as 'auto' | 'gpu' | 'cpu'
+            : 'auto',
           minConfidence: Number.isFinite(minConfidence) ? Math.min(1, Math.max(0, minConfidence)) : 0.5,
+          landmarks: {
+            hands: model.landmarkGroups.includes('hands') && landmarkSelection.has('hands'),
+            pose: model.landmarkGroups.includes('pose') && landmarkSelection.has('pose'),
+            face: model.landmarkGroups.includes('face') && landmarkSelection.has('face'),
+          },
+        },
+        evaluator,
+        processing: {
+          checkpointReduction: enabled(element.getAttribute('data-vision-checkpoints'), true),
           smoothing: Number.isFinite(smoothing) ? Math.min(9, Math.max(1, smoothing)) : 3,
         },
-        passingScore: Number.isFinite(passingScore) ? Math.min(100, Math.max(0, passingScore)) : 75,
+        referenceOutput,
         ...(persistence ? { persistence } : {}),
       }
     })

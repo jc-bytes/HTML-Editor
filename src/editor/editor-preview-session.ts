@@ -16,7 +16,7 @@ export interface EditorPreviewTransition {
   session: EditorPreviewSession
 }
 
-export type EditorPreviewPageAccess = 'public' | 'authenticated' | 'guestOnly'
+export type EditorPreviewPageAccess = 'public' | 'authenticated' | 'guestOnly' | 'role'
 
 export function editorPreviewPath(page: ProjectPage) {
   const withoutExtension = page.file.replace(/\.html?$/i, '')

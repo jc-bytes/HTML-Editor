@@ -23,7 +23,7 @@ describe('new editor project export', () => {
       {
         id: 'inicio',
         name: 'Inicio',
-        html: '<main><button data-psl-flow-action="navigate" data-psl-flow-target="practica">Practicar</button></main>',
+        html: '<main><button data-builder-flow-action="navigate" data-builder-flow-target="practica">Practicar</button></main>',
         css: 'button { color: teal; }',
       },
       {
@@ -48,10 +48,10 @@ describe('new editor project export', () => {
     const practice = await archive.file('pages/practica.html')!.async('string')
     const index = await archive.file('index.html')!.async('string')
 
-    expect(home).toContain('data-psl-flow-target="practica"')
+    expect(home).toContain('data-builder-flow-target="practica"')
     expect(home).toContain('"targetPage":"practica"')
     expect(home).toContain('"practica":"practica.html"')
-    expect(home).toContain('src="../psl-runtime/navigation.js"')
+    expect(home).toContain('src="../builder-runtime/navigation.js"')
     expect(practice).toContain('<h1>Práctica</h1>')
     expect(index).toContain('pages/inicio.html')
   })
@@ -60,10 +60,77 @@ describe('new editor project export', () => {
     const bundle = buildEditorProjectBundle([{
       id: 'home',
       name: 'Home',
-      html: '<button data-psl-flow-action="navigate" data-psl-flow-target="missing">Open</button>',
+      html: '<button data-builder-flow-action="navigate" data-builder-flow-target="missing">Open</button>',
     }], 'home')
 
     expect(bundle.manifest.connections).toEqual([])
+  })
+
+  it('exports a reusable save-or-remove record action', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'detail',
+      name: 'Detalle',
+      html: `<button data-builder-flow-action="toggle-record"
+        data-builder-flow-data-source="table-favorites"
+        data-builder-flow-owner-field="user_id"
+        data-builder-flow-record-field="practice_id"
+        data-builder-flow-context="record"
+        data-builder-flow-active-label="★ Guardado"
+        data-builder-flow-inactive-label="☆ Guardar">☆ Guardar</button>`,
+    }], 'detail', 'Favorites', {
+      projectUrl: 'https://school.supabase.co',
+      publishableKey: 'sb_publishable_test_key_123456789',
+      tables: [{
+        id: 'table-favorites',
+        name: 'favorite_practices',
+        access: 'user_owned',
+        fields: [
+          { id: 'favorite-user', name: 'user_id', type: 'uuid' },
+          { id: 'favorite-practice', name: 'practice_id', type: 'uuid' },
+        ],
+        relations: [],
+      }],
+    })
+
+    expect(bundle.manifest.recordToggles).toEqual([expect.objectContaining({
+      pageId: 'detail',
+      elementId: 'detail::button:1',
+      dataSourceId: 'supabase-table_favorites',
+      ownerField: 'user_id',
+      recordField: 'practice_id',
+      contextKey: 'record',
+    })])
+  })
+
+  it('exports a generic form action with field mappings', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'projects',
+      name: 'Projects',
+      html: `<form data-builder-flow-action="create-record"
+        data-builder-flow-data-source="table-projects"
+        data-builder-flow-owner-field="user_id"
+        data-builder-flow-field-map='[{"field":"title","inputName":"project_title"}]'
+        data-builder-flow-success-message="Proyecto creado.">
+        <input name="project_title"><button type="submit">Create</button>
+      </form>`,
+    }], 'projects', 'Projects', {
+      projectUrl: 'https://school.supabase.co',
+      publishableKey: 'sb_publishable_test_key_123456789',
+      tables: [{
+        id: 'table-projects', name: 'projects', access: 'user_owned',
+        fields: [{ id: 'title', name: 'title', type: 'text' }], relations: [],
+      }],
+    })
+
+    expect(bundle.manifest.dataActions).toEqual([expect.objectContaining({
+      action: 'create',
+      pageId: 'projects',
+      elementId: 'projects::form:1',
+      dataSourceId: 'supabase-table_projects',
+      ownerField: 'user_id',
+      fieldMappings: [{ field: 'title', inputName: 'project_title' }],
+      successMessage: 'Proyecto creado.',
+    })])
   })
 
   it('exports ordinary navigation when table definitions exist without Supabase credentials', async () => {
@@ -71,7 +138,7 @@ describe('new editor project export', () => {
       {
         id: 'inicio',
         name: 'Inicio',
-        html: '<button data-psl-flow-action="navigate" data-psl-flow-target="practica">Practicar</button>',
+        html: '<button data-builder-flow-action="navigate" data-builder-flow-target="practica">Practicar</button>',
       },
       {
         id: 'practica',
@@ -95,7 +162,7 @@ describe('new editor project export', () => {
     }, {
       id: 'access',
       name: 'Access',
-      html: '<form data-psl-auth-action="login"><input name="email"><input name="password"></form>',
+      html: '<form data-builder-auth-action="login"><input name="email"><input name="password"></form>',
     }], 'home', 'Protected site', {
       projectUrl: 'https://school.supabase.co',
       publishableKey: 'sb_publishable_test_key_123456789',
@@ -116,11 +183,52 @@ describe('new editor project export', () => {
     ])
   })
 
+  it('exports page-level public, private, and role access', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'home',
+      name: 'Home',
+      access: 'public',
+      html: '<main><h1>Home</h1></main>',
+    }, {
+      id: 'admin',
+      name: 'Admin',
+      access: 'role',
+      roles: ['admin', 'teacher'],
+      html: '<main><h1>Admin</h1></main>',
+    }, {
+      id: 'account',
+      name: 'Account',
+      access: 'authenticated',
+      html: '<main><h1>Account</h1></main>',
+    }, {
+      id: 'access',
+      name: 'Access',
+      html: '<form data-builder-auth-action="login"><input name="email"></form>',
+    }], 'home', 'Access settings', {
+      projectUrl: 'https://school.supabase.co',
+      publishableKey: 'sb_publishable_test_key_123456789',
+      tables: [{
+        access: 'user_owned',
+        fields: [{ id: 'role', name: 'role', type: 'text' }],
+        id: 'roles-table',
+        name: 'user_roles',
+        relations: [],
+      }],
+    })
+
+    expect(bundle.manifest.pages).toEqual([
+      expect.objectContaining({ id: 'home', access: 'public' }),
+      expect.objectContaining({ id: 'admin', access: 'role', roles: ['admin', 'teacher'] }),
+      expect.objectContaining({ id: 'account', access: 'authenticated' }),
+      expect.objectContaining({ id: 'access', access: 'guestOnly' }),
+    ])
+  })
+
   it('requires Supabase credentials when an access page exists', () => {
     expect(() => buildEditorProjectBundle([{
       id: 'access',
       name: 'Access',
-      html: '<form data-psl-auth-action="login"></form>',
+      html: '<form data-builder-auth-action="login"></form>',
     }], 'access')).toThrow(/Conecta Supabase/)
   })
 
@@ -129,14 +237,22 @@ describe('new editor project export', () => {
       {
         id: 'catalog',
         name: 'Catalog',
-        html: `<article data-psl-repeater="table-practices" data-psl-flow-action="navigate" data-psl-flow-target="detail">
-          <h2 data-psl-data-source="table-practices" data-psl-bind-field="title" data-psl-bind-target="text">Title</h2>
-        </article>`,
+        html: `<section data-builder-data-component="card_grid">
+          <span data-builder-fixed-filter="true" data-builder-filter-field="difficulty" data-builder-filter-operator="gte" data-builder-filter-value="2" hidden></span>
+          <form data-builder-filter-form>
+            <input data-builder-search-field="title">
+            <fieldset data-builder-filter-control="number" data-builder-filter-field="difficulty"></fieldset>
+            <select data-builder-sort-control="true"><option data-field="title" value="title.asc">Title</option></select>
+          </form>
+          <article data-builder-repeater="table-practices" data-builder-sort-field="difficulty" data-builder-sort-direction="desc" data-builder-flow-action="navigate" data-builder-flow-target="detail">
+            <h2 data-builder-data-source="table-practices" data-builder-bind-field="title" data-builder-bind-target="text">Title</h2>
+          </article>
+        </section>`,
       },
       {
         id: 'detail',
         name: 'Detail',
-        html: '<h1 data-psl-data-source="table-practices" data-psl-bind-field="title" data-psl-bind-target="text">Title</h1>',
+        html: '<h1 data-builder-data-source="table-practices" data-builder-bind-field="title" data-builder-bind-target="text">Title</h1>',
       },
     ], 'catalog', 'Data site', {
       projectUrl: 'https://school.supabase.co',
@@ -145,7 +261,7 @@ describe('new editor project export', () => {
         id: 'table-practices',
         name: 'practice_items',
         access: 'public_read',
-        fields: [{ id: 'title', name: 'title', type: 'text' }],
+        fields: [{ id: 'title', name: 'title', type: 'text' }, { id: 'difficulty', name: 'difficulty', type: 'number' }],
         relations: [],
       }, {
         id: 'table-progress',
@@ -167,6 +283,14 @@ describe('new editor project export', () => {
     })]))
     expect(bundle.manifest.bindings).toHaveLength(2)
     expect(bundle.manifest.repeaters).toHaveLength(1)
+    expect(bundle.manifest.repeaters?.[0]).toMatchObject({
+      orderColumn: 'difficulty',
+      orderDirection: 'desc',
+      fixedFilters: [{ field: 'difficulty', operator: 'gte', value: '2' }],
+      searchField: 'title',
+      filterControls: [{ field: 'difficulty', kind: 'number' }],
+      visitorSortFields: ['title'],
+    })
     expect(bundle.manifest.connections[0].context?.record.recordId).toBe('$record.id')
     expect(bundle.manifest.connections[0].context?.record.dataSourceId)
       .toBe('supabase-table_practices')
@@ -179,7 +303,7 @@ describe('new editor project export', () => {
     const bundle = buildEditorProjectBundle([{
       id: 'profile',
       name: 'Profile',
-      html: '<h1 data-psl-data-source="profiles-table" data-psl-data-scope="first" data-psl-bind-field="display_name" data-psl-bind-target="text">Name</h1>',
+      html: '<h1 data-builder-data-source="profiles-table" data-builder-data-scope="first" data-builder-bind-field="display_name" data-builder-bind-target="text">Name</h1>',
     }], 'profile', 'Profile site', {
       projectUrl: 'https://school.supabase.co',
       publishableKey: 'sb_publishable_test_key_123456789',
@@ -212,10 +336,9 @@ describe('new editor project export', () => {
         data-motion-reference-source="url"
         data-motion-reference-url="https://media.example/reference.mp4"
         data-motion-duration="2500"
-        data-motion-hands="true"
-        data-motion-pose="true"
-        data-motion-face="false"
-        data-motion-passing-score="80"></section>`,
+        data-vision-model="holistic-landmarker"
+        data-vision-landmarks="hands,pose"
+        data-vision-passing-score="80"></section>`,
     }], 'practice')
 
     expect(bundle.manifest.motionActivities).toEqual([expect.objectContaining({
@@ -223,8 +346,9 @@ describe('new editor project export', () => {
       pageId: 'practice',
       mode: 'compare',
       input: { type: 'camera', durationMs: 2500, facingMode: 'user' },
-      processing: { checkpointReduction: true, minConfidence: 0.5, smoothing: 3 },
-      passingScore: 80,
+      processing: { checkpointReduction: true, smoothing: 3 },
+      evaluator: { type: 'sequence', passingScore: 80 },
+      detector: expect.objectContaining({ task: 'holistic-landmarker', minConfidence: 0.5 }),
       reference: { type: 'url', url: 'https://media.example/reference.mp4' },
     })])
 
@@ -237,5 +361,21 @@ describe('new editor project export', () => {
     expect(practice).toContain('src="../motion-runtime/analysis.js"')
     await expect(validateStaticArchive(await new ZipProjectExporter().export(bundle)))
       .resolves.toEqual({ valid: true, errors: [] })
+  })
+
+  it('keeps result previews editor-only while exporting the display choice', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'practice',
+      name: 'Practice',
+      html: `<section data-motion-activity="true" data-motion-show-results="true">
+        <div data-motion-results data-motion-design-preview="true">56%</div>
+      </section>`,
+    }], 'practice')
+    const page = bundle.files.find((file) => file.path === 'pages/practice.html')!
+    const markup = new TextDecoder().decode(page.bytes)
+
+    expect(bundle.manifest.motionActivities?.[0]?.presentation.showResults).toBe(true)
+    expect(markup).not.toContain('data-motion-design-preview')
+    expect(markup).toContain('data-motion-results="" hidden=""')
   })
 })

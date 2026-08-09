@@ -1,16 +1,28 @@
 import type { Editor } from 'grapesjs'
 import type {
   DataBinding,
+  DataAction,
   DataRepeater,
   ProjectBundle,
   ProjectConnection,
   ProjectFile,
   MotionActivity,
+  RecordToggle,
 } from '../core/project'
 import { zipProjectExporter } from '../modules/exporter'
 import { createStableElementId } from '../modules/preview'
 import { validateStaticArchive } from '../modules/exporter/validation/validateStaticArchive'
-import { FLOW_ACTION_ATTRIBUTE, FLOW_TARGET_ATTRIBUTE } from './flow-connections'
+import {
+  FLOW_ACTION_ATTRIBUTE,
+  FLOW_ACTIVE_LABEL_ATTRIBUTE,
+  FLOW_CONTEXT_ATTRIBUTE,
+  FLOW_DATA_SOURCE_ATTRIBUTE,
+  FLOW_INACTIVE_LABEL_ATTRIBUTE,
+  FLOW_OWNER_FIELD_ATTRIBUTE,
+  FLOW_RECORD_FIELD_ATTRIBUTE,
+  FLOW_TARGET_ATTRIBUTE,
+  readDataActionConnection,
+} from './flow-connections'
 import {
   createSupabaseSetupSql,
   DATA_BIND_FIELD_ATTRIBUTE,
@@ -25,8 +37,17 @@ import {
 import type { SupabaseEditorConfig } from './supabase-data'
 import {
   DATA_COMPONENT_ATTRIBUTE,
+  DATA_FILTER_CONTROL_ATTRIBUTE,
+  DATA_FILTER_FIELD_ATTRIBUTE,
+  DATA_FILTER_OPERATOR_ATTRIBUTE,
+  DATA_FILTER_VALUE_ATTRIBUTE,
+  DATA_FIXED_FILTER_ATTRIBUTE,
   DATA_PAGE_SIZE_ATTRIBUTE,
   DATA_PAGINATION_ATTRIBUTE,
+  DATA_SEARCH_FIELD_ATTRIBUTE,
+  DATA_SORT_CONTROL_ATTRIBUTE,
+  DATA_SORT_DIRECTION_ATTRIBUTE,
+  DATA_SORT_FIELD_ATTRIBUTE,
   dataComponentStyles,
 } from './data-component-templates'
 import { readMotionActivities } from './motion-analysis'
@@ -34,11 +55,13 @@ import { readMotionActivities } from './motion-analysis'
 const encoder = new TextEncoder()
 
 export interface EditorExportPage {
+  access?: 'public' | 'authenticated' | 'guestOnly' | 'role'
   css?: string
   html: string
   id: string
   js?: string
   name: string
+  roles?: string[]
 }
 
 function safePageSlug(value: string) {
@@ -64,6 +87,10 @@ function escapeScriptContent(value: string) {
 
 function pageDocument(page: EditorExportPage) {
   const parsed = new DOMParser().parseFromString(page.html, 'text/html')
+  parsed.querySelectorAll<HTMLElement>('[data-motion-design-preview]').forEach((element) => {
+    element.removeAttribute('data-motion-design-preview')
+    element.hidden = true
+  })
   const bodyMarkup = parsed.body.innerHTML || page.html
   const bodyAttributes = Array.from(parsed.body.attributes)
     .map((attribute) => ` ${attribute.name}="${attribute.value
@@ -72,10 +99,10 @@ function pageDocument(page: EditorExportPage) {
     .join('')
   const usesDataComponents = Boolean(parsed.querySelector([
     `[${DATA_COMPONENT_ATTRIBUTE}]`,
-    '.psl-data-grid',
-    '.psl-data-carousel',
-    '.psl-data-list',
-    '.psl-data-featured',
+    '.builder-data-grid',
+    '.builder-data-carousel',
+    '.builder-data-list',
+    '.builder-data-featured',
   ].join(',')))
   const pageStyles = [page.css ?? '', usesDataComponents ? dataComponentStyles : '']
     .filter(Boolean)
@@ -127,18 +154,33 @@ export function buildEditorProjectBundle(
   const connections: ProjectConnection[] = []
   const bindings: DataBinding[] = []
   const repeaters: DataRepeater[] = []
+  const recordToggles: RecordToggle[] = []
+  const dataActions: DataAction[] = []
   const motionActivities: MotionActivity[] = []
   const normalizedData = supabaseConfig ? normalizedSupabaseConfig(supabaseConfig) : undefined
   const fallbackTableId = normalizedData?.tables[0]?.id
   const authPage = pages.find((page) => {
     const parsed = new DOMParser().parseFromString(page.html, 'text/html')
-    return Boolean(parsed.querySelector('form[data-psl-auth-action="login"]'))
+    return Boolean(parsed.querySelector('form[data-builder-auth-action="login"]'))
   })
   const hasSupabaseCredentials = Boolean(
     normalizedData?.projectUrl
     && normalizedData.publishableKey
     && isSafePublishableKey(normalizedData.publishableKey),
   )
+
+  if (pages.some((page) => page.access === 'role') && !authPage) {
+    throw new Error('Añade una página de acceso antes de restringir páginas por rol.')
+  }
+
+  if (pages.some((page) => page.access === 'authenticated') && !authPage) {
+    throw new Error('Añade una página de acceso antes de marcar páginas como privadas.')
+  }
+
+  if (pages.some((page) => page.access === 'role')
+    && !normalizedData?.tables.some((table) => /(^|_)roles?($|_)/i.test(table.name))) {
+    throw new Error('Configura una tabla de roles antes de restringir páginas por rol.')
+  }
 
   if (authPage && !hasSupabaseCredentials) {
     throw new Error('Conecta Supabase con una URL y publishable key antes de probar la página de acceso.')
@@ -171,6 +213,53 @@ export function buildEditorProjectBundle(
           },
           } : {}
         })(),
+      })
+    })
+    parsed.querySelectorAll<HTMLElement>(
+      `[${FLOW_ACTION_ATTRIBUTE}="toggle-record"][${FLOW_DATA_SOURCE_ATTRIBUTE}]`,
+    ).forEach((element, index) => {
+      const tableId = element.getAttribute(FLOW_DATA_SOURCE_ATTRIBUTE)?.trim()
+      const ownerField = element.getAttribute(FLOW_OWNER_FIELD_ATTRIBUTE)?.trim()
+      const recordField = element.getAttribute(FLOW_RECORD_FIELD_ATTRIBUTE)?.trim()
+      if (!tableId || !ownerField || !recordField) return
+      recordToggles.push({
+        id: `${page.id}-record-toggle-${index + 1}`,
+        pageId: page.id,
+        elementId: createStableElementId(element, page.id),
+        dataSourceId: supabaseDataSourceId(tableId),
+        contextKey: element.getAttribute(FLOW_CONTEXT_ATTRIBUTE)?.trim() || 'record',
+        ownerField,
+        recordField,
+        activeLabel: element.getAttribute(FLOW_ACTIVE_LABEL_ATTRIBUTE)?.trim() || '★ Guardado',
+        inactiveLabel: element.getAttribute(FLOW_INACTIVE_LABEL_ATTRIBUTE)?.trim() || '☆ Guardar',
+      })
+    })
+    parsed.querySelectorAll<HTMLElement>([
+      `[${FLOW_ACTION_ATTRIBUTE}="create-record"]`,
+      `[${FLOW_ACTION_ATTRIBUTE}="update-record"]`,
+      `[${FLOW_ACTION_ATTRIBUTE}="delete-record"]`,
+    ].join(',')).forEach((element, index) => {
+      const connection = readDataActionConnection(Object.fromEntries(
+        [...element.attributes].map((attribute) => [attribute.name, attribute.value]),
+      ))
+      if (!connection) return
+      const safeField = (value: string) => /^[a-z][a-z0-9_]*$/.test(value)
+      const fieldMappings = connection.fieldMappings.filter((mapping) =>
+        safeField(mapping.field) && /^[a-z][a-z0-9_-]*$/.test(mapping.inputName))
+      dataActions.push({
+        id: `${page.id}-data-action-${index + 1}`,
+        pageId: page.id,
+        elementId: createStableElementId(element, page.id),
+        dataSourceId: supabaseDataSourceId(connection.dataSourceTableId),
+        action: connection.action === 'create-record' ? 'create'
+          : connection.action === 'update-record' ? 'update' : 'delete',
+        contextKey: connection.contextKey,
+        fieldMappings,
+        ...(connection.ownerField && safeField(connection.ownerField)
+          ? { ownerField: connection.ownerField }
+          : {}),
+        successMessage: connection.successMessage.slice(0, 300),
+        ...(connection.confirmMessage ? { confirmMessage: connection.confirmMessage.slice(0, 300) } : {}),
       })
     })
     parsed.querySelectorAll<HTMLElement>(`[${DATA_BIND_FIELD_ATTRIBUTE}]`)
@@ -206,6 +295,33 @@ export function buildEditorProjectBundle(
         const pageSize = Number.isInteger(requestedPageSize) && requestedPageSize > 0 && requestedPageSize <= 100
           ? requestedPageSize
           : undefined
+        const componentRoot = element.closest<HTMLElement>(`[${DATA_COMPONENT_ATTRIBUTE}]`)
+        const safeField = (value: string | null | undefined) => {
+          const field = value?.trim()
+          return field && /^[a-z][a-z0-9_]*$/.test(field) ? field : undefined
+        }
+        const orderColumn = safeField(element.getAttribute(DATA_SORT_FIELD_ATTRIBUTE))
+        const fixedFilters = [...(componentRoot?.querySelectorAll<HTMLElement>(`[${DATA_FIXED_FILTER_ATTRIBUTE}]`) ?? [])]
+          .flatMap((filter): NonNullable<DataRepeater['fixedFilters']> => {
+            const field = safeField(filter.getAttribute(DATA_FILTER_FIELD_ATTRIBUTE))
+            const operator = filter.getAttribute(DATA_FILTER_OPERATOR_ATTRIBUTE)?.trim()
+            const value = filter.getAttribute(DATA_FILTER_VALUE_ATTRIBUTE)?.trim().slice(0, 500)
+            if (!field || !value || !['eq', 'contains', 'gte', 'lte'].includes(operator ?? '')) return []
+            return [{ field, operator: operator as 'eq' | 'contains' | 'gte' | 'lte', value }]
+          })
+        const searchField = safeField(componentRoot?.querySelector<HTMLElement>(`[${DATA_SEARCH_FIELD_ATTRIBUTE}]`)
+          ?.getAttribute(DATA_SEARCH_FIELD_ATTRIBUTE))
+        const filterControls = [...(componentRoot?.querySelectorAll<HTMLElement>(
+          `[${DATA_FILTER_CONTROL_ATTRIBUTE}][${DATA_FILTER_FIELD_ATTRIBUTE}]`,
+        ) ?? [])].flatMap((control): NonNullable<DataRepeater['filterControls']> => {
+          const field = safeField(control.getAttribute(DATA_FILTER_FIELD_ATTRIBUTE))
+          const kind = control.getAttribute(DATA_FILTER_CONTROL_ATTRIBUTE)?.trim()
+          if (!field || !['text', 'number', 'boolean', 'date'].includes(kind ?? '')) return []
+          return [{ field, kind: kind as 'text' | 'number' | 'boolean' | 'date' }]
+        })
+        const visitorSortFields = [...(componentRoot?.querySelectorAll<HTMLOptionElement>(
+          `[${DATA_SORT_CONTROL_ATTRIBUTE}] option[data-field]`,
+        ) ?? [])].flatMap((option) => safeField(option.dataset.field) ?? [])
         repeaters.push({
           id: `${page.id}-repeater-${index + 1}`,
           pageId: page.id,
@@ -214,18 +330,26 @@ export function buildEditorProjectBundle(
           itemContext: 'record',
           ...(pageSize ? { pageSize } : {}),
           ...(element.getAttribute(DATA_PAGINATION_ATTRIBUTE) === 'true' ? { pagination: true } : {}),
-          ...(element.getAttribute('data-psl-empty-message')?.trim()
-            ? { emptyMessage: element.getAttribute('data-psl-empty-message')!.trim().slice(0, 300) }
+          ...(element.getAttribute('data-builder-empty-message')?.trim()
+            ? { emptyMessage: element.getAttribute('data-builder-empty-message')!.trim().slice(0, 300) }
             : {}),
-          ...(element.getAttribute('data-psl-error-message')?.trim()
-            ? { errorMessage: element.getAttribute('data-psl-error-message')!.trim().slice(0, 300) }
+          ...(element.getAttribute('data-builder-error-message')?.trim()
+            ? { errorMessage: element.getAttribute('data-builder-error-message')!.trim().slice(0, 300) }
             : {}),
-          ...(element.getAttribute('data-psl-user-filter-column')?.trim()
-            ? { userFilterColumn: element.getAttribute('data-psl-user-filter-column')!.trim() }
+          ...(element.getAttribute('data-builder-user-filter-column')?.trim()
+            ? { userFilterColumn: element.getAttribute('data-builder-user-filter-column')!.trim() }
             : {}),
-          ...(element.getAttribute('data-psl-include-unpublished') === 'true'
+          ...(element.getAttribute('data-builder-include-unpublished') === 'true'
             ? { includeUnpublished: true }
             : {}),
+          ...(orderColumn ? {
+            orderColumn,
+            orderDirection: element.getAttribute(DATA_SORT_DIRECTION_ATTRIBUTE) === 'desc' ? 'desc' : 'asc',
+          } as const : {}),
+          ...(fixedFilters.length ? { fixedFilters } : {}),
+          ...(searchField ? { searchField } : {}),
+          ...(filterControls.length ? { filterControls } : {}),
+          ...(visitorSortFields.length ? { visitorSortFields: [...new Set(visitorSortFields)] } : {}),
         })
       })
     files.push({
@@ -245,7 +369,21 @@ export function buildEditorProjectBundle(
     throw new Error('Conecta y verifica Supabase antes de exportar elementos con datos.')
   }
 
-  if (motionActivities.some((activity) => activity.reference.type === 'data' || activity.persistence)
+  if (recordToggles.length && (!normalizedData
+    || !normalizedData.projectUrl
+    || !isSafePublishableKey(normalizedData.publishableKey))) {
+    throw new Error('Conecta y verifica Supabase antes de guardar registros desde un botón.')
+  }
+
+  if (dataActions.length && (!normalizedData
+    || !normalizedData.projectUrl
+    || !isSafePublishableKey(normalizedData.publishableKey))) {
+    throw new Error('Conecta y verifica Supabase antes de modificar registros desde el sitio.')
+  }
+
+  if (motionActivities.some((activity) => activity.reference.type === 'data'
+    || activity.referenceOutput.type === 'supabase'
+    || activity.persistence)
     && (!normalizedData || !normalizedData.projectUrl || !isSafePublishableKey(normalizedData.publishableKey))) {
     throw new Error('Conecta y verifica Supabase antes de usar referencias o resultados de movimiento con datos.')
   }
@@ -266,9 +404,11 @@ export function buildEditorProjectBundle(
       pages: pages.map((page) => ({
         id: page.id,
         name: page.name,
-        ...(authPage ? { access: page.id === authPage.id
-          ? 'guestOnly' as const
-          : 'authenticated' as const } : {}),
+        ...(page.id === authPage?.id
+          ? { access: 'guestOnly' as const }
+          : page.access
+            ? { access: page.access, ...(page.access === 'role' ? { roles: page.roles ?? [] } : {}) }
+            : authPage ? { access: 'authenticated' as const } : {}),
         file: filesByPage.get(page.id)!,
       })),
       connections,
@@ -308,6 +448,8 @@ export function buildEditorProjectBundle(
       } : {}),
       ...(bindings.length ? { bindings } : {}),
       ...(repeaters.length ? { repeaters } : {}),
+      ...(recordToggles.length ? { recordToggles } : {}),
+      ...(dataActions.length ? { dataActions } : {}),
       ...(motionActivities.length ? { motionActivities } : {}),
     },
     files,
@@ -328,6 +470,10 @@ export function editorProjectBundle(editor: Editor, supabaseConfig?: SupabaseEdi
     return {
       id: page.getId(),
       name: page.getName() || 'Sin título',
+      access: page.get('access') as EditorExportPage['access'],
+      roles: Array.isArray(page.get('roles'))
+        ? (page.get('roles') as unknown[]).filter((role): role is string => typeof role === 'string')
+        : undefined,
       html: body.outerHTML,
       css: editor.getCss({ component, keepUnusedStyles: true }),
       js: editor.getJs({ component }),
@@ -337,7 +483,7 @@ export function editorProjectBundle(editor: Editor, supabaseConfig?: SupabaseEdi
   return buildEditorProjectBundle(
     pages,
     pages[0]?.id ?? '',
-    'Sitio creado con PSL',
+    'Sitio creado con Visual Builder',
     supabaseConfig,
   )
 }

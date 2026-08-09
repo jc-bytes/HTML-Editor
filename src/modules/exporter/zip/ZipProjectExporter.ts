@@ -13,8 +13,8 @@ import {
 } from '../../../runtime/motion-runtime'
 
 const textDecoder = new TextDecoder()
-const runtimePath = 'psl-runtime/navigation.js'
-const overridesPath = 'psl-runtime/overrides.css'
+const runtimePath = 'builder-runtime/navigation.js'
+const overridesPath = 'builder-runtime/overrides.css'
 const motionRuntimePath = 'motion-runtime/analysis.js'
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -34,20 +34,20 @@ function injectNavigationRuntime(
   page: ProjectPage,
 ) {
   const document = new DOMParser().parseFromString(markup, 'text/html')
-  document.querySelectorAll('[data-psl-config], [data-psl-runtime], [data-psl-overrides], [data-motion-config], [data-motion-runtime]')
+  document.querySelectorAll('[data-builder-config], [data-builder-runtime], [data-builder-overrides], [data-motion-config], [data-motion-runtime]')
     .forEach((node) => node.remove())
   applyContentOverrides(document, bundle.manifest, page.id)
 
   if (createOverrideCss(bundle.manifest)) {
     const stylesheet = document.createElement('link')
-    stylesheet.dataset.pslOverrides = 'true'
+    stylesheet.dataset.builderOverrides = 'true'
     stylesheet.rel = 'stylesheet'
     stylesheet.href = relativeProjectPath(page.file, overridesPath)
     document.head.append(stylesheet)
   }
 
   const configScript = document.createElement('script')
-  configScript.dataset.pslConfig = 'true'
+  configScript.dataset.builderConfig = 'true'
   configScript.textContent = createNavigationConfigSource({
     connections: bundle.manifest.connections,
     currentPage: page.id,
@@ -59,6 +59,7 @@ function injectNavigationRuntime(
     dataSources: bundle.manifest.dataSources,
     bindings: bundle.manifest.bindings,
     repeaters: bundle.manifest.repeaters,
+    recordToggles: bundle.manifest.recordToggles,
     authentication: bundle.manifest.authentication,
     pageAccess: Object.fromEntries(bundle.manifest.pages.map((target) => [
       target.id,
@@ -68,10 +69,13 @@ function injectNavigationRuntime(
           : 'authenticated'
         : 'public'),
     ])),
+    pageRoles: Object.fromEntries(bundle.manifest.pages
+      .filter((target) => target.access === 'role')
+      .map((target) => [target.id, target.roles ?? []])),
   })
 
   const runtimeScript = document.createElement('script')
-  runtimeScript.dataset.pslRuntime = 'true'
+  runtimeScript.dataset.builderRuntime = 'true'
   runtimeScript.src = relativeProjectPath(page.file, runtimePath)
   document.body.append(configScript, runtimeScript)
 

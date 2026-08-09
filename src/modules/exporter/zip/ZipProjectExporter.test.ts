@@ -60,16 +60,16 @@ describe('ZipProjectExporter', () => {
     const exported = await new ZipProjectExporter().export(bundle)
     const archive = await JSZip.loadAsync(await exported.arrayBuffer())
     const home = await archive.file('pages/home.html')!.async('string')
-    const runtime = await archive.file('psl-runtime/navigation.js')!.async('string')
-    const overrides = await archive.file('psl-runtime/overrides.css')!.async('string')
+    const runtime = await archive.file('builder-runtime/navigation.js')!.async('string')
+    const overrides = await archive.file('builder-runtime/overrides.css')!.async('string')
     const index = await archive.file('index.html')!.async('string')
 
-    expect(home).toContain('data-psl-config="true"')
-    expect(home).toContain('src="../psl-runtime/navigation.js"')
+    expect(home).toContain('data-builder-config="true"')
+    expect(home).toContain('src="../builder-runtime/navigation.js"')
     expect(home).toContain('practice.html')
-    expect(runtime).toContain('pslElementId')
+    expect(runtime).toContain('builderElementId')
     expect(home).toContain('Start practice')
-    expect(home).toContain('data-psl-overrides="true"')
+    expect(home).toContain('data-builder-overrides="true"')
     expect(overrides).toContain('background-color:#176f70')
     expect(overrides).toContain(':hover')
     expect(index).toContain('pages/home.html')
@@ -86,8 +86,8 @@ describe('ZipProjectExporter', () => {
     const home = await secondArchive.file('pages/home.html')!.async('string')
 
     expect(firstImport.manifest).toEqual(bundle.manifest)
-    expect(home.match(/data-psl-config=/g)).toHaveLength(1)
-    expect(home.match(/data-psl-runtime=/g)).toHaveLength(1)
+    expect(home.match(/data-builder-config=/g)).toHaveLength(1)
+    expect(home.match(/data-builder-runtime=/g)).toHaveLength(1)
   })
 
   it('uses an imported root index page instead of overwriting it with a redirect', async () => {
@@ -112,7 +112,7 @@ describe('ZipProjectExporter', () => {
     const index = await archive.file('index.html')!.async('string')
 
     expect(index).toContain('Figma home')
-    expect(index).toContain('src="psl-runtime/navigation.js"')
+    expect(index).toContain('src="builder-runtime/navigation.js"')
     expect(index).not.toContain('window.location.replace')
   })
 })

@@ -1,4 +1,4 @@
--- Panamanian Sign Language (PSL) — first complete schema
+-- Lengua de Señas Panameña (LSP) — first complete schema
 -- Paste this same file into the website's Datos > Mis datos > SQL importer,
 -- then run it once in Supabase > SQL Editor.
 
@@ -7,7 +7,7 @@ begin;
 create schema if not exists private;
 revoke all on schema private from public;
 
--- @psl-access user_owned
+-- @builder-access user_owned
 create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null unique references auth.users(id) on delete cascade,
@@ -20,7 +20,7 @@ create table if not exists public.profiles (
 
 -- Kept private in the visual editor because users must never assign themselves
 -- the teacher role. A user can have both student and teacher rows.
--- @psl-access private
+-- @builder-access private
 create table if not exists public.user_roles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -29,7 +29,7 @@ create table if not exists public.user_roles (
   constraint user_roles_user_role_key unique (user_id, role)
 );
 
--- @psl-access public_read
+-- @builder-access public_read
 create table if not exists public.practices (
   id uuid primary key default gen_random_uuid(),
   published boolean not null default false,
@@ -51,7 +51,7 @@ create table if not exists public.practices (
 
 -- Every attempt is history. The three most recent practices come from this
 -- table, so a separate "recent" table would duplicate information.
--- @psl-access user_owned
+-- @builder-access user_owned
 create table if not exists public.practice_attempts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -64,7 +64,7 @@ create table if not exists public.practice_attempts (
 );
 
 -- One summary row per student and practice for fast progress screens.
--- @psl-access user_owned
+-- @builder-access user_owned
 create table if not exists public.practice_progress (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -78,7 +78,7 @@ create table if not exists public.practice_progress (
   constraint practice_progress_user_practice_key unique (user_id, practice_id)
 );
 
--- @psl-access user_owned
+-- @builder-access user_owned
 create table if not exists public.favorite_practices (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,

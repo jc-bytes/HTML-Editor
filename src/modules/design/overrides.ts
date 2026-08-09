@@ -207,7 +207,7 @@ export function applyContentOverrides(
     const override = overrides.get(elementId)
     if (!override) return
 
-    element.dataset.pslOverrideId = elementId
+    element.dataset.builderOverrideId = elementId
     const content = override.content
     if (!content) return
     if (content.text !== undefined) element.textContent = content.text
@@ -233,7 +233,7 @@ function declarationCss(declaration: StyleDeclaration | undefined) {
 
 function selector(elementId: string, state: EditorStyleState) {
   const escaped = elementId.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
-  const base = `[data-psl-override-id="${escaped}"]`
+  const base = `[data-builder-override-id="${escaped}"]`
   if (state === 'base') return base
   if (state === 'disabled') return `${base}:disabled,${base}[aria-disabled="true"]`
   return `${base}:${state}`

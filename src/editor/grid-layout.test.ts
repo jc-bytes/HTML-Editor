@@ -7,6 +7,7 @@ import {
   appendLayoutRow,
   createGridLayoutPlugin,
   ensurePageGrid,
+  FULL_PAGE_TEMPLATE_ATTRIBUTE,
   GRID_EDITOR_STYLES,
   GRID_LAYOUT_STYLES,
   isGridItem,
@@ -56,6 +57,33 @@ describe('page layout rows', () => {
     expect(ensurePageGrid(current)).toBe(layout)
   })
 
+  it('keeps full-page templates outside the ordinary page grid', () => {
+    const current = createEditor()
+    current.setComponents(`<main class="builder-auth-page" ${FULL_PAGE_TEMPLATE_ATTRIBUTE}="auth"><form>Access</form></main>`)
+
+    expect(ensurePageGrid(current)).toBeUndefined()
+    expect(current.getWrapper()?.components()).toHaveLength(1)
+    expect(current.getWrapper()?.components().at(0)?.getAttributes())
+      .toHaveProperty(FULL_PAGE_TEMPLATE_ATTRIBUTE, 'auth')
+    expect(current.getHtml()).not.toContain(PAGE_LAYOUT_ATTRIBUTE)
+  })
+
+  it('repairs legacy access templates that were wrapped in a page grid', () => {
+    const current = createEditor()
+    current.setComponents(`<main ${PAGE_LAYOUT_ATTRIBUTE} class="builder-page-layout">
+      <section ${LAYOUT_ROW_ATTRIBUTE} class="builder-layout-row">
+        <div ${LAYOUT_COLUMN_ATTRIBUTE} class="builder-layout-column">
+          <main class="builder-auth-page"><form>Access</form></main>
+        </div>
+      </section>
+    </main>`)
+
+    expect(ensurePageGrid(current)).toBeUndefined()
+    expect(current.getWrapper()?.components()).toHaveLength(1)
+    expect(current.getWrapper()?.components().at(0)?.getClasses()).toContain('builder-auth-page')
+    expect(current.getHtml()).not.toContain(PAGE_LAYOUT_ATTRIBUTE)
+  })
+
   it('adds independent two- and three-column rows', () => {
     const current = createEditor()
     const layout = ensurePageGrid(current)!
@@ -88,10 +116,10 @@ describe('page layout rows', () => {
 
   it('repairs stale structural row styles when an existing project loads', () => {
     const current = createEditor()
-    current.setComponents(`<main ${PAGE_LAYOUT_ATTRIBUTE} class="psl-page-layout">
-      <section ${LAYOUT_ROW_ATTRIBUTE} ${LAYOUT_PRESET_ATTRIBUTE}="equal-2" class="psl-layout-row" style="display:block;grid-template-columns:1fr">
-        <div ${LAYOUT_COLUMN_ATTRIBUTE} class="psl-layout-column"><p>Izquierda</p></div>
-        <div ${LAYOUT_COLUMN_ATTRIBUTE} class="psl-layout-column"><p>Derecha</p></div>
+    current.setComponents(`<main ${PAGE_LAYOUT_ATTRIBUTE} class="builder-page-layout">
+      <section ${LAYOUT_ROW_ATTRIBUTE} ${LAYOUT_PRESET_ATTRIBUTE}="equal-2" class="builder-layout-row" style="display:block;grid-template-columns:1fr">
+        <div ${LAYOUT_COLUMN_ATTRIBUTE} class="builder-layout-column"><p>Izquierda</p></div>
+        <div ${LAYOUT_COLUMN_ATTRIBUTE} class="builder-layout-column"><p>Derecha</p></div>
       </section>
     </main>`)
 
@@ -246,17 +274,17 @@ describe('page layout rows', () => {
     expect(GRID_LAYOUT_STYLES).toContain('@media (max-width: 767px)')
     expect(GRID_LAYOUT_STYLES).toContain('align-items: start')
     expect(GRID_LAYOUT_STYLES).toContain('min-height: 0')
-    expect(GRID_LAYOUT_STYLES).not.toContain('min-height: var(--psl-layout-min-height')
+    expect(GRID_LAYOUT_STYLES).not.toContain('min-height: var(--builder-layout-min-height')
     expect(GRID_LAYOUT_STYLES).not.toContain('Arrastra un elemento aquí')
     expect(GRID_EDITOR_STYLES).toContain('Arrastra un elemento aquí')
-    expect(GRID_EDITOR_STYLES).toContain('min-height: var(--psl-layout-min-height')
+    expect(GRID_EDITOR_STYLES).toContain('min-height: var(--builder-layout-min-height')
   })
 
   it('registers each layout preset as an add-panel block', () => {
     const current = createEditor()
-    expect(current.BlockManager.get('psl-layout-single')?.getLabel()).toBe('Una columna')
-    expect(current.BlockManager.get('psl-layout-single')?.get('media')).toContain('<svg')
-    expect(current.BlockManager.get('psl-layout-equal-2')?.getLabel()).toBe('Dos columnas')
-    expect(current.BlockManager.get('psl-layout-equal-3')?.getLabel()).toBe('Tres columnas')
+    expect(current.BlockManager.get('builder-layout-single')?.getLabel()).toBe('Una columna')
+    expect(current.BlockManager.get('builder-layout-single')?.get('media')).toContain('<svg')
+    expect(current.BlockManager.get('builder-layout-equal-2')?.getLabel()).toBe('Dos columnas')
+    expect(current.BlockManager.get('builder-layout-equal-3')?.getLabel()).toBe('Tres columnas')
   })
 })

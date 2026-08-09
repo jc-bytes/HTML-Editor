@@ -51,12 +51,12 @@ describe('native LSP learning starter', () => {
     const profile = editor.Pages.get('perfil')?.getMainComponent()
     const creator = editor.Pages.get('gestion')?.getMainComponent()
     const practiceEditor = editor.Pages.get('editor-practica')?.getMainComponent()
-    expect(editor.getHtml({ component: catalog })).toContain('data-psl-repeater="table-practices"')
-    expect(editor.getHtml({ component: catalog })).toContain('data-psl-empty-message="Todavía no hay prácticas disponibles."')
+    expect(editor.getHtml({ component: catalog })).toContain('data-builder-repeater="table-practices"')
+    expect(editor.getHtml({ component: catalog })).toContain('data-builder-empty-message="Todavía no hay prácticas disponibles."')
     expect(editor.getHtml({ component: catalog })).not.toContain('catalog-tools')
     expect(editor.getHtml({ component: catalog })).not.toContain('Medio de referencia pendiente')
-    expect(editor.getHtml({ component: catalog })).toContain('data-psl-role-visible="teacher"')
-    expect(editor.getHtml({ component: home })).toContain('data-psl-page-size="1"')
+    expect(editor.getHtml({ component: catalog })).toContain('data-builder-role-visible="teacher"')
+    expect(editor.getHtml({ component: home })).toContain('data-builder-page-size="1"')
     expect(editor.getHtml({ component: home })).toContain('Todavía no tienes actividad')
     expect(editor.getHtml({ component: home })).toContain('¡Bienvenido,')
     expect(editor.getHtml({ component: home })).not.toContain('Resumen semanal')
@@ -65,9 +65,11 @@ describe('native LSP learning starter', () => {
     expect(editor.getHtml({ component: progress })).not.toContain('table-like')
     expect(editor.getHtml({ component: practice })).toContain('data-motion-activity="true"')
     expect(editor.getHtml({ component: practice })).toContain('Vista espejo')
-    expect(editor.getHtml({ component: profile })).toContain('data-psl-mutation-source="profiles"')
-    expect(editor.getHtml({ component: profile })).toContain('data-psl-mutation-field')
-    expect(editor.getHtml({ component: profile })).toContain('data-psl-auth-action="logout"')
+    expect(editor.getHtml({ component: practice })).toContain('data-builder-flow-action="toggle-record"')
+    expect(editor.getHtml({ component: practice })).toContain('data-builder-flow-data-source="table-favorite-practices"')
+    expect(editor.getHtml({ component: profile })).toContain('data-builder-mutation-source="profiles"')
+    expect(editor.getHtml({ component: profile })).toContain('data-builder-mutation-field')
+    expect(editor.getHtml({ component: profile })).toContain('data-builder-auth-action="logout"')
     expect(editor.getHtml({ component: profile })).toContain('aria-label="Cerrar sesión"')
     expect(editor.getHtml({ component: profile })).not.toContain('name="avatar_url"')
     expect(editor.getHtml({ component: profile })).not.toContain('URL de la foto')
@@ -75,14 +77,14 @@ describe('native LSP learning starter', () => {
     expect(editor.getHtml({ component: profile })).not.toContain('signout-row')
     expect(editor.getHtml({ component: profile })).not.toContain('Prototipo visual')
     expect(editor.getHtml({ component: creator })).toContain('Mis prácticas')
-    expect(editor.getHtml({ component: creator })).toContain('data-psl-user-filter-column="created_by"')
-    expect(editor.getHtml({ component: creator })).toContain('data-psl-include-unpublished="true"')
+    expect(editor.getHtml({ component: creator })).toContain('data-builder-user-filter-column="created_by"')
+    expect(editor.getHtml({ component: creator })).toContain('data-builder-include-unpublished="true"')
     expect(editor.getHtml({ component: creator })).not.toContain('catalog-tools')
     expect(editor.getHtml({ component: creator })).not.toContain('Archivar')
     expect(editor.getHtml({ component: practiceEditor })).toContain('Nueva práctica')
-    expect(editor.getHtml({ component: practiceEditor })).toContain('data-psl-mutation-mode="context"')
-    expect(editor.getHtml({ component: practiceEditor })).toContain('data-psl-mutation-filter="id"')
-    expect(editor.getHtml({ component: practiceEditor })).toContain('data-psl-bind-target="value"')
+    expect(editor.getHtml({ component: practiceEditor })).toContain('data-builder-mutation-mode="context"')
+    expect(editor.getHtml({ component: practiceEditor })).toContain('data-builder-mutation-filter="id"')
+    expect(editor.getHtml({ component: practiceEditor })).toContain('data-builder-bind-target="value"')
     expect(editor.getHtml({ component: practiceEditor })).toContain('data-practice-wizard')
     expect(editor.getHtml({ component: practiceEditor })).toContain('data-practice-step="details"')
     expect(editor.getHtml({ component: practiceEditor })).toContain('data-practice-step="reference"')
@@ -92,7 +94,7 @@ describe('native LSP learning starter', () => {
     expect(editor.getHtml({ component: practiceEditor })).toContain('data-motion-activity="true"')
     expect(editor.getHtml({ component: practiceEditor })).toContain('movement-reference-required')
     expect(editor.getHtml({ component: practiceEditor })).toContain('Requerida')
-    expect(editor.getHtml({ component: practiceEditor })).toContain('data-motion-face="true"')
+    expect(editor.getHtml({ component: practiceEditor })).toContain('data-vision-landmarks="hands,pose,face"')
     expect(editor.getHtml({ component: practiceEditor })).toContain('data-motion-duration="10000"')
     expect(editor.getHtml({ component: practiceEditor })).toContain('data-motion-stop')
     expect(editor.getHtml({ component: practiceEditor })).toContain('data-motion-replay')
@@ -117,7 +119,7 @@ describe('native LSP learning starter', () => {
     expect(editor.getHtml({ component: practiceEditor })).not.toContain('URL del video')
     expect(editor.getHtml({ component: practiceEditor })).not.toContain('practice-topic')
     expect(editor.getHtml({ component: practiceEditor })).not.toContain('media-placeholder')
-    expect(editor.getHtml({ component: practiceEditor })).toContain('data-psl-mutation-source="practices"')
+    expect(editor.getHtml({ component: practiceEditor })).toContain('data-builder-mutation-source="practices"')
     expect(editor.getHtml({ component: practiceEditor })).toContain('name="mediapipe_reference"')
     expect(editor.getHtml({ component: practiceEditor })).not.toContain('El guardado aún no está conectado.')
     expect(catalog?.components().length).toBeGreaterThan(0)
@@ -214,6 +216,12 @@ describe('native LSP learning starter', () => {
     expect(bundle.manifest.dataSources?.find((source) => source.name === 'user_roles'))
       .toEqual(expect.objectContaining({ requiresAuth: true }))
     expect(bundle.manifest.bindings?.length).toBeGreaterThan(20)
+    expect(bundle.manifest.recordToggles).toEqual([expect.objectContaining({
+      pageId: 'detalle',
+      dataSourceId: 'supabase-table_favorite_practices',
+      ownerField: 'user_id',
+      recordField: 'practice_id',
+    })])
     expect(bundle.manifest.motionActivities).toHaveLength(2)
     expect(bundle.manifest.motionActivities?.find((activity) => activity.pageId === 'detalle'))
       .toEqual(expect.objectContaining({ mode: 'compare', persistence: expect.any(Object) }))
@@ -230,7 +238,7 @@ describe('native LSP learning starter', () => {
 
     let session = createEditorPreviewSession(bundle, 'catalogo')
     session = applyEditorPreviewAction(session, {
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       action: 'navigate',
       targetPage: 'detalle',
       context: { record: {
@@ -240,7 +248,7 @@ describe('native LSP learning starter', () => {
     }).session
     for (const targetPage of ['resultados', 'progreso']) {
       session = applyEditorPreviewAction(session, {
-        source: 'psl-navigation-runtime',
+        source: 'builder-navigation-runtime',
         action: 'navigate',
         targetPage,
       }).session

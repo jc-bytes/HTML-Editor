@@ -11,7 +11,7 @@ describe('page template catalog', () => {
 
   it('keeps the access template wired to the authentication runtime', () => {
     const auth = pageTemplateById('auth')
-    expect(auth?.html).toContain('data-psl-auth-action="login"')
-    expect(auth?.html).toContain('data-psl-auth-action="signup"')
+    expect(auth?.html).toContain('data-builder-auth-action="login"')
+    expect(auth?.html).toContain('data-builder-auth-action="signup"')
   })
 })

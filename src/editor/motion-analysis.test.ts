@@ -40,8 +40,8 @@ describe('motion editor contract', () => {
     ]
     expect(motionBlockIds.map((id) => editor.BlockManager.get(id)?.get('label'))).toEqual([
       'Ver referencia',
-      'Comparar movimientos',
-      'Analizar movimiento',
+      'Comparar referencias',
+      'Analizar en vivo',
       'Capturar referencia',
     ])
     const motionBlockMedia = motionBlockIds.map((id) => String(editor.BlockManager.get(id)?.get('media')))
@@ -77,7 +77,39 @@ describe('motion editor contract', () => {
     }))
     expect(activities[1]).toEqual(expect.objectContaining({
       mode: 'reference', input: { type: 'element', selector: '#source-video', durationMs: 4000 }, reference: { type: 'none' },
+      referenceOutput: { type: 'download' },
     }))
+  })
+
+  it('exports camera analysis as continuous live model use', () => {
+    const [activity] = readMotionActivities(documentWith(motionAnalysisMarkup('analyze')), 'motion', [])
+
+    expect(activity).toEqual(expect.objectContaining({
+      mode: 'analyze',
+      input: { type: 'camera', durationMs: 3000, facingMode: 'user', continuous: true },
+      evaluator: { type: 'quality' },
+    }))
+  })
+
+  it('exports direct Supabase reference storage separately from comparison results', () => {
+    const activities = readMotionActivities(documentWith(`
+      <section data-motion-activity="true" data-motion-mode="reference"
+        data-motion-reference-save="supabase"
+        data-motion-reference-save-table="practices"
+        data-motion-reference-save-context="record"
+        data-motion-reference-save-record-mode="specific"
+        data-motion-reference-save-record-id="practice-42"
+        data-motion-reference-save-field="mediapipe_reference"></section>
+    `), 'motion', [{ id: 'practices', name: 'practices', displayName: 'Practices', access: 'public_read', fields: [], relations: [] }])
+
+    expect(activities[0]?.referenceOutput).toEqual({
+      type: 'supabase',
+      dataSourceId: 'supabase-practices',
+      contextKey: 'record',
+      recordMode: 'specific',
+      recordId: 'practice-42',
+      templateField: 'mediapipe_reference',
+    })
   })
 
   it('exports the chosen reference-record strategy', () => {

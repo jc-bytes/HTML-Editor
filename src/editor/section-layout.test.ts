@@ -15,11 +15,11 @@ import {
 function createSection() {
   const editor = grapesjs.init({ headless: true, storageManager: false })
   const section = editor.getWrapper()!.append(`
-    <section class="psl-starter-section">
-      <div class="psl-starter-grid psl-starter-grid--3">
-        <article class="psl-starter-card">Uno</article>
-        <article class="psl-starter-card">Dos</article>
-        <article class="psl-starter-card">Tres</article>
+    <section class="builder-starter-section">
+      <div class="builder-starter-grid builder-starter-grid--3">
+        <article class="builder-starter-card">Uno</article>
+        <article class="builder-starter-card">Dos</article>
+        <article class="builder-starter-card">Tres</article>
       </div>
     </section>
   `)[0]
@@ -33,10 +33,10 @@ describe('section column configuration', () => {
       plugins: [createSectionLayoutPlugin],
       storageManager: false,
     })
-    editor.setComponents('<div class="psl-starter-grid psl-starter-grid--3"></div>')
+    editor.setComponents('<div class="builder-starter-grid builder-starter-grid--3"></div>')
 
     const grid = editor.getWrapper()!.components().at(0)!
-    expect(grid.get('type')).toBe('psl-section-grid')
+    expect(grid.get('type')).toBe('builder-section-grid')
     expect(grid.get('resizable')).toBe(false)
     editor.destroy()
   })
@@ -56,7 +56,7 @@ describe('section column configuration', () => {
 
     updateSectionColumnWidth(grid, 1, 25)
     expect(readSectionLayoutSettings(grid).columns).toEqual([40, 25, 35])
-    expect(grid.getStyle()['--psl-section-columns']).toContain('40fr')
+    expect(grid.getStyle()['--builder-section-columns']).toContain('40fr')
     editor.destroy()
   })
 

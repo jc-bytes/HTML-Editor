@@ -247,7 +247,7 @@ function serializeRule(rule: CSSRule, scope: string): string {
 export function scopePageCss(css: string, pageId: string) {
   const source = css.trim()
   if (!source) return ''
-  const scope = `[data-psl-import-page="${pageId.replace(/["\\]/g, '')}"]`
+  const scope = `[data-builder-import-page="${pageId.replace(/["\\]/g, '')}"]`
 
   try {
     const cssDocument = document.implementation.createHTMLDocument('')
@@ -328,7 +328,7 @@ export function prepareImportedPage(
   return {
     id,
     name: draft.name.trim() || 'Página importada',
-    html: `<div data-psl-import-page="${id}">${cleanHtml}</div>`,
+    html: `<div data-builder-import-page="${id}">${cleanHtml}</div>`,
     css,
   }
 }

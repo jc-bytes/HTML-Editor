@@ -11,10 +11,34 @@ import {
   disableCanvasResizing,
   installEditorCanvasLayoutGuards,
   keepToolbarInsideBounds,
+  authMetadataFieldMarkup,
 } from './OpenSourceEditor'
 import grapesjs from 'grapesjs'
 
 describe('inline typography controls', () => {
+  it('renders a mapped signup radio group from visual settings', () => {
+    const markup = authMetadataFieldMarkup({
+      key: 'user_role', label: 'Choose your role', control: 'radio', direction: 'horizontal', required: true,
+      destinationTableId: 'profiles-table', destinationField: 'user_role',
+      options: [{ label: 'Student', value: 'student', description: 'Learn and practice' }, { label: 'Teacher', value: 'teacher' }],
+    })
+    const document = new DOMParser().parseFromString(markup, 'text/html')
+
+    expect(
+      document
+        .querySelector('[data-builder-auth-metadata-definition="user_role"]')
+        ?.getAttribute('data-builder-auth-metadata-table'),
+    ).toBe('profiles-table')
+    expect(document.querySelector('fieldset')?.getAttribute('data-builder-auth-metadata-direction')).toBe('horizontal')
+    expect(document.querySelectorAll('input[type="radio"]')).toHaveLength(2)
+    expect(document.querySelector('.builder-auth-choice')?.getAttribute('style')).toContain('display:flex')
+    expect(document.querySelector('.builder-auth-choice-grid')?.getAttribute('style')).toContain('repeat(auto-fit')
+    expect(document.querySelector('input')?.getAttribute('style')).toContain('width:20px!important')
+    expect(document.body.textContent).toContain('Student')
+    expect(document.body.textContent).toContain('Learn and practice')
+    expect(document.querySelector('input')?.hasAttribute('required')).toBe(true)
+  })
+
   it('keeps a scaled toolbar clear of the canvas edges', () => {
     const toolbar = document.createElement('div')
     toolbar.style.left = '-40px'
@@ -96,9 +120,9 @@ describe('direct canvas resizing', () => {
   it('disables handles for an entire component tree', () => {
     const editor = grapesjs.init({ headless: true, storageManager: false })
     const section = editor.getWrapper()!.append(`
-      <section class="psl-starter-section">
-        <div class="psl-starter-grid psl-starter-grid--3">
-          <article class="psl-starter-card">Tarjeta</article>
+      <section class="builder-starter-section">
+        <div class="builder-starter-grid builder-starter-grid--3">
+          <article class="builder-starter-card">Tarjeta</article>
         </div>
       </section>
     `)[0]
@@ -144,7 +168,7 @@ describe('direct component colors', () => {
     const [section, text] = editor.getWrapper()!.append('<section><p>Contenido</p></section><p>Texto</p>')
 
     expect(addComponentColorToolbar(section)).toBe(true)
-    expect((section.get('toolbar') ?? []).filter((item) => String(item.id).startsWith('psl:set-'))).toHaveLength(2)
+    expect((section.get('toolbar') ?? []).filter((item) => String(item.id).startsWith('builder:set-'))).toHaveLength(2)
     expect(addComponentColorToolbar(section)).toBe(false)
     expect(addComponentColorToolbar(text)).toBe(false)
     editor.destroy()
@@ -175,15 +199,15 @@ describe('container positioning', () => {
     const image = section.components().at(0)!
 
     expect(addComponentPositionToolbar(image)).toBe(true)
-    expect((image.get('toolbar') ?? []).some((item) => item.id === 'psl:set-container-position')).toBe(true)
-    expect((image.get('toolbar') ?? []).some((item) => item.id === 'psl:set-container-horizontal-position')).toBe(true)
+    expect((image.get('toolbar') ?? []).some((item) => item.id === 'builder:set-container-position')).toBe(true)
+    expect((image.get('toolbar') ?? []).some((item) => item.id === 'builder:set-container-horizontal-position')).toBe(true)
     expect(addComponentPositionToolbar(image)).toBe(false)
     editor.destroy()
   })
 
   it('aligns the immediate container without styling the selected child', () => {
     const editor = grapesjs.init({ headless: true, storageManager: false })
-    const section = editor.getWrapper()!.append('<section data-psl-layout-row><div data-psl-layout-column><img src="example.png"></div></section>')[0]
+    const section = editor.getWrapper()!.append('<section data-builder-layout-row><div data-builder-layout-column><img src="example.png"></div></section>')[0]
     const column = section.components().at(0)!
     const image = column.components().at(0)!
 
@@ -223,20 +247,20 @@ describe('editor canvas layout guards', () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 16_777_213 })
 
     expect(installEditorCanvasLayoutGuards(editorDocument)).toBe(1)
-    expect(editorDocument.querySelector('.runaway')).toHaveAttribute('data-psl-editor-viewport-guard', 'true')
-    expect(editorDocument.querySelector('.normal')).not.toHaveAttribute('data-psl-editor-viewport-guard')
-    expect(editorDocument.head.querySelector('style[data-psl-editor-layout-guards]')?.textContent)
-      .toContain('--psl-editor-viewport-height: 720px')
-    expect(editorDocument.head.querySelector('style[data-psl-editor-layout-guards]')?.textContent)
-      .toContain('--psl-editor-data-card-height: 320px')
-    expect(editorDocument.head.querySelector('style[data-psl-editor-layout-guards]')?.textContent)
-      .toContain('min-height: var(--psl-editor-viewport-height) !important')
-    expect(editorDocument.head.querySelector('style[data-psl-editor-layout-guards]')?.textContent)
-      .toContain('.psl-data-grid')
-    expect(editorDocument.head.querySelector('style[data-psl-editor-layout-guards]')?.textContent)
+    expect(editorDocument.querySelector('.runaway')).toHaveAttribute('data-builder-editor-viewport-guard', 'true')
+    expect(editorDocument.querySelector('.normal')).not.toHaveAttribute('data-builder-editor-viewport-guard')
+    expect(editorDocument.head.querySelector('style[data-builder-editor-layout-guards]')?.textContent)
+      .toContain('--builder-editor-viewport-height: 720px')
+    expect(editorDocument.head.querySelector('style[data-builder-editor-layout-guards]')?.textContent)
+      .toContain('--builder-editor-data-card-height: 320px')
+    expect(editorDocument.head.querySelector('style[data-builder-editor-layout-guards]')?.textContent)
+      .toContain('min-height: var(--builder-editor-viewport-height) !important')
+    expect(editorDocument.head.querySelector('style[data-builder-editor-layout-guards]')?.textContent)
+      .toContain('.builder-data-grid')
+    expect(editorDocument.head.querySelector('style[data-builder-editor-layout-guards]')?.textContent)
       .toContain('.lsp-page')
-    expect(editorDocument.head.querySelector('style[data-psl-editor-layout-guards]')?.textContent)
-      .toContain('grid-template-columns: repeat(var(--psl-data-cols-desktop, 4)')
+    expect(editorDocument.head.querySelector('style[data-builder-editor-layout-guards]')?.textContent)
+      .toContain('grid-template-columns: repeat(var(--builder-data-cols-desktop, 4)')
   })
 
   it('detects a runaway minimum height even when the iframe viewport itself is normal', () => {
@@ -244,6 +268,6 @@ describe('editor canvas layout guards', () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 720 })
 
     expect(installEditorCanvasLayoutGuards(document, 720)).toBe(1)
-    expect(document.querySelector('.runaway')).toHaveAttribute('data-psl-editor-viewport-guard', 'true')
+    expect(document.querySelector('.runaway')).toHaveAttribute('data-builder-editor-viewport-guard', 'true')
   })
 })

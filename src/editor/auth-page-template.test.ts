@@ -5,15 +5,15 @@ describe('auth page template', () => {
   it('includes Supabase-compatible login, signup, and logout controls', () => {
     const document = new DOMParser().parseFromString(authPageTemplateHtml, 'text/html')
 
-    expect(document.querySelector('form[data-psl-auth-action="login"]')).not.toBeNull()
-    expect(document.querySelector('form[data-psl-auth-action="signup"]')).not.toBeNull()
-    expect(document.querySelector('[data-psl-auth-action="logout"]')).not.toBeNull()
+    expect(document.querySelector('form[data-builder-auth-action="login"]')).not.toBeNull()
+    expect(document.querySelector('form[data-builder-auth-action="signup"]')).not.toBeNull()
+    expect(document.querySelector('[data-builder-auth-action="logout"]')).not.toBeNull()
     expect(document.querySelectorAll('input[name="email"]')).toHaveLength(2)
     expect(document.querySelectorAll('input[name="password"]')).toHaveLength(2)
-    expect(document.querySelector('[data-psl-auth-tab="signup"]')).not.toBeNull()
-    expect(document.querySelector('[data-psl-auth-panel="signup"]')?.hasAttribute('hidden')).toBe(true)
-    expect(document.querySelector('[data-psl-auth-visible="signed-in"]')).not.toBeNull()
-    expect(document.querySelector('[data-psl-auth-field="email"]')).not.toBeNull()
+    expect(document.querySelector('[data-builder-auth-tab="signup"]')).not.toBeNull()
+    expect(document.querySelector('[data-builder-auth-panel="signup"]')?.hasAttribute('hidden')).toBe(true)
+    expect(document.querySelector('[data-builder-auth-visible="signed-in"]')).not.toBeNull()
+    expect(document.querySelector('[data-builder-auth-field="email"]')).not.toBeNull()
   })
 
   it('adapts its split layout for tablet, mobile, and reduced motion', () => {
@@ -21,6 +21,6 @@ describe('auth page template', () => {
     expect(authPageTemplateCss).toContain('@media (max-width: 700px)')
     expect(authPageTemplateCss).toContain('@media (max-width: 380px)')
     expect(authPageTemplateCss).toContain('@media (prefers-reduced-motion: reduce)')
-    expect(authPageTemplateCss).toContain('var(--psl-editor-viewport-height, 100svh)')
+    expect(authPageTemplateCss).toContain('var(--builder-editor-viewport-height, 100svh)')
   })
 })

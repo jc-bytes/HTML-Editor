@@ -1,11 +1,11 @@
 @font-face {
-  font-family: "PSL Fixture";
-  src: url("../assets/psl-fixture.woff2") format("woff2");
+  font-family: "Visual Builder Fixture";
+  src: url("../assets/builder-fixture.woff2") format("woff2");
   font-display: swap;
 }
 
 :root {
-  font-family: "PSL Fixture", Inter, sans-serif;
+  font-family: "Visual Builder Fixture", Inter, sans-serif;
   color: #123d47;
   background: #eff9f7;
 }
@@ -15,7 +15,7 @@ body { margin: 0; }
 
 .screen {
   width: min(1120px, calc(100% - 48px));
-  min-height: var(--psl-editor-viewport-height, 100vh);
+  min-height: var(--builder-editor-viewport-height, 100vh);
   margin: auto;
   padding: 72px 0;
 }

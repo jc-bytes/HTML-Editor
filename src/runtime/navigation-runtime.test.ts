@@ -9,7 +9,7 @@ import {
 describe('navigation runtime', () => {
   it('assigns stable identifiers and emits navigation messages', () => {
     document.body.innerHTML = '<main><button><span>Continue</span></button></main>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'home',
       pageUrls: {},
       transport: 'message',
@@ -29,17 +29,17 @@ describe('navigation runtime', () => {
       cancelable: true,
     }))
 
-    expect(document.querySelector('button')?.dataset.pslElementId)
+    expect(document.querySelector('button')?.dataset.builderElementId)
       .toBe('home::main:1/button:1')
     expect(postMessage).toHaveBeenCalledWith({
       action: 'navigate',
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       targetPage: 'practice',
     }, '*')
 
     dispose()
     postMessage.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
@@ -57,7 +57,9 @@ describe('navigation runtime', () => {
       }],
     })
 
-    expect(createNavigationRuntimeSource()).toContain('data-psl-element-id')
+    expect(createNavigationRuntimeSource()).toContain('data-builder-element-id')
+    expect(createNavigationRuntimeSource()).toContain('const contextParameterPrefix = "context-"')
+    expect(createNavigationRuntimeSource()).not.toContain('builder-context-')
     expect(configSource).not.toContain('</script>')
     expect(configSource).toContain('\\u003c/script>')
   })
@@ -74,7 +76,7 @@ describe('navigation runtime', () => {
           <h2 tabindex="-1">Referencia de movimiento</h2>
         </section>
       </form>`
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'editor-practica',
       pageUrls: {},
       transport: 'message',
@@ -99,13 +101,13 @@ describe('navigation runtime', () => {
       .toBe('Paso 2 de 2 · Referencia')
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('executes the generated runtime without module dependencies', () => {
     document.body.innerHTML = '<button>Back</button>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'home',
       pageUrls: {},
       transport: 'message',
@@ -123,29 +125,29 @@ describe('navigation runtime', () => {
 
     expect(postMessage).toHaveBeenCalledWith({
       action: 'back',
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
     }, '*')
 
     postMessage.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('rejects unrelated window messages', () => {
     expect(isNavigationRuntimeMessage({ source: 'other', action: 'navigate' })).toBe(false)
     expect(isNavigationRuntimeMessage({
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       action: 'back',
     })).toBe(true)
     expect(isNavigationRuntimeMessage({
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       action: 'navigate',
     })).toBe(false)
   })
 
   it('carries record context and applies safe static bindings', async () => {
     document.body.innerHTML = '<main><button>Open</button><h1>Fallback</h1></main>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'detail',
       pageUrls: {},
       transport: 'message',
@@ -191,13 +193,13 @@ describe('navigation runtime', () => {
 
     dispose()
     postMessage.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('keeps record context across later steps in a multi-page flow', () => {
     document.body.innerHTML = '<main><button>Continue</button></main>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'detail',
       pageUrls: {},
       transport: 'message',
@@ -220,19 +222,147 @@ describe('navigation runtime', () => {
     expect(postMessage).toHaveBeenCalledWith({
       action: 'navigate',
       context: { record: { dataSourceId: 'practices', recordId: 'practice-1' } },
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       targetPage: 'camera',
     }, '*')
 
     dispose()
     postMessage.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('saves and removes the current record for the signed-in user', async () => {
+    document.body.innerHTML = '<main><button>☆ Guardar</button></main>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'detail',
+      pageUrls: {},
+      transport: 'message',
+      currentContext: {
+        record: { dataSourceId: 'supabase-practices', recordId: 'practice-1' },
+      },
+      authentication: {
+        provider: 'supabase',
+        projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key',
+        loginPage: 'access',
+        afterLoginPage: 'home',
+        afterLogoutPage: 'access',
+      },
+      dataSources: [{
+        id: 'supabase-favorites',
+        name: 'favorite_practices',
+        type: 'supabase',
+        projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key',
+        table: 'favorite_practices',
+        publishedOnly: false,
+        requiresAuth: true,
+      }],
+      recordToggles: [{
+        id: 'favorite-button',
+        pageId: 'detail',
+        elementId: 'detail::main:1/button:1',
+        dataSourceId: 'supabase-favorites',
+        contextKey: 'record',
+        ownerField: 'user_id',
+        recordField: 'practice_id',
+        activeLabel: '★ Guardado',
+        inactiveLabel: '☆ Guardar',
+      }],
+      connections: [],
+    }
+    const session = {
+      access_token: 'favorite-access-token',
+      refresh_token: 'favorite-refresh-token',
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user: { id: 'user-1' },
+    }
+    const storage = {
+      getItem: vi.fn((key: string) => key === 'builder-auth:school.supabase.co'
+        ? JSON.stringify(session)
+        : null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    }
+    let saved = false
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => {
+      if (options?.method === 'POST') {
+        saved = true
+        return new Response(null, { status: 201 })
+      }
+      if (options?.method === 'DELETE') {
+        saved = false
+        return new Response(null, { status: 204 })
+      }
+      return new Response(JSON.stringify(saved ? [{ id: 'favorite-1' }] : []), { status: 200 })
+    })
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+    const button = document.querySelector('button')!
+
+    await vi.waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'false'))
+    button.click()
+    await vi.waitFor(() => expect(button).toHaveTextContent('★ Guardado'))
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://school.supabase.co/rest/v1/favorite_practices',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ user_id: 'user-1', practice_id: 'practice-1' }),
+      }),
+    )
+
+    button.click()
+    await vi.waitFor(() => expect(button).toHaveTextContent('☆ Guardar'))
+    expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'DELETE')).toBe(true)
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('turns a clicked collection card into the selected reference context', () => {
+    document.body.innerHTML = `<article data-builder-record-id="reference-42" data-builder-data-source-id="supabase-references">
+      <button>Practicar</button>
+    </article>`
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'references',
+      pageUrls: {},
+      transport: 'message',
+      connections: [{
+        action: 'navigate',
+        elementId: 'references::article:1/button:1',
+        event: 'click',
+        sourcePage: 'references',
+        targetPage: 'compare',
+        context: {
+          record: { dataSourceId: 'supabase-references', recordId: '$record.id' },
+        },
+      }],
+    }
+    const postMessage = vi.spyOn(window, 'postMessage').mockImplementation(() => undefined)
+    const dispose = installNavigationRuntime(window, document)
+
+    document.querySelector('button')?.click()
+
+    expect(postMessage).toHaveBeenCalledWith({
+      action: 'navigate',
+      context: { record: { dataSourceId: 'supabase-references', recordId: 'reference-42' } },
+      source: 'builder-navigation-runtime',
+      targetPage: 'compare',
+    }, '*')
+
+    dispose()
+    postMessage.mockRestore()
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('repeats one template for each record and sends the clicked record id', async () => {
     document.body.innerHTML = '<section><article><h2>Template</h2></article></section>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'list',
       pageUrls: {},
       transport: 'message',
@@ -283,13 +413,13 @@ describe('navigation runtime', () => {
 
     dispose()
     postMessage.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('loads published Supabase rows with the publishable key header', async () => {
     document.body.innerHTML = '<article><h2>Template</h2></article>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'list',
       pageUrls: {},
       transport: 'message',
@@ -335,13 +465,197 @@ describe('navigation runtime', () => {
 
     dispose()
     fetchSpy.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('creates a record from mapped form inputs and the signed-in user', async () => {
+    document.body.innerHTML = '<form><input name="project_title" required><button type="submit">Create</button></form>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'create', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'projects', name: 'projects', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'projects', publishedOnly: false, requiresAuth: true,
+      }],
+      dataActions: [{
+        id: 'create-project', pageId: 'create', elementId: 'create::form:1', dataSourceId: 'projects',
+        action: 'create', contextKey: 'record', ownerField: 'user_id',
+        fieldMappings: [{ field: 'title', inputName: 'project_title' }], successMessage: 'Created.',
+      }],
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'user-token', refresh_token: 'refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'user-1' },
+      })), setItem: vi.fn(), removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 201 }))
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+    const input = document.querySelector<HTMLInputElement>('input')!
+    input.value = 'Science fair'
+    document.querySelector('form')!.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ title: 'Science fair', user_id: 'user-1' }),
+      headers: expect.objectContaining({ Authorization: 'Bearer user-token', Prefer: 'return=minimal' }),
+    })
+    expect(document.querySelector('[data-builder-data-action-status]')).toHaveTextContent('Created.')
+    expect(input).toHaveValue('')
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('updates the current record from a mapped form', async () => {
+    document.body.innerHTML = '<form><input name="project_title" value="Updated"><button type="submit">Save</button></form>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'edit', pageUrls: {}, transport: 'message', connections: [],
+      currentContext: { record: { dataSourceId: 'projects', recordId: 'project-7' } },
+      dataSources: [{
+        id: 'projects', name: 'projects', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'projects', publishedOnly: false, requiresAuth: true,
+      }],
+      dataActions: [{
+        id: 'update-project', pageId: 'edit', elementId: 'edit::form:1', dataSourceId: 'projects',
+        action: 'update', contextKey: 'record', fieldMappings: [{ field: 'title', inputName: 'project_title' }],
+        successMessage: 'Saved.',
+      }],
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'user-token', refresh_token: 'refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'user-1' },
+      })), setItem: vi.fn(), removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+    document.querySelector('form')!.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    expect(String(fetchMock.mock.calls[0][0])).toContain('id=eq.project-7')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PATCH', body: JSON.stringify({ title: 'Updated' }) })
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('confirms and deletes the current repeated record', async () => {
+    document.body.innerHTML = '<article data-builder-record-id="project-8"><button>Delete</button></article>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'list', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'projects', name: 'projects', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'projects', publishedOnly: false, requiresAuth: true,
+      }],
+      dataActions: [{
+        id: 'delete-project', pageId: 'list', elementId: 'list::article:1/button:1', dataSourceId: 'projects',
+        action: 'delete', contextKey: 'record', fieldMappings: [], successMessage: 'Deleted.',
+        confirmMessage: 'Delete this record?',
+      }],
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'user-token', refresh_token: 'refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'user-1' },
+      })), setItem: vi.fn(), removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    Object.defineProperty(runtimeWindow, 'confirm', { value: vi.fn(() => true) })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+    document.querySelector('button')!.click()
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    expect(String(fetchMock.mock.calls[0][0])).toContain('id=eq.project-8')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'DELETE' })
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('applies configured filters and refreshes when visitor controls change', async () => {
+    document.body.innerHTML = `<section data-builder-data-component="card_grid">
+      <form data-builder-filter-form>
+        <input data-builder-search-field="title">
+        <fieldset data-builder-filter-control="number" data-builder-filter-field="difficulty">
+          <input data-builder-filter-bound="min">
+          <input data-builder-filter-bound="max">
+        </fieldset>
+        <select data-builder-sort-control><option value="">Original</option><option value="title.desc">Title</option></select>
+        <button type="reset">Clear</button>
+      </form>
+      <article><h2>Template</h2></article>
+    </section>`
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'list', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'supabase-primary', name: 'practice_items', type: 'supabase',
+        projectUrl: 'https://school.supabase.co', publishableKey: 'sb_publishable_test_key',
+        table: 'practice_items', publishedOnly: true,
+      }],
+      repeaters: [{
+        id: 'items', pageId: 'list', elementId: 'list::section:1/article:1',
+        dataSourceId: 'supabase-primary', itemContext: 'record', pageSize: 12,
+        orderColumn: 'difficulty', orderDirection: 'asc',
+        fixedFilters: [{ field: 'published_year', operator: 'gte', value: '2020' }],
+        searchField: 'title',
+        filterControls: [{ field: 'difficulty', kind: 'number' }],
+        visitorSortFields: ['title'],
+      }],
+      bindings: [{
+        id: 'title', pageId: 'list', elementId: 'list::section:1/article:1/h2:1',
+        target: 'text', contextKey: 'record', field: 'title',
+      }],
+    }
+    const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify([{ id: 'one', title: 'Hello' }]), { status: 200 }),
+    )
+    const dispose = installNavigationRuntime(window, document)
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
+    const initialUrl = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(initialUrl.searchParams.get('published_year')).toBe('gte.2020')
+    expect(initialUrl.searchParams.get('order')).toBe('difficulty.asc')
+
+    const search = document.querySelector<HTMLInputElement>('[data-builder-search-field]')!
+    const minimum = document.querySelector<HTMLInputElement>('[data-builder-filter-bound="min"]')!
+    const maximum = document.querySelector<HTMLInputElement>('[data-builder-filter-bound="max"]')!
+    const sort = document.querySelector<HTMLSelectElement>('[data-builder-sort-control]')!
+    search.value = 'hello'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    minimum.value = '2'
+    maximum.value = '5'
+    sort.value = 'title.desc'
+    sort.dispatchEvent(new Event('change', { bubbles: true }))
+
+    await vi.waitFor(() => expect(fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(2))
+    const filteredUrl = new URL(String(fetchSpy.mock.calls.at(-1)?.[0]))
+    expect(filteredUrl.searchParams.get('title')).toBe('ilike.*hello*')
+    expect(filteredUrl.searchParams.getAll('difficulty')).toEqual(['gte.2', 'lte.5'])
+    expect(filteredUrl.searchParams.get('order')).toBe('title.desc')
+
+    dispose()
+    fetchSpy.mockRestore()
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('resolves storage media bindings to signed URLs in repeated previews', async () => {
     document.body.innerHTML = '<section><article><video></video></article></section>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'list', pageUrls: {}, transport: 'message', connections: [],
       dataSources: [{
         id: 'supabase-practices', name: 'practices', type: 'supabase',
@@ -373,13 +687,13 @@ describe('navigation runtime', () => {
 
     dispose()
     fetchSpy.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('loads only the signed-in teacher practices and includes drafts when configured', async () => {
     document.body.innerHTML = '<section><article><h2>Template</h2></article></section>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'creator',
       pageUrls: {},
       transport: 'message',
@@ -440,15 +754,15 @@ describe('navigation runtime', () => {
     } })
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('paginates repeated Supabase rows and requests only the current page', async () => {
-    document.body.innerHTML = '<section class="psl-data-carousel"><article><h2>Template</h2></article></section>'
-    const carousel = document.querySelector<HTMLElement>('.psl-data-carousel')!
+    document.body.innerHTML = '<section class="builder-data-carousel"><article><h2>Template</h2></article></section>'
+    const carousel = document.querySelector<HTMLElement>('.builder-data-carousel')!
     carousel.scrollLeft = 140
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'list',
       pageUrls: {},
       transport: 'message',
@@ -504,18 +818,18 @@ describe('navigation runtime', () => {
     await vi.waitFor(() => expect(document.querySelectorAll('article')).toHaveLength(1))
     expect(document.querySelector('h2')).toHaveTextContent('Item 13')
     expect(String(fetchSpy.mock.calls[1][0])).toContain('offset=12')
-    expect(document.querySelector('.psl-data-pagination span')).toHaveTextContent('Página 2')
+    expect(document.querySelector('.builder-data-pagination span')).toHaveTextContent('Página 2')
     expect(carousel.scrollLeft).toBe(0)
 
     dispose()
     fetchSpy.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('shows a friendly empty state when a repeated collection has no items', async () => {
     document.body.innerHTML = '<article><h2>Template</h2></article>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'list',
       pageUrls: {},
       transport: 'message',
@@ -537,17 +851,17 @@ describe('navigation runtime', () => {
     }
 
     const dispose = installNavigationRuntime(window, document)
-    await vi.waitFor(() => expect(document.querySelector('[data-psl-data-status="empty"]'))
+    await vi.waitFor(() => expect(document.querySelector('[data-builder-data-status="empty"]'))
       .toHaveTextContent('Visita el catálogo para comenzar.'))
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('shows one empty message instead of design placeholders in preview', async () => {
     document.body.innerHTML = '<section><article><h2>Title: practice title</h2></article></section>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'list',
       pageUrls: {},
       transport: 'message',
@@ -564,18 +878,18 @@ describe('navigation runtime', () => {
     }
 
     const dispose = installNavigationRuntime(window, document)
-    await vi.waitFor(() => expect(document.querySelector('[data-psl-data-status="empty"]'))
+    await vi.waitFor(() => expect(document.querySelector('[data-builder-data-status="empty"]'))
       .toHaveTextContent('Todavía no hay elementos para mostrar.'))
     expect(document.querySelectorAll('article')).toHaveLength(0)
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('shows one error message without design placeholders when the data request fails', async () => {
     document.body.innerHTML = '<section><article><h2>Title placeholder</h2></article></section>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'list',
       pageUrls: {},
       transport: 'message',
@@ -602,20 +916,20 @@ describe('navigation runtime', () => {
     const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue(new Response('Denied', { status: 403 }))
 
     const dispose = installNavigationRuntime(window, document)
-    await vi.waitFor(() => expect(document.querySelector('[data-psl-data-status="error"]'))
+    await vi.waitFor(() => expect(document.querySelector('[data-builder-data-status="error"]'))
       .toHaveTextContent('No se pudo cargar esta información.'))
     expect(document.querySelectorAll('article')).toHaveLength(0)
-    expect(document.querySelector('.psl-data-pagination')).toHaveAttribute('hidden')
+    expect(document.querySelector('.builder-data-pagination')).toHaveAttribute('hidden')
 
     dispose()
     fetchSpy.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('loads one user-owned row with the stored session and authenticated header', async () => {
     document.body.innerHTML = '<main><h1>Profile</h1></main>'
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'profile',
       pageUrls: {},
       transport: 'message',
@@ -669,16 +983,16 @@ describe('navigation runtime', () => {
     )
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('shows role-specific controls only for roles returned by user_roles', async () => {
     document.body.innerHTML = `<nav>
-      <button data-psl-role-visible="teacher">Docente</button>
-      <button data-psl-role-visible="admin">Administración</button>
+      <button data-builder-role-visible="teacher">Docente</button>
+      <button data-builder-role-visible="admin">Administración</button>
     </nav>`
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'home',
       pageUrls: {},
       transport: 'message',
@@ -712,9 +1026,9 @@ describe('navigation runtime', () => {
 
     const dispose = installNavigationRuntime(runtimeWindow, document)
 
-    await vi.waitFor(() => expect(document.querySelector('[data-psl-role-visible="teacher"]'))
+    await vi.waitFor(() => expect(document.querySelector('[data-builder-role-visible="teacher"]'))
       .not.toHaveAttribute('hidden'))
-    expect(document.querySelector('[data-psl-role-visible="admin"]')).toHaveAttribute('hidden')
+    expect(document.querySelector('[data-builder-role-visible="admin"]')).toHaveAttribute('hidden')
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/rest/v1/user_roles?'),
       { headers: {
@@ -724,18 +1038,18 @@ describe('navigation runtime', () => {
     )
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('signs in with email/password, persists the session, and reloads the preview', async () => {
-    document.body.innerHTML = `<form data-psl-auth-action="login">
+    document.body.innerHTML = `<form data-builder-auth-action="login">
       <input name="email" value="student@example.com">
       <input name="password" value="class-password">
       <button type="submit">Entrar</button>
-      <p data-psl-auth-status></p>
+      <p data-builder-auth-status></p>
     </form>`
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'login',
       pageUrls: {},
       transport: 'message',
@@ -791,7 +1105,7 @@ describe('navigation runtime', () => {
     expect(reload).toHaveBeenCalledOnce()
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
@@ -803,7 +1117,7 @@ describe('navigation runtime', () => {
       setItem: vi.fn((key: string, value: string) => values.set(key, value)),
       removeItem: vi.fn((key: string) => values.delete(key)),
     }
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'home',
       pageUrls: { home: 'pages/home.html', access: 'pages/access.html' },
       pageAccess: { home: 'authenticated', access: 'guestOnly' },
@@ -825,34 +1139,92 @@ describe('navigation runtime', () => {
 
     await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({
       action: 'navigate',
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       targetPage: 'access',
     }, '*'))
-    expect(values.get('psl-auth:guards.supabase.co:return-page')).toBe('home')
+    expect(values.get('builder-auth:guards.supabase.co:return-page')).toBe('home')
 
     dispose()
     postMessage.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.documentElement.style.removeProperty('visibility')
     document.body.innerHTML = ''
   })
 
+  it('allows a role-restricted page when the signed-in user has an allowed role', async () => {
+    document.body.innerHTML = '<main><h1>Teacher area</h1></main>'
+    const session = {
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user: { id: 'user-1' },
+    }
+    const storage = {
+      getItem: vi.fn((key: string) => key === 'builder-auth:guards.supabase.co'
+        ? JSON.stringify(session)
+        : null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    }
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'teachers',
+      pageUrls: { teachers: 'pages/teachers.html', access: 'pages/access.html' },
+      pageAccess: { teachers: 'role', access: 'guestOnly' },
+      pageRoles: { teachers: ['teacher', 'admin'] },
+      transport: 'message',
+      authentication: {
+        provider: 'supabase',
+        projectUrl: 'https://guards.supabase.co',
+        publishableKey: 'sb_publishable_test_key',
+        loginPage: 'access',
+        afterLoginPage: 'teachers',
+        afterLogoutPage: 'access',
+      },
+      dataSources: [{
+        id: 'roles',
+        name: 'user_roles',
+        type: 'supabase',
+        projectUrl: 'https://guards.supabase.co',
+        publishableKey: 'sb_publishable_test_key',
+        table: 'user_roles',
+        publishedOnly: false,
+        requiresAuth: true,
+      }],
+      connections: [],
+    }
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ role: 'teacher' }]), { status: 200 }),
+    )
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    expect(document.documentElement.style.visibility).toBe('')
+    expect(document.querySelector('h1')).toHaveTextContent('Teacher area')
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
   it('signs in without a data table and returns to the originally requested page', async () => {
-    document.body.innerHTML = `<form data-psl-auth-action="login">
+    document.body.innerHTML = `<form data-builder-auth-action="login">
       <input name="email" value="student@example.com">
       <input name="password" value="class-password">
       <button type="submit">Entrar</button>
-      <p data-psl-auth-status></p>
+      <p data-builder-auth-status></p>
     </form>`
     const values = new Map<string, string>([
-      ['psl-auth:guards.supabase.co:return-page', 'practice'],
+      ['builder-auth:guards.supabase.co:return-page', 'practice'],
     ])
     const storage = {
       getItem: vi.fn((key: string) => values.get(key) ?? null),
       setItem: vi.fn((key: string, value: string) => values.set(key, value)),
       removeItem: vi.fn((key: string) => values.delete(key)),
     }
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'access',
       pageUrls: { home: 'pages/home.html', practice: 'pages/practice.html', access: 'pages/access.html' },
       pageAccess: { home: 'authenticated', practice: 'authenticated', access: 'guestOnly' },
@@ -886,34 +1258,34 @@ describe('navigation runtime', () => {
 
     await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({
       action: 'navigate',
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       targetPage: 'practice',
     }, '*'))
-    expect(values.get('psl-auth:guards.supabase.co')).toContain('new-access-token')
-    expect(values.get('psl-auth:guards.supabase.co:return-page')).toBeUndefined()
+    expect(values.get('builder-auth:guards.supabase.co')).toContain('new-access-token')
+    expect(values.get('builder-auth:guards.supabase.co:return-page')).toBeUndefined()
 
     dispose()
     postMessage.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('uses the destination configured on the auth component after sign in', async () => {
-    document.body.innerHTML = `<form data-psl-auth-action="login" data-psl-auth-destination="dashboard">
+    document.body.innerHTML = `<form data-builder-auth-action="login" data-builder-auth-destination="dashboard">
       <input name="email" value="student@example.com">
       <input name="password" value="class-password">
       <button type="submit">Entrar</button>
-      <p data-psl-auth-status></p>
+      <p data-builder-auth-status></p>
     </form>`
     const values = new Map<string, string>([
-      ['psl-auth:guards.supabase.co:return-page', 'practice'],
+      ['builder-auth:guards.supabase.co:return-page', 'practice'],
     ])
     const storage = {
       getItem: vi.fn((key: string) => values.get(key) ?? null),
       setItem: vi.fn((key: string, value: string) => values.set(key, value)),
       removeItem: vi.fn((key: string) => values.delete(key)),
     }
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'access',
       pageUrls: { access: 'access.html', dashboard: 'dashboard.html', practice: 'practice.html' },
       transport: 'message',
@@ -942,24 +1314,24 @@ describe('navigation runtime', () => {
 
     await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({
       action: 'navigate',
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       targetPage: 'dashboard',
     }, '*'))
 
     dispose()
     postMessage.mockRestore()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('switches between login and signup panels without relying on element ids', () => {
-    document.body.innerHTML = `<section data-psl-auth-visible="signed-out">
-      <button data-psl-auth-tab="login" aria-selected="true">Login</button>
-      <button data-psl-auth-tab="signup" aria-selected="false" tabindex="-1">Signup</button>
-      <form data-psl-auth-action="login" data-psl-auth-panel="login"></form>
-      <form data-psl-auth-action="signup" data-psl-auth-panel="signup" hidden></form>
+    document.body.innerHTML = `<section data-builder-auth-visible="signed-out">
+      <button data-builder-auth-tab="login" aria-selected="true">Login</button>
+      <button data-builder-auth-tab="signup" aria-selected="false" tabindex="-1">Signup</button>
+      <form data-builder-auth-action="login" data-builder-auth-panel="login"></form>
+      <form data-builder-auth-action="signup" data-builder-auth-panel="signup" hidden></form>
     </section>`
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'access',
       pageUrls: {},
       transport: 'message',
@@ -968,29 +1340,29 @@ describe('navigation runtime', () => {
     }
     const dispose = installNavigationRuntime(window, document)
 
-    document.querySelector<HTMLElement>('[data-psl-auth-tab="signup"]')?.click()
+    document.querySelector<HTMLElement>('[data-builder-auth-tab="signup"]')?.click()
 
-    expect(document.querySelector('[data-psl-auth-tab="signup"]')).toHaveAttribute('aria-selected', 'true')
-    expect(document.querySelector('[data-psl-auth-tab="login"]')).toHaveAttribute('tabindex', '-1')
-    expect(document.querySelector('[data-psl-auth-panel="signup"]')).not.toHaveAttribute('hidden')
-    expect(document.querySelector('[data-psl-auth-panel="login"]')).toHaveAttribute('hidden')
+    expect(document.querySelector('[data-builder-auth-tab="signup"]')).toHaveAttribute('aria-selected', 'true')
+    expect(document.querySelector('[data-builder-auth-tab="login"]')).toHaveAttribute('tabindex', '-1')
+    expect(document.querySelector('[data-builder-auth-panel="signup"]')).not.toHaveAttribute('hidden')
+    expect(document.querySelector('[data-builder-auth-panel="login"]')).toHaveAttribute('hidden')
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('includes editable profile intent metadata during signup without granting roles', async () => {
-    document.body.innerHTML = `<form data-psl-auth-action="signup">
-      <input name="display_name" data-psl-auth-metadata value="Ana">
+    document.body.innerHTML = `<form data-builder-auth-action="signup">
+      <input name="display_name" data-builder-auth-metadata value="Ana">
       <input name="email" value="ana@example.com">
       <input name="password" value="class-password">
-      <input name="learning_goal" data-psl-auth-metadata type="radio" value="learn">
-      <input name="learning_goal" data-psl-auth-metadata type="radio" value="teach" checked>
+      <input name="learning_goal" data-builder-auth-metadata type="radio" value="learn">
+      <input name="learning_goal" data-builder-auth-metadata type="radio" value="teach" checked>
       <button type="submit">Crear cuenta</button>
-      <p data-psl-auth-status></p>
+      <p data-builder-auth-status></p>
     </form>`
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'access',
       pageUrls: {},
       transport: 'message',
@@ -1025,21 +1397,66 @@ describe('navigation runtime', () => {
     )
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('copies mapped signup answers into the selected profile collection', async () => {
+    document.body.innerHTML = `<form data-builder-auth-action="signup" data-builder-auth-destination="dashboard">
+      <fieldset data-builder-auth-metadata-definition="user_role"
+        data-builder-auth-metadata-table="profiles-table" data-builder-auth-metadata-field="user_role">
+        <input name="user_role" data-builder-auth-metadata type="radio" value="student" checked>
+      </fieldset>
+      <input name="email" value="ana@example.com"><input name="password" value="class-password">
+      <button type="submit">Create</button><p data-builder-auth-status></p>
+    </form>`
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'access', pageUrls: { dashboard: 'dashboard.html' }, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'supabase-profiles_table', name: 'profiles', type: 'supabase',
+        projectUrl: 'https://school.supabase.co', publishableKey: 'sb_publishable_test_key',
+        table: 'profiles', publishedOnly: false, requiresAuth: true,
+      }],
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'user-token', refresh_token: 'refresh-token', expires_in: 3600,
+        user: { id: 'user-1', user_metadata: { user_role: 'student' } },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 201 }))
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: {
+      getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn(),
+    } })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+    document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/rest/v1/profiles?select=id&user_id=eq.user-1')
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ user_id: 'user-1', user_role: 'student' }),
+      headers: expect.objectContaining({ Authorization: 'Bearer user-token' }),
+    })
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('updates the signed-in profile and refreshes bound profile fields', async () => {
     document.body.innerHTML = `<main>
       <h1>Estudiante</h1>
-      <form data-psl-mutation-source="profiles" data-psl-mutation-filter="user_id">
-        <input name="display_name" data-psl-mutation-field value="Porfirio Rios">
-        <textarea name="bio" data-psl-mutation-field>Aprendiendo LSP.</textarea>
+      <form data-builder-mutation-source="profiles" data-builder-mutation-filter="user_id">
+        <input name="display_name" data-builder-mutation-field value="Porfirio Rios">
+        <textarea name="bio" data-builder-mutation-field>Aprendiendo LSP.</textarea>
         <button type="submit">Guardar perfil</button>
-        <p data-psl-mutation-status></p>
+        <p data-builder-mutation-status></p>
       </form>
     </main>`
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'profile',
       pageUrls: {},
       transport: 'message',
@@ -1066,7 +1483,7 @@ describe('navigation runtime', () => {
       connections: [],
     }
     const values = new Map<string, string>([[
-      'psl-auth:school.supabase.co',
+      'builder-auth:school.supabase.co',
       JSON.stringify({
         access_token: 'profile-access-token',
         refresh_token: 'profile-refresh-token',
@@ -1110,7 +1527,7 @@ describe('navigation runtime', () => {
       cancelable: true,
     }))
 
-    await vi.waitFor(() => expect(document.querySelector('[data-psl-mutation-status]'))
+    await vi.waitFor(() => expect(document.querySelector('[data-builder-mutation-status]'))
       .toHaveTextContent('Perfil guardado correctamente.'))
     expect(fetchMock).toHaveBeenLastCalledWith(
       'https://school.supabase.co/rest/v1/profiles?user_id=eq.user-1&select=*',
@@ -1129,13 +1546,14 @@ describe('navigation runtime', () => {
     expect(document.querySelector('h1')).toHaveTextContent('Porfirio Rios')
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('creates a teacher practice with its captured landmark template', async () => {
     const template = {
-      version: 2,
+      version: 3,
+      detectorTask: 'holistic-landmarker',
       durationMs: 2_000,
       frames: [{
         facePosture: [], handShape: [], location: [], orientation: [],
@@ -1143,19 +1561,19 @@ describe('navigation runtime', () => {
       }],
       landmarkFrames: [],
     }
-    document.body.innerHTML = `<form data-psl-mutation-source="practices"
-      data-psl-mutation-mode="insert" data-psl-mutation-owner-field="created_by">
-      <input name="title" data-psl-mutation-field value="Saludos">
-      <input name="difficulty" data-psl-mutation-field data-psl-mutation-type="number" value="1">
-      <input name="source" data-psl-mutation-field value="teacher">
-      <input name="mediapipe_reference" data-psl-mutation-field
-        data-psl-mutation-type="json" data-motion-template-field>
-      <button name="published" value="true" data-psl-mutation-type="boolean" type="submit">Publicar</button>
-      <p data-psl-mutation-status></p>
+    document.body.innerHTML = `<form data-builder-mutation-source="practices"
+      data-builder-mutation-mode="insert" data-builder-mutation-owner-field="created_by">
+      <input name="title" data-builder-mutation-field value="Saludos">
+      <input name="difficulty" data-builder-mutation-field data-builder-mutation-type="number" value="1">
+      <input name="source" data-builder-mutation-field value="teacher">
+      <input name="mediapipe_reference" data-builder-mutation-field
+        data-builder-mutation-type="json" data-motion-template-field>
+      <button name="published" value="true" data-builder-mutation-type="boolean" type="submit">Publicar</button>
+      <p data-builder-mutation-status></p>
     </form>`
     const templateField = document.querySelector<HTMLInputElement>('[data-motion-template-field]')
     if (templateField) templateField.value = JSON.stringify(template)
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'practice-editor', pageUrls: {}, transport: 'message', connections: [],
       dataSources: [{
         id: 'supabase-table_practices', name: 'practices', type: 'supabase',
@@ -1164,7 +1582,7 @@ describe('navigation runtime', () => {
       }],
     }
     const values = new Map<string, string>([[
-      'psl-auth:school.supabase.co',
+      'builder-auth:school.supabase.co',
       JSON.stringify({
         access_token: 'teacher-token', refresh_token: 'teacher-refresh',
         expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'teacher-1' },
@@ -1201,27 +1619,27 @@ describe('navigation runtime', () => {
     )
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('uploads a selected reference video and associates it with the practice', async () => {
     const template = {
-      version: 2, durationMs: 1_000,
+      version: 3, detectorTask: 'holistic-landmarker', durationMs: 1_000,
       frames: [{
         facePosture: [], handShape: [], location: [], orientation: [],
         quality: 1, t: 0, trajectory: [],
       }],
       landmarkFrames: [],
     }
-    document.body.innerHTML = `<form data-psl-mutation-source="practices"
-      data-psl-mutation-mode="insert" data-psl-mutation-owner-field="created_by">
-      <input name="title" data-psl-mutation-field value="Saludos">
-      <input name="source" data-psl-mutation-field value="teacher">
-      <input name="mediapipe_reference" data-psl-mutation-field
-        data-psl-mutation-type="json" data-motion-template-field>
-      <button name="published" value="true" data-psl-mutation-type="boolean" type="submit">Publicar</button>
-      <p data-psl-mutation-status></p>
+    document.body.innerHTML = `<form data-builder-mutation-source="practices"
+      data-builder-mutation-mode="insert" data-builder-mutation-owner-field="created_by">
+      <input name="title" data-builder-mutation-field value="Saludos">
+      <input name="source" data-builder-mutation-field value="teacher">
+      <input name="mediapipe_reference" data-builder-mutation-field
+        data-builder-mutation-type="json" data-motion-template-field>
+      <button name="published" value="true" data-builder-mutation-type="boolean" type="submit">Publicar</button>
+      <p data-builder-mutation-status></p>
     </form><input data-motion-file type="file">`
     document.querySelector<HTMLInputElement>('[data-motion-template-field]')!.value = JSON.stringify(template)
     const file = new File(['video'], 'referencia.mp4', { type: 'video/mp4' })
@@ -1235,7 +1653,7 @@ describe('navigation runtime', () => {
       value: [file], configurable: true,
     })
     videoInput.__motionReferenceClip = preparedClip
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'practice-editor', pageUrls: {}, transport: 'message', connections: [],
       dataSources: [{
         id: 'supabase-table_practices', name: 'practices', type: 'supabase',
@@ -1244,7 +1662,7 @@ describe('navigation runtime', () => {
       }],
     }
     const values = new Map<string, string>([[
-      'psl-auth:school.supabase.co',
+      'builder-auth:school.supabase.co',
       JSON.stringify({
         access_token: 'teacher-token', refresh_token: 'teacher-refresh',
         expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'teacher-1' },
@@ -1293,17 +1711,18 @@ describe('navigation runtime', () => {
         }),
       }),
     )
-    expect(document.querySelector('[data-psl-mutation-status]'))
+    expect(document.querySelector('[data-builder-mutation-status]'))
       .toHaveTextContent('Práctica guardada correctamente.')
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 
   it('loads and updates the selected teacher practice from Flow context', async () => {
     const template = {
-      version: 2,
+      version: 3,
+      detectorTask: 'holistic-landmarker',
       durationMs: 6_000,
       frames: [{
         facePosture: [], handShape: [], location: [], orientation: [],
@@ -1312,23 +1731,23 @@ describe('navigation runtime', () => {
       landmarkFrames: [],
     }
     document.body.innerHTML = `<header>
-      <p data-psl-editor-mode>Crear</p>
-      <h1 data-psl-editor-title>Nueva práctica</h1>
-      <p data-psl-editor-description>Completa la información.</p>
-    </header><form data-psl-mutation-source="practices"
-      data-psl-mutation-mode="context" data-psl-mutation-context="record"
-      data-psl-mutation-filter="id" data-psl-mutation-owner-field="created_by">
-      <input name="title" data-psl-mutation-field>
-      <textarea name="description" data-psl-mutation-field></textarea>
-      <input name="difficulty" data-psl-mutation-field data-psl-mutation-type="number">
-      <input name="estimated_minutes" type="number" data-psl-mutation-field>
-      <input name="source" data-psl-mutation-field>
-      <input name="mediapipe_reference" data-psl-mutation-field
-        data-psl-mutation-type="json" data-motion-template-field>
-      <button name="published" value="true" data-psl-mutation-type="boolean" type="submit">Publicar</button>
-      <p data-psl-mutation-status></p>
+      <p data-builder-editor-mode>Crear</p>
+      <h1 data-builder-editor-title>Nueva práctica</h1>
+      <p data-builder-editor-description>Completa la información.</p>
+    </header><form data-builder-mutation-source="practices"
+      data-builder-mutation-mode="context" data-builder-mutation-context="record"
+      data-builder-mutation-filter="id" data-builder-mutation-owner-field="created_by">
+      <input name="title" data-builder-mutation-field>
+      <textarea name="description" data-builder-mutation-field></textarea>
+      <input name="difficulty" data-builder-mutation-field data-builder-mutation-type="number">
+      <input name="estimated_minutes" type="number" data-builder-mutation-field>
+      <input name="source" data-builder-mutation-field>
+      <input name="mediapipe_reference" data-builder-mutation-field
+        data-builder-mutation-type="json" data-motion-template-field>
+      <button name="published" value="true" data-builder-mutation-type="boolean" type="submit">Publicar</button>
+      <p data-builder-mutation-status></p>
     </form>`
-    window.__PSL_NAVIGATION__ = {
+    window.__BUILDER_NAVIGATION__ = {
       currentPage: 'practice-editor', pageUrls: {}, transport: 'message', connections: [],
       currentContext: { record: {
         dataSourceId: 'supabase-table_practices', recordId: 'practice-1',
@@ -1346,7 +1765,7 @@ describe('navigation runtime', () => {
       }],
     }
     const values = new Map<string, string>([[
-      'psl-auth:school.supabase.co',
+      'builder-auth:school.supabase.co',
       JSON.stringify({
         access_token: 'teacher-token', refresh_token: 'teacher-refresh',
         expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'teacher-1' },
@@ -1380,8 +1799,8 @@ describe('navigation runtime', () => {
       .toBe('6')
     expect(document.querySelector<HTMLInputElement>('[data-motion-template-field]')?.value)
       .toBe(JSON.stringify(template))
-    expect(document.querySelector('[data-psl-editor-title]')).toHaveTextContent('Editar práctica')
-    expect(document.querySelector('[data-psl-mutation-status]'))
+    expect(document.querySelector('[data-builder-editor-title]')).toHaveTextContent('Editar práctica')
+    expect(document.querySelector('[data-builder-mutation-status]'))
       .toHaveTextContent('Práctica y referencia existentes cargadas.')
     expect(fetchMock).toHaveBeenNthCalledWith(1,
       'https://school.supabase.co/rest/v1/practices?select=*&id=eq.practice-1',
@@ -1414,7 +1833,7 @@ describe('navigation runtime', () => {
     )
 
     dispose()
-    delete window.__PSL_NAVIGATION__
+    delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })
 })

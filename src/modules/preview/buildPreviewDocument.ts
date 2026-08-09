@@ -203,7 +203,7 @@ export function buildPreviewDocument(
 
   if (mode === 'test') {
     const configScript = document.createElement('script')
-    configScript.dataset.pslConfig = 'true'
+    configScript.dataset.builderConfig = 'true'
     configScript.textContent = createNavigationConfigSource({
       connections: bundle.manifest.connections,
       currentPage: page.id,
@@ -216,6 +216,7 @@ export function buildPreviewDocument(
       bindings: bundle.manifest.bindings,
       currentContext: options.context,
       repeaters: bundle.manifest.repeaters,
+      recordToggles: bundle.manifest.recordToggles,
       authentication: bundle.manifest.authentication,
       pageAccess: Object.fromEntries(bundle.manifest.pages.map((candidate) => [
         candidate.id,
@@ -225,9 +226,12 @@ export function buildPreviewDocument(
             : 'authenticated'
           : 'public'),
       ])),
+      pageRoles: Object.fromEntries(bundle.manifest.pages
+        .filter((candidate) => candidate.access === 'role')
+        .map((candidate) => [candidate.id, candidate.roles ?? []])),
     })
     const runtimeScript = document.createElement('script')
-    runtimeScript.dataset.pslRuntime = 'true'
+    runtimeScript.dataset.builderRuntime = 'true'
     runtimeScript.textContent = createNavigationRuntimeSource()
     document.body.append(configScript, runtimeScript)
 

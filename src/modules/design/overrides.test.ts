@@ -34,7 +34,7 @@ describe('design overrides', () => {
 
     expect(document.querySelector('button')?.textContent).toBe('Start now')
     expect(document.querySelector('button')?.getAttribute('aria-label')).toBe('Start practice')
-    expect(document.querySelector('button')?.dataset.pslOverrideId)
+    expect(document.querySelector('button')?.dataset.builderOverrideId)
       .toBe('home::main:1/button:1')
   })
 

@@ -15,7 +15,7 @@ const fixturePaths = [
   'practice.html',
   'styles/figma.css',
   'assets/hand.svg',
-  'assets/psl-fixture.woff2',
+  'assets/builder-fixture.woff2',
 ]
 
 async function fixtureArchive() {
@@ -29,7 +29,7 @@ async function fixtureArchive() {
 
 afterEach(() => {
   vi.restoreAllMocks()
-  delete window.__PSL_NAVIGATION__
+  delete window.__BUILDER_NAVIGATION__
   document.head.innerHTML = ''
   document.body.innerHTML = ''
 })
@@ -61,13 +61,13 @@ describe('Figma-compatible static flow', () => {
     expect(await archive.file('styles/figma.css')!.async('string'))
       .toContain('@media (max-width: 760px)')
     expect(archive.file('assets/hand.svg')).not.toBeNull()
-    expect(archive.file('assets/psl-fixture.woff2')).not.toBeNull()
+    expect(archive.file('assets/builder-fixture.woff2')).not.toBeNull()
 
     const reimported = await importer.import(exported)
     const indexPage = reimported.manifest.pages.find((page) => page.id === 'index')!
     const preview = buildPreviewDocument(reimported, indexPage, { mode: 'test' })
     const previewDocument = new DOMParser().parseFromString(preview, 'text/html')
-    const config = previewDocument.querySelector<HTMLScriptElement>('[data-psl-config]')!.textContent
+    const config = previewDocument.querySelector<HTMLScriptElement>('[data-builder-config]')!.textContent
 
     document.head.innerHTML = previewDocument.head.innerHTML
     document.body.innerHTML = previewDocument.body.innerHTML
@@ -78,7 +78,7 @@ describe('Figma-compatible static flow', () => {
 
     expect(postMessage).toHaveBeenCalledWith({
       action: 'navigate',
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       targetPage: 'practice',
     }, '*')
   })

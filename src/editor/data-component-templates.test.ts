@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  compatibleFieldsForSlot,
   createDataComponentMarkup,
   dataComponentDesignPreviewCount,
   dataComponentStyles,
@@ -41,17 +42,17 @@ describe('responsive data component templates', () => {
       description: 'description',
     })
 
-    expect(html).toContain('data-psl-repeater="practices-table"')
-    expect(html).toContain('data-psl-page-size="12"')
-    expect(html).toContain('data-psl-pagination="true"')
-    expect(html).toContain('data-psl-design-preview-count="8"')
-    expect(html).toContain('--psl-data-cols-desktop:4')
-    expect(html).toContain('--psl-data-cols-tablet:4')
-    expect(html).toContain('--psl-data-cols-mobile:2')
-    expect(html).toContain('data-psl-bind-field="media_url"')
-    expect(html).toContain('data-psl-bind-target="src"')
-    expect(html).toContain('data-psl-bind-field="practice_title"')
-    expect(html).toContain('data-psl-data-scope="context"')
+    expect(html).toContain('data-builder-repeater="practices-table"')
+    expect(html).toContain('data-builder-page-size="12"')
+    expect(html).toContain('data-builder-pagination="true"')
+    expect(html).toContain('data-builder-design-preview-count="8"')
+    expect(html).toContain('--builder-data-cols-desktop:4')
+    expect(html).toContain('--builder-data-cols-tablet:4')
+    expect(html).toContain('--builder-data-cols-mobile:2')
+    expect(html).toContain('data-builder-bind-field="media_url"')
+    expect(html).toContain('data-builder-bind-target="src"')
+    expect(html).toContain('data-builder-bind-field="practice_title"')
+    expect(html).toContain('data-builder-data-scope="context"')
   })
 
   it('fills the configured design grid with unbound placeholder cards', () => {
@@ -62,11 +63,11 @@ describe('responsive data component templates', () => {
     }, { mediaKind: 'image', desktopColumns: 3, tabletColumns: 2, mobileColumns: 1, pageSize: 6 })
     const document = new DOMParser().parseFromString(html, 'text/html')
 
-    expect(document.querySelectorAll('.psl-data-card')).toHaveLength(6)
-    expect(document.querySelectorAll('[data-psl-design-placeholder="true"]')).toHaveLength(5)
-    expect(document.querySelectorAll('[data-psl-design-placeholder][aria-hidden]')).toHaveLength(0)
-    expect(document.querySelectorAll('[data-psl-repeater]')).toHaveLength(1)
-    expect(document.querySelectorAll('[data-psl-bind-field="practice_title"]')).toHaveLength(1)
+    expect(document.querySelectorAll('.builder-data-card')).toHaveLength(6)
+    expect(document.querySelectorAll('[data-builder-design-placeholder="true"]')).toHaveLength(5)
+    expect(document.querySelectorAll('[data-builder-design-placeholder][aria-hidden]')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-builder-repeater]')).toHaveLength(1)
+    expect(document.querySelectorAll('[data-builder-bind-field="practice_title"]')).toHaveLength(1)
     expect(document.body.textContent).toContain('Título del elemento: practice title')
   })
 
@@ -79,9 +80,9 @@ describe('responsive data component templates', () => {
     expect(dataComponentDesignPreviewCount('card_grid', {
       mediaKind: 'image', desktopColumns: 3, tabletColumns: 2, mobileColumns: 1, pageSize: 100,
     })).toBe(6)
-    expect(document.querySelectorAll('.psl-data-card')).toHaveLength(6)
-    expect(document.querySelector('[data-psl-repeater]')?.getAttribute('data-psl-page-size')).toBe('100')
-    expect(document.querySelector('[data-psl-repeater]')?.getAttribute('data-psl-design-preview-count')).toBe('6')
+    expect(document.querySelectorAll('.builder-data-card')).toHaveLength(6)
+    expect(document.querySelector('[data-builder-repeater]')?.getAttribute('data-builder-page-size')).toBe('100')
+    expect(document.querySelector('[data-builder-repeater]')?.getAttribute('data-builder-design-preview-count')).toBe('6')
   })
 
   it('recovers dynamic options from generated component markup', () => {
@@ -95,7 +96,7 @@ describe('responsive data component templates', () => {
     const nestedTitle = document.querySelector('h3')!
     const root = findDataComponentRoot(nestedTitle)!
 
-    expect(root.getAttribute('data-psl-data-component')).toBe('simple_list')
+    expect(root.getAttribute('data-builder-data-component')).toBe('simple_list')
     expect(readDataComponentSettings(root)).toEqual({
       mapping: {
         badge: 'difficulty',
@@ -105,11 +106,16 @@ describe('responsive data component templates', () => {
       },
       options: {
         desktopColumns: 2,
+        fixedFilters: [],
         mediaKind: 'video',
         mobileColumns: 1,
         pageSize: 7,
         pagination: false,
+        sortDirection: 'asc',
         tabletColumns: 1,
+        visitorFilters: [],
+        visitorSort: false,
+        visitorSortFields: [],
       },
       tableId: table.id,
       templateId: 'simple_list',
@@ -118,19 +124,67 @@ describe('responsive data component templates', () => {
 
   it('creates a single-record detail component and responsive breakpoints', () => {
     const html = createDataComponentMarkup('featured_detail', table.id, { title: 'practice_title' })
-    expect(html).not.toContain('data-psl-repeater')
-    expect(html).toContain('data-psl-data-scope="first"')
+    expect(html).toContain('data-builder-repeater="practices-table"')
+    expect(html).toContain('data-builder-page-size="1"')
+    expect(html).toContain('data-builder-data-scope="context"')
     expect(dataComponentStyles).toContain('@media(max-width:900px)')
     expect(dataComponentStyles).toContain('@media(max-width:600px)')
   })
 
+  it('only offers compatible fields that really exist in the selected collection', () => {
+    const smallTable: SupabaseTableConfig = {
+      ...table,
+      fields: [
+        { id: 'cover', name: 'cover_image', type: 'media' },
+        { id: 'title', name: 'title', type: 'text' },
+      ],
+    }
+    const mapping = { media: 'cover_image', title: 'title' }
+
+    expect(compatibleFieldsForSlot('card_grid', 'media', smallTable, mapping).map((field) => field.name))
+      .toEqual(['cover_image'])
+    expect(compatibleFieldsForSlot('card_grid', 'title', smallTable, mapping).map((field) => field.name))
+      .toEqual(['title'])
+    expect(compatibleFieldsForSlot('card_grid', 'description', smallTable, mapping)).toEqual([])
+    expect(compatibleFieldsForSlot('card_grid', 'badge', smallTable, mapping)).toEqual([])
+  })
+
+  it('creates and recovers generic query and visitor controls', () => {
+    const html = createDataComponentMarkup('card_grid', table.id, { title: 'practice_title' }, {
+      mediaKind: 'image',
+      sortField: 'difficulty',
+      sortDirection: 'desc',
+      fixedFilters: [{ field: 'difficulty', operator: 'gte', value: '2' }],
+      searchField: 'practice_title',
+      visitorFilters: [{ field: 'practice_title', kind: 'text' }, { field: 'difficulty', kind: 'number' }],
+      visitorSort: true,
+      visitorSortFields: ['practice_title', 'difficulty'],
+    })
+    const document = new DOMParser().parseFromString(html, 'text/html')
+    const root = document.querySelector<HTMLElement>('[data-builder-data-component]')!
+    const settings = readDataComponentSettings(root)!
+
+    expect(root.querySelector('[data-builder-search-field="practice_title"]')).not.toBeNull()
+    expect(root.querySelector('[data-builder-filter-control="text"][data-builder-filter-field="practice_title"]')).toBeNull()
+    expect(root.querySelector('[data-builder-filter-bound="min"]')).not.toBeNull()
+    expect(settings.options).toMatchObject({
+      sortField: 'difficulty',
+      sortDirection: 'desc',
+      fixedFilters: [{ field: 'difficulty', operator: 'gte', value: '2' }],
+      searchField: 'practice_title',
+      visitorFilters: [{ field: 'difficulty', kind: 'number' }],
+      visitorSort: true,
+      visitorSortFields: ['practice_title', 'difficulty'],
+    })
+  })
+
   it('renders mapped media as an accessible video when requested', () => {
     const html = createDataComponentMarkup('card_grid', table.id, { media: 'media_url' }, { mediaKind: 'video' })
-    expect(html).toContain('<video class="psl-data-card__media"')
+    expect(html).toContain('<video class="builder-data-card__media"')
     expect(html).toContain('aria-hidden="true" muted playsinline preload="metadata" tabindex="-1"')
     expect(html).not.toContain(' controls')
-    expect(html).toContain('data-psl-bind-target="src"')
-    expect(dataComponentStyles).toContain('video.psl-data-card__media')
+    expect(html).toContain('data-builder-bind-target="src"')
+    expect(dataComponentStyles).toContain('video.builder-data-card__media')
     expect(dataComponentStyles).toContain('pointer-events:none')
   })
 
@@ -144,11 +198,11 @@ describe('responsive data component templates', () => {
       })
       const document = new DOMParser().parseFromString(html, 'text/html')
 
-      expect(document.querySelector('.psl-data-card__media,.psl-data-list__media,.psl-data-featured__media')).toBeNull()
-      expect(document.querySelector('.psl-data-badge')).toBeNull()
+      expect(document.querySelector('.builder-data-card__media,.builder-data-list__media,.builder-data-featured__media')).toBeNull()
+      expect(document.querySelector('.builder-data-badge')).toBeNull()
       expect(document.body.textContent).not.toContain('Imagen o video')
       expect(document.body.textContent).not.toContain('Indicador')
-      expect(document.querySelector('.psl-data-item--without-media')).not.toBeNull()
+      expect(document.querySelector('.builder-data-item--without-media')).not.toBeNull()
       expect(document.body.textContent).toContain('Título del elemento: practice title')
       expect(document.body.textContent).toContain('Descripción del elemento: description')
     })
@@ -161,10 +215,10 @@ describe('responsive data component templates', () => {
     })
     const document = new DOMParser().parseFromString(html, 'text/html')
 
-    expect(document.querySelector('.psl-data-card__media')).not.toBeNull()
-    expect(document.querySelector('.psl-data-badge')).not.toBeNull()
-    expect(document.querySelector('.psl-data-card__content h3')).toBeNull()
-    expect(document.querySelector('.psl-data-card__content p')).toBeNull()
+    expect(document.querySelector('.builder-data-card__media')).not.toBeNull()
+    expect(document.querySelector('.builder-data-badge')).not.toBeNull()
+    expect(document.querySelector('.builder-data-card__content h3')).toBeNull()
+    expect(document.querySelector('.builder-data-card__content p')).toBeNull()
     expect(document.body.textContent).not.toContain('Título del elemento')
     expect(document.body.textContent).not.toContain('Descripción del elemento')
   })
@@ -172,17 +226,17 @@ describe('responsive data component templates', () => {
   it('creates a responsive repeated carousel with scroll snapping', () => {
     const html = createDataComponentMarkup('carousel', table.id, { title: 'practice_title' })
     const document = new DOMParser().parseFromString(html, 'text/html')
-    expect(html).toContain('class="psl-data-carousel"')
+    expect(html).toContain('class="builder-data-carousel"')
     expect(html).toContain('tabindex="0"')
-    expect(html).toContain('data-psl-repeater="practices-table"')
+    expect(html).toContain('data-builder-repeater="practices-table"')
     expect(dataComponentStyles).toContain('scroll-snap-type:inline mandatory')
-    expect(html).toContain('--psl-data-width-mobile:100%')
-    expect(dataComponentStyles).toContain('var(--psl-data-width-mobile,100%)')
-    expect(dataComponentStyles).toContain('container-name:psl-data-component')
-    expect(dataComponentStyles).toContain(':has(> .psl-data-grid')
-    expect(dataComponentStyles).toContain('@container psl-data-component (max-width:600px)')
-    expect(document.querySelectorAll('.psl-data-carousel__item')).toHaveLength(4)
-    expect(document.querySelector('[data-psl-data-component="carousel"] > .psl-data-carousel')).not.toBeNull()
+    expect(html).toContain('--builder-data-width-mobile:100%')
+    expect(dataComponentStyles).toContain('var(--builder-data-width-mobile,100%)')
+    expect(dataComponentStyles).toContain('container-name:builder-data-component')
+    expect(dataComponentStyles).toContain(':has(> .builder-data-grid')
+    expect(dataComponentStyles).toContain('@container builder-data-component (max-width:600px)')
+    expect(document.querySelectorAll('.builder-data-carousel__item')).toHaveLength(4)
+    expect(document.querySelector('[data-builder-data-component="carousel"] > .builder-data-carousel')).not.toBeNull()
   })
 
   it('exports generated components as ordinary Supabase repeaters and bindings', () => {
@@ -208,7 +262,7 @@ describe('responsive data component templates', () => {
     const exportedPage = new TextDecoder().decode(
       bundle.files.find((file) => file.path === 'pages/catalog.html')?.bytes,
     )
-    expect(exportedPage).toContain('@container psl-data-component (max-width:600px)')
+    expect(exportedPage).toContain('@container builder-data-component (max-width:600px)')
     expect(exportedPage).toContain('container-type:inline-size')
   })
 })

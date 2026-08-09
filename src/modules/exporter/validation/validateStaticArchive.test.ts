@@ -20,9 +20,9 @@ describe('validateStaticArchive', () => {
       connections: [],
     }
     const result = await validateStaticArchive(await archiveBlob({
-      'index.html': '<html><body><img src="assets/Hero.svg"><script data-psl-config></script><script data-psl-runtime src="psl-runtime/navigation.js"></script></body></html>',
+      'index.html': '<html><body><img src="assets/Hero.svg"><script data-builder-config></script><script data-builder-runtime src="builder-runtime/navigation.js"></script></body></html>',
       'project.json': JSON.stringify(manifest),
-      'psl-runtime/navigation.js': '/* runtime */',
+      'builder-runtime/navigation.js': '/* runtime */',
       'assets/hero.svg': '<svg/>',
     }))
 

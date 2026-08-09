@@ -24,7 +24,7 @@ en el editor GrapesJS predeterminado.
 5. En **Datos → Configuración de Supabase**, confirma la URL y publishable key
    ya incluidas. No uses una secret key ni una service-role key.
 6. Si la base de datos aún no existe, copia exactamente
-   `examples/supabase/psl-schema.sql` mediante **Datos → Mis datos → </> SQL** y
+   `examples/supabase/builder-schema.sql` mediante **Datos → Mis datos → </> SQL** y
    ejecútalo una sola vez en el SQL Editor de Supabase. No se ejecuta
    automáticamente desde este starter.
 7. Usa **Vista previa** para probar el recorrido y **Exportar ZIP** después de

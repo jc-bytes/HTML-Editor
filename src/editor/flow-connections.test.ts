@@ -2,11 +2,16 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   FLOW_ACTION_ATTRIBUTE,
   FLOW_TARGET_ATTRIBUTE,
+  FLOW_DATA_SOURCE_ATTRIBUTE,
   INTERACTION_ANIMATION_ATTRIBUTE,
   installScreenFlowNavigation,
   readInteractionAnimation,
+  readRecordToggleConnection,
   readScreenFlowConnection,
   screenFlowAttributes,
+  recordToggleAttributes,
+  dataActionAttributes,
+  readDataActionConnection,
 } from './flow-connections'
 
 describe('screen flow connections', () => {
@@ -26,6 +31,48 @@ describe('screen flow connections', () => {
   it('ignores incomplete connection attributes', () => {
     expect(readScreenFlowConnection({ [FLOW_ACTION_ATTRIBUTE]: 'navigate' })).toBeNull()
     expect(readScreenFlowConnection({ [FLOW_TARGET_ATTRIBUTE]: 'catalog' })).toBeNull()
+  })
+
+  it('serializes and reads a record toggle action', () => {
+    const attributes = recordToggleAttributes({
+      dataSourceTableId: 'table-favorites',
+      ownerField: 'user_id',
+      recordField: 'practice_id',
+      contextKey: 'record',
+      activeLabel: '★ Guardado',
+      inactiveLabel: '☆ Guardar',
+    })
+
+    expect(attributes[FLOW_DATA_SOURCE_ATTRIBUTE]).toBe('table-favorites')
+    expect(readRecordToggleConnection(attributes)).toEqual({
+      action: 'toggle-record',
+      dataSourceTableId: 'table-favorites',
+      ownerField: 'user_id',
+      recordField: 'practice_id',
+      contextKey: 'record',
+      activeLabel: '★ Guardado',
+      inactiveLabel: '☆ Guardar',
+    })
+  })
+
+  it('serializes and reads a generic data action', () => {
+    const attributes = dataActionAttributes({
+      action: 'create-record',
+      dataSourceTableId: 'table-projects',
+      contextKey: 'record',
+      ownerField: 'user_id',
+      fieldMappings: [{ field: 'title', inputName: 'project_title' }],
+      successMessage: 'Proyecto creado.',
+    })
+
+    expect(readDataActionConnection(attributes)).toEqual({
+      action: 'create-record',
+      dataSourceTableId: 'table-projects',
+      contextKey: 'record',
+      ownerField: 'user_id',
+      fieldMappings: [{ field: 'title', inputName: 'project_title' }],
+      successMessage: 'Proyecto creado.',
+    })
   })
 
   it('reads supported interaction animations and safely defaults unknown values', () => {

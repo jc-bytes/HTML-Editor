@@ -58,7 +58,7 @@ describe('EditorRuntimePreview', () => {
 
     const frame = screen.getByTitle('Vista previa de Catalog') as HTMLIFrameElement
     expect(frame.srcdoc).toContain('supabase-practices')
-    expect(frame.srcdoc).toContain('psl-navigation-runtime')
+    expect(frame.srcdoc).toContain('builder-navigation-runtime')
     expect(frame.srcdoc).toContain('"repeaters"')
     expect(frame.parentElement).toHaveStyle({ width: '320px' })
     expect(screen.getByRole('application')).toHaveAccessibleName(/Móvil/)
@@ -120,7 +120,7 @@ describe('EditorRuntimePreview', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Ir' }))
     expect(onRuntimeAction).toHaveBeenCalledWith({
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       action: 'navigate',
       targetPage: 'practice',
     })

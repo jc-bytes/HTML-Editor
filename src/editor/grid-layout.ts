@@ -1,11 +1,12 @@
 import type { Component, ComponentAdd, ComponentDefinition, Editor } from 'grapesjs'
 
-export const PAGE_LAYOUT_ATTRIBUTE = 'data-psl-page-layout'
-export const LAYOUT_ROW_ATTRIBUTE = 'data-psl-layout-row'
-export const LAYOUT_COLUMN_ATTRIBUTE = 'data-psl-layout-column'
-export const LAYOUT_PRESET_ATTRIBUTE = 'data-psl-layout-preset'
-export const LAYOUT_GAP_ATTRIBUTE = 'data-psl-layout-gap'
-export const LAYOUT_MIN_HEIGHT_ATTRIBUTE = 'data-psl-layout-min-height'
+export const PAGE_LAYOUT_ATTRIBUTE = 'data-builder-page-layout'
+export const LAYOUT_ROW_ATTRIBUTE = 'data-builder-layout-row'
+export const LAYOUT_COLUMN_ATTRIBUTE = 'data-builder-layout-column'
+export const LAYOUT_PRESET_ATTRIBUTE = 'data-builder-layout-preset'
+export const LAYOUT_GAP_ATTRIBUTE = 'data-builder-layout-gap'
+export const LAYOUT_MIN_HEIGHT_ATTRIBUTE = 'data-builder-layout-min-height'
+export const FULL_PAGE_TEMPLATE_ATTRIBUTE = 'data-builder-full-page-template'
 
 export const DEFAULT_SITE_MARGIN = 32
 export const DEFAULT_LAYOUT_GAP = 20
@@ -42,7 +43,7 @@ function layoutPresetIcon(preset: LayoutPreset) {
 }
 
 export const GRID_LAYOUT_STYLES = `
-.psl-page-layout {
+.builder-page-layout {
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -51,7 +52,7 @@ export const GRID_LAYOUT_STYLES = `
   padding: 32px;
   box-sizing: border-box;
 }
-.psl-layout-row {
+.builder-layout-row {
   display: grid !important;
   grid-template-columns: minmax(0, 1fr);
   gap: 20px;
@@ -61,45 +62,45 @@ export const GRID_LAYOUT_STYLES = `
   min-height: 0;
   box-sizing: border-box;
 }
-.psl-layout-row[data-psl-layout-preset="equal-2"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-.psl-layout-row[data-psl-layout-preset="equal-3"] { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
-.psl-layout-row[data-psl-layout-preset="sidebar-left"] { grid-template-columns: minmax(0, 3fr) minmax(0, 7fr) !important; }
-.psl-layout-row[data-psl-layout-preset="sidebar-right"] { grid-template-columns: minmax(0, 7fr) minmax(0, 3fr) !important; }
-.psl-layout-column {
+.builder-layout-row[data-builder-layout-preset="equal-2"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+.builder-layout-row[data-builder-layout-preset="equal-3"] { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+.builder-layout-row[data-builder-layout-preset="sidebar-left"] { grid-template-columns: minmax(0, 3fr) minmax(0, 7fr) !important; }
+.builder-layout-row[data-builder-layout-preset="sidebar-right"] { grid-template-columns: minmax(0, 7fr) minmax(0, 3fr) !important; }
+.builder-layout-column {
   min-width: 0;
   min-height: 0;
   box-sizing: border-box;
 }
-.psl-layout-column > * { max-width: 100%; box-sizing: border-box; }
+.builder-layout-column > * { max-width: 100%; box-sizing: border-box; }
 @media (max-width: 991px) {
-  .psl-page-layout { padding: 24px; }
+  .builder-page-layout { padding: 24px; }
 }
 @media (max-width: 767px) {
-  .psl-page-layout { padding: 16px; gap: 16px; }
-  .psl-layout-row,
-  .psl-layout-row[data-psl-layout-preset] { grid-template-columns: minmax(0, 1fr) !important; gap: 16px !important; }
+  .builder-page-layout { padding: 16px; gap: 16px; }
+  .builder-layout-row,
+  .builder-layout-row[data-builder-layout-preset] { grid-template-columns: minmax(0, 1fr) !important; gap: 16px !important; }
 }
 `
 
 export const GRID_EDITOR_STYLES = `
-[data-psl-page-layout] { outline: 1px dashed rgba(111, 82, 220, .18); outline-offset: -1px; }
-[data-psl-layout-row] {
+[data-builder-page-layout] { outline: 1px dashed rgba(111, 82, 220, .18); outline-offset: -1px; }
+[data-builder-layout-row] {
   position: relative;
   outline: 1px solid rgba(111, 82, 220, .18);
   outline-offset: 4px;
 }
-[data-psl-layout-column] {
+[data-builder-layout-column] {
   position: relative;
   outline: 1px dashed rgba(111, 82, 220, .34);
   outline-offset: -1px;
 }
-[data-psl-layout-column]:empty {
-  min-height: var(--psl-layout-min-height, 120px);
+[data-builder-layout-column]:empty {
+  min-height: var(--builder-layout-min-height, 120px);
   border: 2px dashed rgba(111, 82, 220, .5);
   border-radius: 10px;
   background: rgba(111, 82, 220, .055);
 }
-[data-psl-layout-column]:empty::before {
+[data-builder-layout-column]:empty::before {
   content: "Arrastra un elemento aquí";
   position: absolute;
   inset: 0;
@@ -123,6 +124,26 @@ function directChildren(component: Component) {
 
 function currentPageRoot(editor: Editor) {
   return editor.Pages.getSelected()?.getMainComponent() ?? editor.getWrapper()
+}
+
+function fullPageTemplateFor(root: Component) {
+  const candidates: Component[] = []
+  const visit = (component: Component) => {
+    candidates.push(component)
+    directChildren(component).forEach(visit)
+  }
+  visit(root)
+  return candidates.find((component) => {
+    const attributes = component.getAttributes()
+    const classes = String(attributes.class ?? '').split(/\s+/)
+    return hasAttribute(component, FULL_PAGE_TEMPLATE_ATTRIBUTE) || classes.includes('builder-auth-page')
+  })
+}
+
+function restoreFullPageTemplateRoot(root: Component, fullPage: Component) {
+  const layouts = directChildren(root).filter(isPageGrid)
+  if (fullPage.parent() !== root) fullPage.move(root, { at: 0 })
+  layouts.forEach((layout) => layout.remove())
 }
 
 function clampedInteger(value: number, minimum: number, maximum: number) {
@@ -169,12 +190,12 @@ export function layoutRowFor(component?: Component | null) {
 
 export function layoutColumnDefinition(): ComponentDefinition {
   return {
-    type: 'psl-layout-column',
+    type: 'builder-layout-column',
     tagName: 'div',
     name: 'Columna',
     attributes: {
       [LAYOUT_COLUMN_ATTRIBUTE]: '',
-      class: 'psl-layout-column',
+      class: 'builder-layout-column',
     },
     draggable: false,
     droppable: true,
@@ -192,7 +213,7 @@ export function layoutRowDefinition(
   const gap = clampedInteger(options.gap ?? DEFAULT_LAYOUT_GAP, 0, 64)
   const minHeight = clampedInteger(options.minHeight ?? DEFAULT_LAYOUT_MIN_HEIGHT, 48, 800)
   return {
-    type: 'psl-layout-row',
+    type: 'builder-layout-row',
     tagName: 'section',
     name: definition.label,
     attributes: {
@@ -200,11 +221,11 @@ export function layoutRowDefinition(
       [LAYOUT_PRESET_ATTRIBUTE]: definition.id,
       [LAYOUT_GAP_ATTRIBUTE]: String(gap),
       [LAYOUT_MIN_HEIGHT_ATTRIBUTE]: String(minHeight),
-      class: 'psl-layout-row',
+      class: 'builder-layout-row',
     },
     style: {
       gap: `${gap}px`,
-      '--psl-layout-min-height': `${minHeight}px`,
+      '--builder-layout-min-height': `${minHeight}px`,
     },
     draggable: `[${PAGE_LAYOUT_ATTRIBUTE}]`,
     droppable: `[${LAYOUT_COLUMN_ATTRIBUTE}]`,
@@ -215,12 +236,12 @@ export function layoutRowDefinition(
 
 export function pageGridDefinition(): ComponentDefinition {
   return {
-    type: 'psl-page-layout',
+    type: 'builder-page-layout',
     tagName: 'main',
     name: 'Contenido de página · fijo',
     attributes: {
       [PAGE_LAYOUT_ATTRIBUTE]: '',
-      class: 'psl-page-layout',
+      class: 'builder-page-layout',
     },
     draggable: false,
     droppable: `[${LAYOUT_ROW_ATTRIBUTE}]`,
@@ -288,7 +309,7 @@ export function updateLayoutGap(row: Component, gap: number) {
 export function updateLayoutMinHeight(row: Component, minHeight: number) {
   const next = clampedInteger(minHeight, 48, 800)
   row.addAttributes({ [LAYOUT_MIN_HEIGHT_ATTRIBUTE]: String(next) })
-  row.addStyle({ '--psl-layout-min-height': `${next}px` })
+  row.addStyle({ '--builder-layout-min-height': `${next}px` })
   return next
 }
 
@@ -335,6 +356,11 @@ function placeRootChildrenInLayout(root: Component, layout: Component) {
 export function ensurePageGrid(editor: Editor) {
   const root = currentPageRoot(editor)
   if (!root) return undefined
+  const fullPage = fullPageTemplateFor(root)
+  if (fullPage) {
+    restoreFullPageTemplateRoot(root, fullPage)
+    return undefined
+  }
   let layout = directChildren(root).find(isPageGrid)
   if (!layout) layout = root.append(pageGridDefinition())[0]
   if (!layout) return undefined
@@ -427,8 +453,8 @@ export function layoutRowOrder(row?: Component | null) {
 }
 
 export function readSiteMargin(editor: Editor) {
-  const value = editor.Css.getRule('.psl-page-layout')?.getStyle()['padding-left']
-    ?? editor.Css.getRule('.psl-page-layout')?.getStyle().padding
+  const value = editor.Css.getRule('.builder-page-layout')?.getStyle()['padding-left']
+    ?? editor.Css.getRule('.builder-page-layout')?.getStyle().padding
   return clampedInteger(Number.parseFloat(String(value ?? DEFAULT_SITE_MARGIN)), 0, 96)
 }
 
@@ -443,7 +469,7 @@ export function updateSiteMargin(editor: Editor, margin: number) {
     atRuleType: 'media',
   } as const
   const updatePaddingRule = (padding: number, ruleOptions = {}) => {
-    const rule = editor.Css.getRule('.psl-page-layout', ruleOptions)
+    const rule = editor.Css.getRule('.builder-page-layout', ruleOptions)
     const style = {
       'padding-bottom': `${padding}px`,
       'padding-left': `${padding}px`,
@@ -451,7 +477,7 @@ export function updateSiteMargin(editor: Editor, margin: number) {
       'padding-top': `${padding}px`,
     }
     if (rule) rule.addStyle(style)
-    else editor.Css.setRule('.psl-page-layout', style, ruleOptions)
+    else editor.Css.setRule('.builder-page-layout', style, ruleOptions)
   }
   updatePaddingRule(desktop)
   updatePaddingRule(Math.round(desktop * .75), tabletRule)
@@ -461,28 +487,28 @@ export function updateSiteMargin(editor: Editor, margin: number) {
 
 export function installGridEditorStyles(editor: Editor) {
   const document = editor.Canvas.getDocument()
-  if (!document || document.querySelector('style[data-psl-grid-editor]')) return
+  if (!document || document.querySelector('style[data-builder-grid-editor]')) return
   const style = document.createElement('style')
-  style.setAttribute('data-psl-grid-editor', '')
+  style.setAttribute('data-builder-grid-editor', '')
   style.textContent = GRID_EDITOR_STYLES
   document.head.append(style)
 }
 
 export function createGridLayoutPlugin(editor: Editor) {
-  editor.DomComponents.addType('psl-page-layout', {
+  editor.DomComponents.addType('builder-page-layout', {
     isComponent: (element) => element.hasAttribute?.(PAGE_LAYOUT_ATTRIBUTE),
     model: { defaults: pageGridDefinition() },
   })
-  editor.DomComponents.addType('psl-layout-row', {
+  editor.DomComponents.addType('builder-layout-row', {
     isComponent: (element) => element.hasAttribute?.(LAYOUT_ROW_ATTRIBUTE),
     model: { defaults: layoutRowDefinition() },
   })
-  editor.DomComponents.addType('psl-layout-column', {
+  editor.DomComponents.addType('builder-layout-column', {
     isComponent: (element) => element.hasAttribute?.(LAYOUT_COLUMN_ATTRIBUTE),
     model: { defaults: layoutColumnDefinition() },
   })
   LAYOUT_PRESETS.forEach((preset) => {
-    editor.BlockManager.add(`psl-layout-${preset.id}`, {
+    editor.BlockManager.add(`builder-layout-${preset.id}`, {
       category: 'Diseño de página',
       label: preset.label,
       media: layoutPresetIcon(preset.id),

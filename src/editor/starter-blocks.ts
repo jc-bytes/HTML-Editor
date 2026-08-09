@@ -1,53 +1,53 @@
 import type { Editor } from 'grapesjs'
 
 export const starterStyles = `<style>
-.psl-starter-section{width:100%;padding:clamp(28px,5vw,64px);color:#17302e;background:#f7faf9;font-family:Inter,ui-sans-serif,system-ui,sans-serif}
-.psl-starter-grid{display:grid;gap:20px;align-items:start}
-.psl-starter-grid--2{grid-template-columns:repeat(2,minmax(0,1fr))}
-.psl-starter-grid--3{grid-template-columns:repeat(3,minmax(0,1fr))}
-.psl-starter-grid--aside{grid-template-columns:minmax(180px,.35fr) minmax(0,1fr)}
-.psl-starter-card{min-width:0;align-self:start;padding:24px;background:#fff;border:1px solid #d8e3e1;border-radius:16px;box-shadow:0 10px 24px rgba(20,55,52,.07)}
-.psl-starter-card h2,.psl-starter-card h3{margin:0 0 10px;color:#173f3d;line-height:1.15}
-.psl-starter-card p{margin:0;color:#58706c;line-height:1.6}
-.psl-starter-eyebrow{margin:0 0 10px!important;color:#6d53d9!important;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
-.psl-starter-button{display:inline-block;margin-top:20px;padding:11px 16px;color:#fff!important;background:#6f52dc;border-radius:8px;text-decoration:none;font-weight:800}
-.psl-starter-visual{min-height:240px;display:grid;place-items:center;padding:24px;color:#e9fffa;background:linear-gradient(135deg,#126f69,#243f5f 58%,#7456df);border-radius:18px;text-align:center}
-.psl-starter-visual strong{display:block;font-size:22px}.psl-starter-visual span{display:block;margin-top:7px;opacity:.8}
-.psl-starter-number{width:36px;height:36px;display:grid;place-items:center;margin-bottom:32px;color:#fff;background:#6f52dc;border-radius:10px;font-weight:850}
-@media(max-width:767px){.psl-starter-grid--2,.psl-starter-grid--3,.psl-starter-grid--aside{grid-template-columns:1fr}.psl-starter-section{padding:24px 18px}}
+.builder-starter-section{width:100%;padding:clamp(28px,5vw,64px);color:#17302e;background:#f7faf9;font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+.builder-starter-grid{display:grid;gap:20px;align-items:start}
+.builder-starter-grid--2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.builder-starter-grid--3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.builder-starter-grid--aside{grid-template-columns:minmax(180px,.35fr) minmax(0,1fr)}
+.builder-starter-card{min-width:0;align-self:start;padding:24px;background:#fff;border:1px solid #d8e3e1;border-radius:16px;box-shadow:0 10px 24px rgba(20,55,52,.07)}
+.builder-starter-card h2,.builder-starter-card h3{margin:0 0 10px;color:#173f3d;line-height:1.15}
+.builder-starter-card p{margin:0;color:#58706c;line-height:1.6}
+.builder-starter-eyebrow{margin:0 0 10px!important;color:#6d53d9!important;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.builder-starter-button{display:inline-block;margin-top:20px;padding:11px 16px;color:#fff!important;background:#6f52dc;border-radius:8px;text-decoration:none;font-weight:800}
+.builder-starter-visual{min-height:240px;display:grid;place-items:center;padding:24px;color:#e9fffa;background:linear-gradient(135deg,#126f69,#243f5f 58%,#7456df);border-radius:18px;text-align:center}
+.builder-starter-visual strong{display:block;font-size:22px}.builder-starter-visual span{display:block;margin-top:7px;opacity:.8}
+.builder-starter-number{width:36px;height:36px;display:grid;place-items:center;margin-bottom:32px;color:#fff;background:#6f52dc;border-radius:10px;font-weight:850}
+@media(max-width:767px){.builder-starter-grid--2,.builder-starter-grid--3,.builder-starter-grid--aside{grid-template-columns:1fr}.builder-starter-section{padding:24px 18px}}
 </style>`
 
 export const starterLayoutBlocks = {
-  column1: `<section class="psl-starter-section" data-gjs-name="Sección destacada">
-    <div class="psl-starter-card" style="max-width:780px;margin:0 auto;text-align:center">
-      <p class="psl-starter-eyebrow">Presenta tu idea</p>
+  column1: `<section class="builder-starter-section" data-gjs-name="Sección destacada">
+    <div class="builder-starter-card" style="max-width:780px;margin:0 auto;text-align:center">
+      <p class="builder-starter-eyebrow">Presenta tu idea</p>
       <h2 style="font-size:clamp(30px,5vw,54px)">Un título claro que invite a continuar</h2>
       <p style="max-width:620px;margin:0 auto">Explica aquí el propósito de esta sección. Puedes editar el texto, los colores y el botón.</p>
-      <a class="psl-starter-button" href="#">Conoce más</a>
+      <a class="builder-starter-button" href="#">Conoce más</a>
     </div>
   </section>${starterStyles}`,
-  column2: `<section class="psl-starter-section" data-gjs-name="Imagen y texto">
-    <div class="psl-starter-grid psl-starter-grid--2">
-      <div class="psl-starter-visual" data-gjs-name="Imagen de ejemplo"><div><strong>Tu imagen aquí</strong><span>Reemplaza este bloque por una foto o video</span></div></div>
-      <article class="psl-starter-card" data-gjs-name="Contenido">
-        <p class="psl-starter-eyebrow">Destaca lo importante</p>
+  column2: `<section class="builder-starter-section" data-gjs-name="Imagen y texto">
+    <div class="builder-starter-grid builder-starter-grid--2">
+      <div class="builder-starter-visual" data-gjs-name="Imagen de ejemplo"><div><strong>Tu imagen aquí</strong><span>Reemplaza este bloque por una foto o video</span></div></div>
+      <article class="builder-starter-card" data-gjs-name="Contenido">
+        <p class="builder-starter-eyebrow">Destaca lo importante</p>
         <h2>Combina una imagen con una explicación</h2>
         <p>Este diseño funciona bien para presentar un proyecto, una actividad, una persona o un servicio.</p>
-        <a class="psl-starter-button" href="#">Ver detalles</a>
+        <a class="builder-starter-button" href="#">Ver detalles</a>
       </article>
     </div>
   </section>${starterStyles}`,
-  column3: `<section class="psl-starter-section" data-gjs-name="Tres tarjetas">
-    <div class="psl-starter-grid psl-starter-grid--3">
-      <article class="psl-starter-card" data-gjs-name="Tarjeta 1"><div class="psl-starter-number">1</div><h3>Primer beneficio</h3><p>Describe una idea principal con una frase breve y fácil de entender.</p></article>
-      <article class="psl-starter-card" data-gjs-name="Tarjeta 2"><div class="psl-starter-number">2</div><h3>Segundo beneficio</h3><p>Cambia el texto, el color o agrega una imagen para personalizar esta tarjeta.</p></article>
-      <article class="psl-starter-card" data-gjs-name="Tarjeta 3"><div class="psl-starter-number">3</div><h3>Tercer beneficio</h3><p>Las tarjetas se acomodan automáticamente en pantallas pequeñas.</p></article>
+  column3: `<section class="builder-starter-section" data-gjs-name="Tres tarjetas">
+    <div class="builder-starter-grid builder-starter-grid--3">
+      <article class="builder-starter-card" data-gjs-name="Tarjeta 1"><div class="builder-starter-number">1</div><h3>Primer beneficio</h3><p>Describe una idea principal con una frase breve y fácil de entender.</p></article>
+      <article class="builder-starter-card" data-gjs-name="Tarjeta 2"><div class="builder-starter-number">2</div><h3>Segundo beneficio</h3><p>Cambia el texto, el color o agrega una imagen para personalizar esta tarjeta.</p></article>
+      <article class="builder-starter-card" data-gjs-name="Tarjeta 3"><div class="builder-starter-number">3</div><h3>Tercer beneficio</h3><p>Las tarjetas se acomodan automáticamente en pantallas pequeñas.</p></article>
     </div>
   </section>${starterStyles}`,
-  'column3-7': `<section class="psl-starter-section" data-gjs-name="Barra lateral y contenido">
-    <div class="psl-starter-grid psl-starter-grid--aside">
-      <aside class="psl-starter-card" style="background:#e9e4ff;border-color:#d1c7ff"><p class="psl-starter-eyebrow">En resumen</p><h3>Idea clave</h3><p>Usa esta columna para una nota, dato o llamada de atención.</p></aside>
-      <article class="psl-starter-card"><h2>Contenido principal</h2><p>La columna ancha ofrece espacio para explicar el tema con más detalle. Puedes añadir imágenes, listas, botones u otros componentes dentro de ella.</p><a class="psl-starter-button" href="#">Continuar</a></article>
+  'column3-7': `<section class="builder-starter-section" data-gjs-name="Barra lateral y contenido">
+    <div class="builder-starter-grid builder-starter-grid--aside">
+      <aside class="builder-starter-card" style="background:#e9e4ff;border-color:#d1c7ff"><p class="builder-starter-eyebrow">En resumen</p><h3>Idea clave</h3><p>Usa esta columna para una nota, dato o llamada de atención.</p></aside>
+      <article class="builder-starter-card"><h2>Contenido principal</h2><p>La columna ancha ofrece espacio para explicar el tema con más detalle. Puedes añadir imágenes, listas, botones u otros componentes dentro de ella.</p><a class="builder-starter-button" href="#">Continuar</a></article>
     </div>
   </section>${starterStyles}`,
 } as const
@@ -86,7 +86,7 @@ export function configureStarterBlocks(editor: Editor) {
   editor.BlockManager.get('text-basic')?.set({
     category: 'Diseño',
     label: 'Texto con título',
-    content: `<section class="psl-starter-section"><div class="psl-starter-card"><h2>Título de la sección</h2><p>Escribe aquí una explicación clara. Puedes seleccionar cualquier texto para cambiar su tamaño, color y estilo.</p></div></section>${starterStyles}`,
+    content: `<section class="builder-starter-section"><div class="builder-starter-card"><h2>Título de la sección</h2><p>Escribe aquí una explicación clara. Puedes seleccionar cualquier texto para cambiar su tamaño, color y estilo.</p></div></section>${starterStyles}`,
   })
   editor.BlockManager.get('quote')?.set({
     category: 'Diseño',

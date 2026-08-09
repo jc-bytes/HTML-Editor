@@ -93,8 +93,8 @@ export function attachCanvasGestures(editor: Editor, onGestureStart: () => void)
 
   const attachFrame = () => {
     const document = editor.Canvas.getDocument()
-    if (!document || document.documentElement.dataset.pslTouchGestures === 'true') return
-    document.documentElement.dataset.pslTouchGestures = 'true'
+    if (!document || document.documentElement.dataset.builderTouchGestures === 'true') return
+    document.documentElement.dataset.builderTouchGestures = 'true'
     document.documentElement.style.touchAction = 'none'
     attach(document)
   }

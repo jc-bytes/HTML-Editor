@@ -47,7 +47,7 @@ describe('SupabaseDataPanel user data controls', () => {
     const onChange = vi.fn()
     render(<SupabaseDataPanel {...baseProps} onChange={onChange} selectedElement={null} />)
     const sql = `
-      -- @psl-access public_read
+      -- @builder-access public_read
       create table public.lessons (
         id uuid primary key,
         published boolean default false,
@@ -153,14 +153,19 @@ describe('SupabaseDataPanel user data controls', () => {
     const dialog = screen.getByRole('dialog', { name: 'Añadir componente con datos' })
     expect(dialog).toBeInTheDocument()
     expect(dialog.parentElement).toHaveClass('gjs-editor-theme-scope')
-    fireEvent.click(screen.getByRole('button', { name: /Lista visual/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
+    fireEvent.click(screen.getByRole('button', { name: /Lista visual/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
 
     expect(screen.getByLabelText('Título')).toHaveValue('display_name')
+    expect(screen.queryByLabelText('Imagen o video')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Descripción')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
     expect(screen.getByLabelText('Máximo de elementos por página')).toHaveValue(12)
     expect(screen.getByLabelText('Columnas en escritorio')).toHaveValue(1)
     fireEvent.change(screen.getByLabelText('Columnas en escritorio'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
+    expect(screen.getByLabelText('Campo de búsqueda')).toHaveValue('')
     fireEvent.click(screen.getByRole('button', { name: 'Añadir a la página' }))
     expect(onInsertDataComponent).toHaveBeenCalledWith('simple_list', 'profiles-table', expect.objectContaining({
       title: 'display_name',
@@ -193,10 +198,12 @@ describe('SupabaseDataPanel user data controls', () => {
 
     expect(screen.getByRole('dialog', { name: 'Editar componente con datos' })).toBeInTheDocument()
     expect(screen.getByLabelText('Título')).toHaveValue('display_name')
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
     expect(screen.getByLabelText('Máximo de elementos por página')).toHaveValue(6)
     expect(screen.getByLabelText('Columnas en escritorio')).toHaveValue(2)
     expect(screen.getByRole('checkbox')).not.toBeChecked()
     fireEvent.change(screen.getByLabelText('Máximo de elementos por página'), { target: { value: '9' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
 
     expect(onUpdateDataComponent).toHaveBeenCalledWith('simple_list', 'profiles-table', {
@@ -259,7 +266,7 @@ describe('SupabaseDataPanel user data controls', () => {
       }],
     }
     vi.stubGlobal('localStorage', {
-      getItem: vi.fn((key: string) => key === 'psl-auth:school.supabase.co'
+      getItem: vi.fn((key: string) => key === 'builder-auth:school.supabase.co'
         ? JSON.stringify({ access_token: 'teacher-token' })
         : null),
     })
@@ -369,7 +376,7 @@ describe('SupabaseDataPanel user data controls', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'SQL' }))
     expect(screen.getByRole('dialog', { name: 'Crear o importar colecciones' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('SQL para crear o importar'), { target: { value: `
-      -- @psl-access public_read
+      -- @builder-access public_read
       create table public.practices (
         id uuid primary key,
         published boolean not null default false,
@@ -400,7 +407,7 @@ describe('SupabaseDataPanel user data controls', () => {
   it('keeps every imported table visible and preserves unchanged multi-table SQL', () => {
     render(<SupabaseDataPanel {...baseProps} selectedElement={null} />)
     const sourceSql = `
-      -- @psl-access user_owned
+      -- @builder-access user_owned
       create table public.profiles (
         id uuid primary key,
         user_id uuid references auth.users(id),
@@ -408,7 +415,7 @@ describe('SupabaseDataPanel user data controls', () => {
         display_name text
       );
 
-      -- @psl-access user_owned
+      -- @builder-access user_owned
       create table public.practice_attempts (
         id uuid primary key,
         user_id uuid references auth.users(id),

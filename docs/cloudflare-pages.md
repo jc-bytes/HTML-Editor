@@ -1,6 +1,6 @@
 # Publicar el ZIP en Cloudflare Pages
 
-PSL Visual Builder exporta un sitio estático preconstruido. No requiere un
+Visual Builder exporta un sitio estático preconstruido. No requiere un
 comando de compilación ni Node.js para publicarse.
 
 ## Antes de descargar
@@ -18,7 +18,7 @@ corregirse.
 
 ## Opción recomendada para estudiantes: arrastrar y soltar
 
-1. Descarga el ZIP desde PSL Visual Builder.
+1. Descarga el ZIP desde Visual Builder.
 2. Abre **Workers & Pages** en Cloudflare.
 3. Selecciona **Create application → Get started → Drag and drop your files**.
 4. Escribe un nombre para el proyecto.

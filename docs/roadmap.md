@@ -59,7 +59,7 @@
 - [x] Configurar overrides de escritorio, tableta y móvil.
 - [x] Deshacer, rehacer y restablecer cambios por elemento.
 - [x] Usar el mismo transformador en preview y exportación.
-- [x] Exportar CSS generado en `psl-runtime/overrides.css`.
+- [x] Exportar CSS generado en `builder-runtime/overrides.css`.
 - [ ] Añadir edición estructural: crear, eliminar y reordenar elementos.
 - [ ] Sustituir rutas DOM posicionales por identidades resistentes a cambios estructurales.
 
@@ -80,7 +80,7 @@
 - [x] Sugerir y permitir editar el mapeo de columnas a medios, títulos, descripciones e indicadores.
 - [x] Incluir cuadrícula, carrusel deslizable, lista y detalle destacado reutilizables.
 - [x] Permitir que un campo de medios se muestre como imagen o video.
-- [ ] Añadir y editar filas desde PSL mediante formularios protegidos.
+- [ ] Añadir y editar filas desde Visual Builder mediante formularios protegidos.
 
 La publicación directa en Cloudflare continuará sobre el mismo contrato de
 proyecto versionado.

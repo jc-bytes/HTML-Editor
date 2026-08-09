@@ -73,10 +73,10 @@ export function GridLayoutPanel({
   return (
     <div className="gjs-grid-layout-panel">
       <LayoutAccordion title="Margen general">
-        <label className="gjs-grid-layout-label" htmlFor="psl-site-margin">Margen · {margin}px</label>
+        <label className="gjs-grid-layout-label" htmlFor="builder-site-margin">Margen · {margin}px</label>
         <input
           aria-label="Margen general del sitio"
-          id="psl-site-margin"
+          id="builder-site-margin"
           max="96"
           min="0"
           onInput={(event) => applyMargin(Number(event.currentTarget.value))}
@@ -100,10 +100,10 @@ export function GridLayoutPanel({
       {sectionGrid && (
         <LayoutAccordion defaultOpen title="Diseño de tarjetas">
 
-          <label className="gjs-grid-layout-label" htmlFor="psl-section-column-count">Tarjetas por fila</label>
+          <label className="gjs-grid-layout-label" htmlFor="builder-section-column-count">Tarjetas por fila</label>
           <select
             aria-label="Tarjetas por fila"
-            id="psl-section-column-count"
+            id="builder-section-column-count"
             onChange={(event) => commit(() => updateSectionColumnCount(sectionGrid, Number(event.currentTarget.value)), sectionGrid)}
             value={sectionSettings.columns.length}
           >
@@ -133,9 +133,9 @@ export function GridLayoutPanel({
           </div>
           <p className="gjs-grid-direct-hint">La última tarjeta recibe automáticamente el porcentaje restante.</p>
 
-          <label className="gjs-grid-layout-label" htmlFor="psl-section-gap">Espacio entre tarjetas · {sectionSettings.gap}px</label>
+          <label className="gjs-grid-layout-label" htmlFor="builder-section-gap">Espacio entre tarjetas · {sectionSettings.gap}px</label>
           <input
-            id="psl-section-gap"
+            id="builder-section-gap"
             max="64"
             min="0"
             onInput={(event) => commit(() => updateSectionGap(sectionGrid, Number(event.currentTarget.value)), sectionGrid)}
@@ -144,9 +144,9 @@ export function GridLayoutPanel({
             value={sectionSettings.gap}
           />
 
-          <label className="gjs-grid-layout-label" htmlFor="psl-section-margin">Margen vertical de la sección · {sectionSettings.margin}px</label>
+          <label className="gjs-grid-layout-label" htmlFor="builder-section-margin">Margen vertical de la sección · {sectionSettings.margin}px</label>
           <input
-            id="psl-section-margin"
+            id="builder-section-margin"
             max="120"
             min="0"
             onInput={(event) => commit(() => updateSectionMargin(sectionGrid, Number(event.currentTarget.value)), sectionGrid)}
@@ -155,9 +155,9 @@ export function GridLayoutPanel({
             value={sectionSettings.margin}
           />
 
-          <label className="gjs-grid-layout-label" htmlFor="psl-section-padding">Espacio interior de la sección · {sectionSettings.padding}px</label>
+          <label className="gjs-grid-layout-label" htmlFor="builder-section-padding">Espacio interior de la sección · {sectionSettings.padding}px</label>
           <input
-            id="psl-section-padding"
+            id="builder-section-padding"
             max="120"
             min="0"
             onInput={(event) => commit(() => updateSectionPadding(sectionGrid, Number(event.currentTarget.value)), sectionGrid)}
@@ -190,9 +190,9 @@ export function GridLayoutPanel({
             ))}
           </div>
 
-          <label className="gjs-grid-layout-label" htmlFor="psl-layout-gap">Espacio entre columnas · {settings.gap}px</label>
+          <label className="gjs-grid-layout-label" htmlFor="builder-layout-gap">Espacio entre columnas · {settings.gap}px</label>
           <input
-            id="psl-layout-gap"
+            id="builder-layout-gap"
             max="64"
             min="0"
             onInput={(event) => commit(() => updateLayoutGap(row, Number(event.currentTarget.value)))}
@@ -201,9 +201,9 @@ export function GridLayoutPanel({
             value={settings.gap}
           />
 
-          <label className="gjs-grid-layout-label" htmlFor="psl-layout-height">Altura mínima de la fila · {settings.minHeight}px</label>
+          <label className="gjs-grid-layout-label" htmlFor="builder-layout-height">Altura mínima de la fila · {settings.minHeight}px</label>
           <input
-            id="psl-layout-height"
+            id="builder-layout-height"
             max="640"
             min="48"
             onInput={(event) => commit(() => updateLayoutMinHeight(row, Number(event.currentTarget.value)))}

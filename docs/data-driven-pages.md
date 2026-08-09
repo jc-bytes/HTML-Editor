@@ -1,6 +1,6 @@
 # Pantallas impulsadas por datos
 
-PSL usa conceptos genéricos para que una misma pantalla funcione con productos,
+Visual Builder usa conceptos genéricos para que una misma pantalla funcione con productos,
 lecciones, personas, recetas u otros registros. El HTML no necesita conocer el
 origen de los datos.
 
@@ -13,12 +13,12 @@ predeterminado no requiere conocer SQL:
 2. Crear una colección desde Productos, Libros, Proyectos, Eventos o Desde cero.
 3. Elegir la información de cada elemento y quién puede verla.
 4. Copiar la configuración, ejecutarla una vez en el SQL Editor de Supabase y
-   comprobar la colección desde PSL.
+   comprobar la colección desde Visual Builder.
 5. Seleccionar un contenedor para mostrar uno por cada elemento y conectar sus
    textos o imágenes con la información de la colección.
 
 Las relaciones, los identificadores internos, los campos automáticos y el SQL
-permanecen en las opciones avanzadas. Después de comprobar una colección, PSL
+permanecen en las opciones avanzadas. Después de comprobar una colección, Visual Builder
 bloquea el cambio o la eliminación de campos instalados; se pueden añadir campos
 nuevos sin afectar los datos existentes.
 
@@ -42,10 +42,10 @@ configuración sin dejar un bloque provisional en la página.
 3. Confirmar qué columnas alimentan el medio, título, descripción e indicador.
 4. Elegir si el medio debe mostrarse como imagen o video con controles.
 5. Elegir el máximo por página y las columnas de escritorio, tableta y móvil.
-   PSL calcula las filas; con 12 elementos usa 4 × 3, 4 × 3 y 2 × 6 por defecto.
+   Visual Builder calcula las filas; con 12 elementos usa 4 × 3, 4 × 3 y 2 × 6 por defecto.
 6. Activar **Anterior y Siguiente** para mostrar controles únicamente cuando
    existan más registros.
-7. Añadir el componente a la página. PSL crea automáticamente los repetidores,
+7. Añadir el componente a la página. Visual Builder crea automáticamente los repetidores,
    vínculos y estilos que usan la vista previa y la exportación.
 
 Las sugerencias usan los nombres y tipos de las columnas, pero siempre se pueden
@@ -58,7 +58,7 @@ y `offset`, solicitando un registro adicional para saber si debe habilitarse
 **Siguiente**.
 
 La publishable key no se usa para inspeccionar todo el esquema remoto. La lista
-muestra las tablas creadas o registradas en el proyecto PSL; esto evita solicitar
+muestra las tablas creadas o registradas en el proyecto Visual Builder; esto evita solicitar
 una secret key en el navegador.
 
 ## Fuentes

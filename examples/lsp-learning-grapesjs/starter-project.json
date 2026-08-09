@@ -5,7 +5,7 @@
     "styles": [
       {
         "selectors": [
-          "#i35esl"
+          "#if95eq"
         ],
         "style": {
           "width": "84%"
@@ -13,7 +13,7 @@
       },
       {
         "selectors": [
-          "#i2mkbd"
+          "#i9iiwf"
         ],
         "style": {
           "width": "78%"
@@ -21,7 +21,7 @@
       },
       {
         "selectors": [
-          "#in9evl"
+          "#iw86rs"
         ],
         "style": {
           "width": "86%"
@@ -29,7 +29,7 @@
       },
       {
         "selectors": [
-          "#ilskvu"
+          "#ifzlqw"
         ],
         "style": {
           "width": "80%"
@@ -885,6 +885,13 @@
         "selectorsAdd": ".motion-results[hidden]",
         "style": {
           "display": "none"
+        }
+      },
+      {
+        "selectors": [],
+        "selectorsAdd": ".motion-results[data-motion-design-preview=\"true\"], .motion-results[data-motion-design-preview=\"true\"] .motion-results__stages",
+        "style": {
+          "display": "grid"
         }
       },
       {
@@ -5237,7 +5244,7 @@
       },
       {
         "selectors": [],
-        "selectorsAdd": ".page-gestion .psl-data-status",
+        "selectorsAdd": ".page-gestion .builder-data-status",
         "style": {
           "grid-column": "1/-1",
           "padding-top": "38px",
@@ -9170,7 +9177,7 @@
                         "access-layout"
                       ],
                       "attributes": {
-                        "data-psl-auth-visible": "signed-out"
+                        "data-builder-auth-visible": "signed-out"
                       },
                       "components": [
                         {
@@ -9256,7 +9263,7 @@
                                       "tagName": "button",
                                       "type": "text",
                                       "attributes": {
-                                        "data-psl-auth-tab": "login",
+                                        "data-builder-auth-tab": "login",
                                         "aria-controls": "login-panel",
                                         "aria-selected": "true",
                                         "role": "tab",
@@ -9273,7 +9280,7 @@
                                       "tagName": "button",
                                       "type": "text",
                                       "attributes": {
-                                        "data-psl-auth-tab": "signup",
+                                        "data-builder-auth-tab": "signup",
                                         "aria-controls": "signup-panel",
                                         "aria-selected": "false",
                                         "role": "tab",
@@ -9295,8 +9302,8 @@
                                     "access-form"
                                   ],
                                   "attributes": {
-                                    "data-psl-auth-action": "login",
-                                    "data-psl-auth-panel": "login",
+                                    "data-builder-auth-action": "login",
+                                    "data-builder-auth-panel": "login",
                                     "id": "login-panel",
                                     "role": "tabpanel"
                                   },
@@ -9371,7 +9378,7 @@
                                         "access-status"
                                       ],
                                       "attributes": {
-                                        "data-psl-auth-status": "",
+                                        "data-builder-auth-status": "",
                                         "aria-live": "polite"
                                       }
                                     }
@@ -9383,8 +9390,8 @@
                                     "access-form"
                                   ],
                                   "attributes": {
-                                    "data-psl-auth-action": "signup",
-                                    "data-psl-auth-panel": "signup",
+                                    "data-builder-auth-action": "signup",
+                                    "data-builder-auth-panel": "signup",
                                     "id": "signup-panel",
                                     "role": "tabpanel",
                                     "hidden": true
@@ -9408,7 +9415,7 @@
                                       "attributes": {
                                         "id": "signup-name",
                                         "name": "display_name",
-                                        "data-psl-auth-metadata": "",
+                                        "data-builder-auth-metadata": "",
                                         "type": "text",
                                         "autocomplete": "name",
                                         "placeholder": "Tu nombre",
@@ -9488,7 +9495,7 @@
                                               "void": true,
                                               "attributes": {
                                                 "name": "learning_goal",
-                                                "data-psl-auth-metadata": "",
+                                                "data-builder-auth-metadata": "",
                                                 "type": "radio",
                                                 "value": "learn",
                                                 "checked": true
@@ -9529,7 +9536,7 @@
                                               "void": true,
                                               "attributes": {
                                                 "name": "learning_goal",
-                                                "data-psl-auth-metadata": "",
+                                                "data-builder-auth-metadata": "",
                                                 "type": "radio",
                                                 "value": "teach"
                                               }
@@ -9569,7 +9576,7 @@
                                               "void": true,
                                               "attributes": {
                                                 "name": "learning_goal",
-                                                "data-psl-auth-metadata": "",
+                                                "data-builder-auth-metadata": "",
                                                 "type": "radio",
                                                 "value": "both"
                                               }
@@ -9638,7 +9645,7 @@
                                         "access-status"
                                       ],
                                       "attributes": {
-                                        "data-psl-auth-status": "",
+                                        "data-builder-auth-status": "",
                                         "aria-live": "polite"
                                       }
                                     }
@@ -9673,7 +9680,7 @@
                 "tagName": "html"
               }
             },
-            "id": "KfWHMgDAcc9rnn5k"
+            "id": "6fraM3OWL6vDNKGI"
           }
         ],
         "id": "bienvenida"
@@ -9717,8 +9724,8 @@
                                 "brand"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "inicio",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "inicio",
                                 "type": "button"
                               },
                               "components": [
@@ -9761,8 +9768,8 @@
                                     "is-active"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "inicio",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "inicio",
                                     "type": "button"
                                   },
                                   "components": [
@@ -9779,8 +9786,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "catalogo",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "catalogo",
                                     "type": "button"
                                   },
                                   "components": [
@@ -9797,8 +9804,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "progreso",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "progreso",
                                     "type": "button"
                                   },
                                   "components": [
@@ -9815,8 +9822,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "perfil",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "perfil",
                                     "type": "button"
                                   },
                                   "components": [
@@ -9833,9 +9840,9 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "gestion",
-                                    "data-psl-role-visible": "teacher",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "gestion",
+                                    "data-builder-role-visible": "teacher",
                                     "type": "button"
                                   },
                                   "components": [
@@ -9851,8 +9858,8 @@
                                     "nav-signout"
                                   ],
                                   "attributes": {
-                                    "data-psl-auth-action": "logout",
-                                    "data-psl-auth-visible": "signed-in",
+                                    "data-builder-auth-action": "logout",
+                                    "data-builder-auth-visible": "signed-in",
                                     "type": "button",
                                     "aria-label": "Cerrar sesión",
                                     "title": "Cerrar sesión"
@@ -9938,10 +9945,10 @@
                                   "tagName": "span",
                                   "type": "text",
                                   "attributes": {
-                                    "data-psl-bind-field": "display_name",
-                                    "data-psl-bind-target": "text",
-                                    "data-psl-data-source": "table-profiles",
-                                    "data-psl-data-scope": "first"
+                                    "data-builder-bind-field": "display_name",
+                                    "data-builder-bind-target": "text",
+                                    "data-builder-data-source": "table-profiles",
+                                    "data-builder-data-scope": "first"
                                   },
                                   "components": [
                                     {
@@ -10023,10 +10030,10 @@
                                     "home-activity"
                                   ],
                                   "attributes": {
-                                    "data-psl-repeater": "table-practice-attempts",
-                                    "data-psl-page-size": "1",
-                                    "data-psl-empty-message": "Todavía no tienes actividad. Revisa el catálogo para comenzar.",
-                                    "data-psl-error-message": "No pudimos cargar tu actividad. Intenta nuevamente."
+                                    "data-builder-repeater": "table-practice-attempts",
+                                    "data-builder-page-size": "1",
+                                    "data-builder-empty-message": "Todavía no tienes actividad. Revisa el catálogo para comenzar.",
+                                    "data-builder-error-message": "No pudimos cargar tu actividad. Intenta nuevamente."
                                   },
                                   "components": [
                                     {
@@ -10064,10 +10071,10 @@
                                               "tagName": "span",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "score",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practice-attempts",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "score",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practice-attempts",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -10084,10 +10091,10 @@
                                               "tagName": "span",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "duration_seconds",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practice-attempts",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "duration_seconds",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practice-attempts",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -10114,10 +10121,10 @@
                                               "tagName": "span",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "created_at",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practice-attempts",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "created_at",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practice-attempts",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -10147,8 +10154,8 @@
                                     "secondary"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "progreso",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "progreso",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10166,8 +10173,8 @@
                                     "primary"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "catalogo",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "catalogo",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10211,7 +10218,7 @@
                 "tagName": "html"
               }
             },
-            "id": "5ddx0Vu42HztKmEA"
+            "id": "HIj3mO7whEH4wJCh"
           }
         ],
         "id": "inicio"
@@ -10255,8 +10262,8 @@
                                 "brand"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "inicio",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "inicio",
                                 "type": "button"
                               },
                               "components": [
@@ -10298,8 +10305,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "inicio",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "inicio",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10317,8 +10324,8 @@
                                     "is-active"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "catalogo",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "catalogo",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10335,8 +10342,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "progreso",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "progreso",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10353,8 +10360,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "perfil",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "perfil",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10371,9 +10378,9 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "gestion",
-                                    "data-psl-role-visible": "teacher",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "gestion",
+                                    "data-builder-role-visible": "teacher",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10389,8 +10396,8 @@
                                     "nav-signout"
                                   ],
                                   "attributes": {
-                                    "data-psl-auth-action": "logout",
-                                    "data-psl-auth-visible": "signed-in",
+                                    "data-builder-auth-action": "logout",
+                                    "data-builder-auth-visible": "signed-in",
                                     "type": "button",
                                     "aria-label": "Cerrar sesión",
                                     "title": "Cerrar sesión"
@@ -10492,13 +10499,13 @@
                                     "catalog-card"
                                   ],
                                   "attributes": {
-                                    "data-psl-repeater": "table-practices",
-                                    "data-psl-page-size": "6",
-                                    "data-psl-pagination": "true",
-                                    "data-psl-empty-message": "Todavía no hay prácticas disponibles.",
-                                    "data-psl-error-message": "No pudimos cargar las prácticas. Intenta nuevamente.",
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "detalle"
+                                    "data-builder-repeater": "table-practices",
+                                    "data-builder-page-size": "6",
+                                    "data-builder-pagination": "true",
+                                    "data-builder-empty-message": "Todavía no hay prácticas disponibles.",
+                                    "data-builder-error-message": "No pudimos cargar las prácticas. Intenta nuevamente.",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "detalle"
                                   },
                                   "components": [
                                     {
@@ -10521,10 +10528,10 @@
                                               "tagName": "span",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "difficulty",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practices",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "difficulty",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practices",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -10543,10 +10550,10 @@
                                               "tagName": "span",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "estimated_minutes",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practices",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "estimated_minutes",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practices",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -10567,10 +10574,10 @@
                                       "tagName": "h2",
                                       "type": "text",
                                       "attributes": {
-                                        "data-psl-bind-field": "title",
-                                        "data-psl-bind-target": "text",
-                                        "data-psl-data-source": "table-practices",
-                                        "data-psl-data-scope": "context"
+                                        "data-builder-bind-field": "title",
+                                        "data-builder-bind-target": "text",
+                                        "data-builder-data-source": "table-practices",
+                                        "data-builder-data-scope": "context"
                                       },
                                       "components": [
                                         {
@@ -10583,10 +10590,10 @@
                                       "tagName": "p",
                                       "type": "text",
                                       "attributes": {
-                                        "data-psl-bind-field": "description",
-                                        "data-psl-bind-target": "text",
-                                        "data-psl-data-source": "table-practices",
-                                        "data-psl-data-scope": "context"
+                                        "data-builder-bind-field": "description",
+                                        "data-builder-bind-target": "text",
+                                        "data-builder-data-source": "table-practices",
+                                        "data-builder-data-scope": "context"
                                       },
                                       "components": [
                                         {
@@ -10603,8 +10610,8 @@
                                         "primary"
                                       ],
                                       "attributes": {
-                                        "data-psl-flow-action": "navigate",
-                                        "data-psl-flow-target": "detalle",
+                                        "data-builder-flow-action": "navigate",
+                                        "data-builder-flow-target": "detalle",
                                         "type": "button"
                                       },
                                       "components": [
@@ -10650,7 +10657,7 @@
                 "tagName": "html"
               }
             },
-            "id": "zlOvXAjlzIJla397"
+            "id": "5faONlF34FHcCJI8"
           }
         ],
         "id": "catalogo"
@@ -10694,8 +10701,8 @@
                                 "brand"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "inicio",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "inicio",
                                 "type": "button"
                               },
                               "components": [
@@ -10737,8 +10744,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "inicio",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "inicio",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10756,8 +10763,8 @@
                                     "is-active"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "catalogo",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "catalogo",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10774,8 +10781,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "progreso",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "progreso",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10792,8 +10799,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "perfil",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "perfil",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10810,9 +10817,9 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "gestion",
-                                    "data-psl-role-visible": "teacher",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "gestion",
+                                    "data-builder-role-visible": "teacher",
                                     "type": "button"
                                   },
                                   "components": [
@@ -10828,8 +10835,8 @@
                                     "nav-signout"
                                   ],
                                   "attributes": {
-                                    "data-psl-auth-action": "logout",
-                                    "data-psl-auth-visible": "signed-in",
+                                    "data-builder-auth-action": "logout",
+                                    "data-builder-auth-visible": "signed-in",
                                     "type": "button",
                                     "aria-label": "Cerrar sesión",
                                     "title": "Cerrar sesión"
@@ -10907,10 +10914,10 @@
                                       "tagName": "span",
                                       "type": "text",
                                       "attributes": {
-                                        "data-psl-bind-field": "difficulty",
-                                        "data-psl-bind-target": "text",
-                                        "data-psl-data-source": "table-practices",
-                                        "data-psl-data-scope": "context"
+                                        "data-builder-bind-field": "difficulty",
+                                        "data-builder-bind-target": "text",
+                                        "data-builder-data-source": "table-practices",
+                                        "data-builder-data-scope": "context"
                                       },
                                       "components": [
                                         {
@@ -10927,10 +10934,10 @@
                                       "tagName": "span",
                                       "type": "text",
                                       "attributes": {
-                                        "data-psl-bind-field": "estimated_minutes",
-                                        "data-psl-bind-target": "text",
-                                        "data-psl-data-source": "table-practices",
-                                        "data-psl-data-scope": "context"
+                                        "data-builder-bind-field": "estimated_minutes",
+                                        "data-builder-bind-target": "text",
+                                        "data-builder-data-source": "table-practices",
+                                        "data-builder-data-scope": "context"
                                       },
                                       "components": [
                                         {
@@ -10949,10 +10956,10 @@
                                   "tagName": "h1",
                                   "type": "text",
                                   "attributes": {
-                                    "data-psl-bind-field": "title",
-                                    "data-psl-bind-target": "text",
-                                    "data-psl-data-source": "table-practices",
-                                    "data-psl-data-scope": "context"
+                                    "data-builder-bind-field": "title",
+                                    "data-builder-bind-target": "text",
+                                    "data-builder-data-source": "table-practices",
+                                    "data-builder-data-scope": "context"
                                   },
                                   "components": [
                                     {
@@ -10965,10 +10972,10 @@
                                   "tagName": "p",
                                   "type": "text",
                                   "attributes": {
-                                    "data-psl-bind-field": "description",
-                                    "data-psl-bind-target": "text",
-                                    "data-psl-data-source": "table-practices",
-                                    "data-psl-data-scope": "context"
+                                    "data-builder-bind-field": "description",
+                                    "data-builder-bind-target": "text",
+                                    "data-builder-data-source": "table-practices",
+                                    "data-builder-data-scope": "context"
                                   },
                                   "components": [
                                     {
@@ -10986,7 +10993,15 @@
                                 "favorite-prototype"
                               ],
                               "attributes": {
-                                "type": "button"
+                                "data-builder-flow-action": "toggle-record",
+                                "data-builder-flow-data-source": "table-favorite-practices",
+                                "data-builder-flow-owner-field": "user_id",
+                                "data-builder-flow-record-field": "practice_id",
+                                "data-builder-flow-context": "record",
+                                "data-builder-flow-active-label": "★ Guardado",
+                                "data-builder-flow-inactive-label": "☆ Guardar",
+                                "type": "button",
+                                "aria-pressed": "false"
                               },
                               "components": [
                                 {
@@ -11241,14 +11256,28 @@
                                     "data-motion-reference-template-field": "mediapipe_reference",
                                     "data-motion-reference-url": "",
                                     "data-motion-reference-template": "",
+                                    "data-motion-reference-display": "video-reference",
+                                    "data-motion-show-results": "false",
+                                    "data-motion-reference-save": "download",
+                                    "data-motion-reference-save-table": "",
+                                    "data-motion-reference-save-context": "record",
+                                    "data-motion-reference-save-record-mode": "context",
+                                    "data-motion-reference-save-record-id": "",
+                                    "data-motion-reference-save-field": "mediapipe_reference",
                                     "data-motion-duration": "10000",
-                                    "data-motion-hands": "true",
-                                    "data-motion-pose": "true",
-                                    "data-motion-face": "false",
-                                    "data-motion-confidence": "0.5",
-                                    "data-motion-smoothing": "3",
-                                    "data-motion-checkpoints": "true",
-                                    "data-motion-passing-score": "75",
+                                    "data-vision-model": "holistic-landmarker",
+                                    "data-vision-model-url": "https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/1/holistic_landmarker.task",
+                                    "data-vision-delegate": "auto",
+                                    "data-vision-evaluator": "sequence",
+                                    "data-vision-landmarks": "hands,pose",
+                                    "data-vision-confidence": "0.5",
+                                    "data-vision-smoothing": "3",
+                                    "data-vision-checkpoints": "true",
+                                    "data-vision-passing-score": "75",
+                                    "data-vision-expected-label": "",
+                                    "data-vision-minimum-count": "1",
+                                    "data-vision-category-index": "0",
+                                    "data-vision-minimum-coverage": "0.25",
                                     "data-motion-save": "true",
                                     "data-motion-result-table": "table-practice-attempts",
                                     "data-motion-result-context": "record",
@@ -11287,7 +11316,7 @@
                                           "components": [
                                             {
                                               "type": "textnode",
-                                              "content": "Comparar movimientos"
+                                              "content": "Comparar referencias"
                                             }
                                           ]
                                         }
@@ -11652,7 +11681,7 @@
                                           "components": [
                                             {
                                               "type": "textnode",
-                                              "content": "0%"
+                                              "content": "56% de coincidencia"
                                             }
                                           ]
                                         },
@@ -11662,16 +11691,187 @@
                                           ],
                                           "attributes": {
                                             "data-motion-scores": ""
-                                          }
+                                          },
+                                          "components": [
+                                            {
+                                              "classes": [
+                                                "motion-results__score"
+                                              ],
+                                              "components": [
+                                                {
+                                                  "tagName": "small",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "Forma de mano"
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "tagName": "strong",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "63%"
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "classes": [
+                                                "motion-results__score"
+                                              ],
+                                              "components": [
+                                                {
+                                                  "tagName": "small",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "Ubicación"
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "tagName": "strong",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "33%"
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "classes": [
+                                                "motion-results__score"
+                                              ],
+                                              "components": [
+                                                {
+                                                  "tagName": "small",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "Orientación"
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "tagName": "strong",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "73%"
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "classes": [
+                                                "motion-results__score"
+                                              ],
+                                              "components": [
+                                                {
+                                                  "tagName": "small",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "Trayectoria"
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "tagName": "strong",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "64%"
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "classes": [
+                                                "motion-results__score"
+                                              ],
+                                              "components": [
+                                                {
+                                                  "tagName": "small",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "Rostro y postura"
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "tagName": "strong",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "43%"
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "classes": [
+                                                "motion-results__score"
+                                              ],
+                                              "components": [
+                                                {
+                                                  "tagName": "small",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "Ritmo"
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "tagName": "strong",
+                                                  "type": "text",
+                                                  "components": [
+                                                    {
+                                                      "type": "textnode",
+                                                      "content": "47%"
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          ]
                                         },
                                         {
                                           "tagName": "p",
+                                          "type": "text",
                                           "classes": [
                                             "motion-results__feedback"
                                           ],
                                           "attributes": {
                                             "data-motion-feedback": ""
-                                          }
+                                          },
+                                          "components": [
+                                            {
+                                              "type": "textnode",
+                                              "content": "Compara la altura y la distancia de la palma respecto al rostro, los hombros o el pecho."
+                                            }
+                                          ]
                                         },
                                         {
                                           "tagName": "section",
@@ -11699,7 +11899,175 @@
                                               ],
                                               "attributes": {
                                                 "data-motion-stage-scores": ""
-                                              }
+                                              },
+                                              "components": [
+                                                {
+                                                  "tagName": "article",
+                                                  "classes": [
+                                                    "motion-stage-result",
+                                                    "is-not-scored"
+                                                  ],
+                                                  "components": [
+                                                    {
+                                                      "tagName": "span",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Inicio"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "strong",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "No cuenta"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "button",
+                                                      "type": "text",
+                                                      "attributes": {
+                                                        "type": "button"
+                                                      },
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Reproducir esta etapa"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "tagName": "article",
+                                                  "classes": [
+                                                    "motion-stage-result"
+                                                  ],
+                                                  "components": [
+                                                    {
+                                                      "tagName": "span",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Momento clave 1"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "strong",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "54%"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "button",
+                                                      "type": "text",
+                                                      "attributes": {
+                                                        "type": "button"
+                                                      },
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Reproducir esta etapa"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "tagName": "article",
+                                                  "classes": [
+                                                    "motion-stage-result"
+                                                  ],
+                                                  "components": [
+                                                    {
+                                                      "tagName": "span",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Momento clave 2"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "strong",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "57%"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "button",
+                                                      "type": "text",
+                                                      "attributes": {
+                                                        "type": "button"
+                                                      },
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Reproducir esta etapa"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "tagName": "article",
+                                                  "classes": [
+                                                    "motion-stage-result",
+                                                    "is-not-scored"
+                                                  ],
+                                                  "components": [
+                                                    {
+                                                      "tagName": "span",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Final"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "strong",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "No cuenta"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "button",
+                                                      "type": "text",
+                                                      "attributes": {
+                                                        "type": "button"
+                                                      },
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Reproducir esta etapa"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
                                             }
                                           ]
                                         },
@@ -11836,7 +12204,7 @@
                 "tagName": "html"
               }
             },
-            "id": "91LvbfsEbpxwZctQ"
+            "id": "3RxO1sUQ74iFxgXL"
           }
         ],
         "id": "detalle"
@@ -11880,8 +12248,8 @@
                                 "brand"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "inicio",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "inicio",
                                 "type": "button"
                               },
                               "components": [
@@ -11923,8 +12291,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "inicio",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "inicio",
                                     "type": "button"
                                   },
                                   "components": [
@@ -11941,8 +12309,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "catalogo",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "catalogo",
                                     "type": "button"
                                   },
                                   "components": [
@@ -11960,8 +12328,8 @@
                                     "is-active"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "progreso",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "progreso",
                                     "type": "button"
                                   },
                                   "components": [
@@ -11978,8 +12346,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "perfil",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "perfil",
                                     "type": "button"
                                   },
                                   "components": [
@@ -11996,9 +12364,9 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "gestion",
-                                    "data-psl-role-visible": "teacher",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "gestion",
+                                    "data-builder-role-visible": "teacher",
                                     "type": "button"
                                   },
                                   "components": [
@@ -12014,8 +12382,8 @@
                                     "nav-signout"
                                   ],
                                   "attributes": {
-                                    "data-psl-auth-action": "logout",
-                                    "data-psl-auth-visible": "signed-in",
+                                    "data-builder-auth-action": "logout",
+                                    "data-builder-auth-visible": "signed-in",
                                     "type": "button",
                                     "aria-label": "Cerrar sesión",
                                     "title": "Cerrar sesión"
@@ -12186,7 +12554,7 @@
                                     {
                                       "tagName": "span",
                                       "attributes": {
-                                        "id": "i35esl"
+                                        "id": "if95eq"
                                       }
                                     }
                                   ]
@@ -12238,7 +12606,7 @@
                                     {
                                       "tagName": "span",
                                       "attributes": {
-                                        "id": "i2mkbd"
+                                        "id": "i9iiwf"
                                       }
                                     }
                                   ]
@@ -12290,7 +12658,7 @@
                                     {
                                       "tagName": "span",
                                       "attributes": {
-                                        "id": "in9evl"
+                                        "id": "iw86rs"
                                       }
                                     }
                                   ]
@@ -12342,7 +12710,7 @@
                                     {
                                       "tagName": "span",
                                       "attributes": {
-                                        "id": "ilskvu"
+                                        "id": "ifzlqw"
                                       }
                                     }
                                   ]
@@ -12402,8 +12770,8 @@
                                 "primary"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "detalle",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "detalle",
                                 "type": "button"
                               },
                               "components": [
@@ -12421,8 +12789,8 @@
                                 "secondary"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "catalogo",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "catalogo",
                                 "type": "button"
                               },
                               "components": [
@@ -12439,8 +12807,8 @@
                                 "text-link"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "progreso",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "progreso",
                                 "type": "button"
                               },
                               "components": [
@@ -12482,7 +12850,7 @@
                 "tagName": "html"
               }
             },
-            "id": "JI3QN6TTRK623ykP"
+            "id": "yABCY7LwyFdV3kr3"
           }
         ],
         "id": "resultados"
@@ -12526,8 +12894,8 @@
                                 "brand"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "inicio",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "inicio",
                                 "type": "button"
                               },
                               "components": [
@@ -12569,8 +12937,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "inicio",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "inicio",
                                     "type": "button"
                                   },
                                   "components": [
@@ -12587,8 +12955,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "catalogo",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "catalogo",
                                     "type": "button"
                                   },
                                   "components": [
@@ -12606,8 +12974,8 @@
                                     "is-active"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "progreso",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "progreso",
                                     "type": "button"
                                   },
                                   "components": [
@@ -12624,8 +12992,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "perfil",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "perfil",
                                     "type": "button"
                                   },
                                   "components": [
@@ -12642,9 +13010,9 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "gestion",
-                                    "data-psl-role-visible": "teacher",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "gestion",
+                                    "data-builder-role-visible": "teacher",
                                     "type": "button"
                                   },
                                   "components": [
@@ -12660,8 +13028,8 @@
                                     "nav-signout"
                                   ],
                                   "attributes": {
-                                    "data-psl-auth-action": "logout",
-                                    "data-psl-auth-visible": "signed-in",
+                                    "data-builder-auth-action": "logout",
+                                    "data-builder-auth-visible": "signed-in",
                                     "type": "button",
                                     "aria-label": "Cerrar sesión",
                                     "title": "Cerrar sesión"
@@ -12778,10 +13146,10 @@
                                     "progress-row-simple"
                                   ],
                                   "attributes": {
-                                    "data-psl-repeater": "table-practice-progress",
-                                    "data-psl-page-size": "6",
-                                    "data-psl-empty-message": "Todavía no has comenzado una práctica.",
-                                    "data-psl-error-message": "No pudimos cargar tu progreso. Intenta nuevamente."
+                                    "data-builder-repeater": "table-practice-progress",
+                                    "data-builder-page-size": "6",
+                                    "data-builder-empty-message": "Todavía no has comenzado una práctica.",
+                                    "data-builder-error-message": "No pudimos cargar tu progreso. Intenta nuevamente."
                                   },
                                   "components": [
                                     {
@@ -12808,10 +13176,10 @@
                                               "tagName": "span",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "status",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practice-progress",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "status",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practice-progress",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -12834,10 +13202,10 @@
                                               "tagName": "span",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "last_practiced_at",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practice-progress",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "last_practiced_at",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practice-progress",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -12867,10 +13235,10 @@
                                               "tagName": "b",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "best_score",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practice-progress",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "best_score",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practice-progress",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -12893,10 +13261,10 @@
                                               "tagName": "b",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "attempts_count",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practice-progress",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "attempts_count",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practice-progress",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -12948,10 +13316,10 @@
                                     "attempt-row-simple"
                                   ],
                                   "attributes": {
-                                    "data-psl-repeater": "table-practice-attempts",
-                                    "data-psl-page-size": "8",
-                                    "data-psl-empty-message": "Tus intentos aparecerán aquí después de practicar.",
-                                    "data-psl-error-message": "No pudimos cargar tus intentos. Intenta nuevamente."
+                                    "data-builder-repeater": "table-practice-attempts",
+                                    "data-builder-page-size": "8",
+                                    "data-builder-empty-message": "Tus intentos aparecerán aquí después de practicar.",
+                                    "data-builder-error-message": "No pudimos cargar tus intentos. Intenta nuevamente."
                                   },
                                   "components": [
                                     {
@@ -12973,10 +13341,10 @@
                                               "tagName": "span",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "created_at",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practice-attempts",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "created_at",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practice-attempts",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -13002,10 +13370,10 @@
                                               "tagName": "b",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "score",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practice-attempts",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "score",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practice-attempts",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -13028,10 +13396,10 @@
                                               "tagName": "span",
                                               "type": "text",
                                               "attributes": {
-                                                "data-psl-bind-field": "duration_seconds",
-                                                "data-psl-bind-target": "text",
-                                                "data-psl-data-source": "table-practice-attempts",
-                                                "data-psl-data-scope": "context"
+                                                "data-builder-bind-field": "duration_seconds",
+                                                "data-builder-bind-target": "text",
+                                                "data-builder-data-source": "table-practice-attempts",
+                                                "data-builder-data-scope": "context"
                                               },
                                               "components": [
                                                 {
@@ -13067,8 +13435,8 @@
                                 "primary"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "catalogo",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "catalogo",
                                 "type": "button"
                               },
                               "components": [
@@ -13110,7 +13478,7 @@
                 "tagName": "html"
               }
             },
-            "id": "fqXg0TBNophRqgo9"
+            "id": "t5GJ8pTyT4SUuQI9"
           }
         ],
         "id": "progreso"
@@ -13154,8 +13522,8 @@
                                 "brand"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "inicio",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "inicio",
                                 "type": "button"
                               },
                               "components": [
@@ -13197,8 +13565,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "inicio",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "inicio",
                                     "type": "button"
                                   },
                                   "components": [
@@ -13215,8 +13583,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "catalogo",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "catalogo",
                                     "type": "button"
                                   },
                                   "components": [
@@ -13233,8 +13601,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "progreso",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "progreso",
                                     "type": "button"
                                   },
                                   "components": [
@@ -13252,8 +13620,8 @@
                                     "is-active"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "perfil",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "perfil",
                                     "type": "button"
                                   },
                                   "components": [
@@ -13270,9 +13638,9 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "gestion",
-                                    "data-psl-role-visible": "teacher",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "gestion",
+                                    "data-builder-role-visible": "teacher",
                                     "type": "button"
                                   },
                                   "components": [
@@ -13288,8 +13656,8 @@
                                     "nav-signout"
                                   ],
                                   "attributes": {
-                                    "data-psl-auth-action": "logout",
-                                    "data-psl-auth-visible": "signed-in",
+                                    "data-builder-auth-action": "logout",
+                                    "data-builder-auth-visible": "signed-in",
                                     "type": "button",
                                     "aria-label": "Cerrar sesión",
                                     "title": "Cerrar sesión"
@@ -13384,10 +13752,10 @@
                                   "tagName": "h1",
                                   "type": "text",
                                   "attributes": {
-                                    "data-psl-bind-field": "display_name",
-                                    "data-psl-bind-target": "text",
-                                    "data-psl-data-source": "table-profiles",
-                                    "data-psl-data-scope": "first"
+                                    "data-builder-bind-field": "display_name",
+                                    "data-builder-bind-target": "text",
+                                    "data-builder-data-source": "table-profiles",
+                                    "data-builder-data-scope": "first"
                                   },
                                   "components": [
                                     {
@@ -13400,10 +13768,10 @@
                                   "tagName": "p",
                                   "type": "text",
                                   "attributes": {
-                                    "data-psl-bind-field": "bio",
-                                    "data-psl-bind-target": "text",
-                                    "data-psl-data-source": "table-profiles",
-                                    "data-psl-data-scope": "first"
+                                    "data-builder-bind-field": "bio",
+                                    "data-builder-bind-target": "text",
+                                    "data-builder-data-source": "table-profiles",
+                                    "data-builder-data-scope": "first"
                                   },
                                   "components": [
                                     {
@@ -13422,8 +13790,8 @@
                             "profile-form"
                           ],
                           "attributes": {
-                            "data-psl-mutation-source": "profiles",
-                            "data-psl-mutation-filter": "user_id"
+                            "data-builder-mutation-source": "profiles",
+                            "data-builder-mutation-filter": "user_id"
                           },
                           "components": [
                             {
@@ -13454,7 +13822,7 @@
                               "attributes": {
                                 "id": "display-name",
                                 "name": "display_name",
-                                "data-psl-mutation-field": "",
+                                "data-builder-mutation-field": "",
                                 "required": true,
                                 "maxlength": "80",
                                 "value": "Estudiante",
@@ -13479,7 +13847,7 @@
                               "attributes": {
                                 "id": "bio",
                                 "name": "bio",
-                                "data-psl-mutation-field": "",
+                                "data-builder-mutation-field": "",
                                 "maxlength": "300",
                                 "rows": "4"
                               },
@@ -13515,7 +13883,7 @@
                                 {
                                   "tagName": "p",
                                   "attributes": {
-                                    "data-psl-mutation-status": "",
+                                    "data-builder-mutation-status": "",
                                     "aria-live": "polite"
                                   }
                                 }
@@ -13553,7 +13921,7 @@
                 "tagName": "html"
               }
             },
-            "id": "xNclfqpTUpLj3ed6"
+            "id": "Jmx6MfzphyhQX5h7"
           }
         ],
         "id": "perfil"
@@ -13597,8 +13965,8 @@
                                 "brand"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "inicio",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "inicio",
                                 "type": "button"
                               },
                               "components": [
@@ -13640,8 +14008,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "inicio",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "inicio",
                                     "type": "button"
                                   },
                                   "components": [
@@ -13658,8 +14026,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "catalogo",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "catalogo",
                                     "type": "button"
                                   },
                                   "components": [
@@ -13676,8 +14044,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "progreso",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "progreso",
                                     "type": "button"
                                   },
                                   "components": [
@@ -13694,8 +14062,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "perfil",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "perfil",
                                     "type": "button"
                                   },
                                   "components": [
@@ -13713,9 +14081,9 @@
                                     "is-active"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "gestion",
-                                    "data-psl-role-visible": "teacher",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "gestion",
+                                    "data-builder-role-visible": "teacher",
                                     "type": "button"
                                   },
                                   "components": [
@@ -13731,8 +14099,8 @@
                                     "nav-signout"
                                   ],
                                   "attributes": {
-                                    "data-psl-auth-action": "logout",
-                                    "data-psl-auth-visible": "signed-in",
+                                    "data-builder-auth-action": "logout",
+                                    "data-builder-auth-visible": "signed-in",
                                     "type": "button",
                                     "aria-label": "Cerrar sesión",
                                     "title": "Cerrar sesión"
@@ -13838,8 +14206,8 @@
                                 "primary"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "editor-practica",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "editor-practica",
                                 "type": "button"
                               },
                               "components": [
@@ -13863,23 +14231,23 @@
                                 "teacher-practice-card"
                               ],
                               "attributes": {
-                                "data-psl-repeater": "table-practices",
-                                "data-psl-page-size": "12",
-                                "data-psl-pagination": "true",
-                                "data-psl-user-filter-column": "created_by",
-                                "data-psl-include-unpublished": "true",
-                                "data-psl-empty-message": "Todavía no has creado prácticas.",
-                                "data-psl-error-message": "No pudimos cargar tus prácticas. Intenta nuevamente."
+                                "data-builder-repeater": "table-practices",
+                                "data-builder-page-size": "12",
+                                "data-builder-pagination": "true",
+                                "data-builder-user-filter-column": "created_by",
+                                "data-builder-include-unpublished": "true",
+                                "data-builder-empty-message": "Todavía no has creado prácticas.",
+                                "data-builder-error-message": "No pudimos cargar tus prácticas. Intenta nuevamente."
                               },
                               "components": [
                                 {
                                   "tagName": "h2",
                                   "type": "text",
                                   "attributes": {
-                                    "data-psl-bind-field": "title",
-                                    "data-psl-bind-target": "text",
-                                    "data-psl-data-source": "table-practices",
-                                    "data-psl-data-scope": "context"
+                                    "data-builder-bind-field": "title",
+                                    "data-builder-bind-target": "text",
+                                    "data-builder-data-source": "table-practices",
+                                    "data-builder-data-scope": "context"
                                   },
                                   "components": [
                                     {
@@ -13892,10 +14260,10 @@
                                   "tagName": "p",
                                   "type": "text",
                                   "attributes": {
-                                    "data-psl-bind-field": "description",
-                                    "data-psl-bind-target": "text",
-                                    "data-psl-data-source": "table-practices",
-                                    "data-psl-data-scope": "context"
+                                    "data-builder-bind-field": "description",
+                                    "data-builder-bind-target": "text",
+                                    "data-builder-data-source": "table-practices",
+                                    "data-builder-data-scope": "context"
                                   },
                                   "components": [
                                     {
@@ -13912,8 +14280,8 @@
                                     "secondary"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "editor-practica",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "editor-practica",
                                     "type": "button"
                                   },
                                   "components": [
@@ -13957,7 +14325,7 @@
                 "tagName": "html"
               }
             },
-            "id": "irf2bnBqLHl8soNu"
+            "id": "5ll6zzUiDeDGj7IA"
           }
         ],
         "id": "gestion"
@@ -14001,8 +14369,8 @@
                                 "brand"
                               ],
                               "attributes": {
-                                "data-psl-flow-action": "navigate",
-                                "data-psl-flow-target": "inicio",
+                                "data-builder-flow-action": "navigate",
+                                "data-builder-flow-target": "inicio",
                                 "type": "button"
                               },
                               "components": [
@@ -14044,8 +14412,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "inicio",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "inicio",
                                     "type": "button"
                                   },
                                   "components": [
@@ -14062,8 +14430,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "catalogo",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "catalogo",
                                     "type": "button"
                                   },
                                   "components": [
@@ -14080,8 +14448,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "progreso",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "progreso",
                                     "type": "button"
                                   },
                                   "components": [
@@ -14098,8 +14466,8 @@
                                     "nav-link"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "perfil",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "perfil",
                                     "type": "button"
                                   },
                                   "components": [
@@ -14117,9 +14485,9 @@
                                     "is-active"
                                   ],
                                   "attributes": {
-                                    "data-psl-flow-action": "navigate",
-                                    "data-psl-flow-target": "gestion",
-                                    "data-psl-role-visible": "teacher",
+                                    "data-builder-flow-action": "navigate",
+                                    "data-builder-flow-target": "gestion",
+                                    "data-builder-role-visible": "teacher",
                                     "type": "button"
                                   },
                                   "components": [
@@ -14135,8 +14503,8 @@
                                     "nav-signout"
                                   ],
                                   "attributes": {
-                                    "data-psl-auth-action": "logout",
-                                    "data-psl-auth-visible": "signed-in",
+                                    "data-builder-auth-action": "logout",
+                                    "data-builder-auth-visible": "signed-in",
                                     "type": "button",
                                     "aria-label": "Cerrar sesión",
                                     "title": "Cerrar sesión"
@@ -14204,7 +14572,7 @@
                                 "eyebrow"
                               ],
                               "attributes": {
-                                "data-psl-editor-mode": ""
+                                "data-builder-editor-mode": ""
                               },
                               "components": [
                                 {
@@ -14217,7 +14585,7 @@
                               "tagName": "h1",
                               "type": "text",
                               "attributes": {
-                                "data-psl-editor-title": ""
+                                "data-builder-editor-title": ""
                               },
                               "components": [
                                 {
@@ -14253,13 +14621,13 @@
                           ],
                           "attributes": {
                             "data-practice-wizard": "",
-                            "data-psl-mutation-source": "practices",
-                            "data-psl-mutation-mode": "context",
-                            "data-psl-mutation-context": "record",
-                            "data-psl-mutation-filter": "id",
-                            "data-psl-mutation-owner-field": "created_by",
-                            "data-psl-mutation-pending": "Guardando práctica…",
-                            "data-psl-mutation-success": "Práctica guardada correctamente."
+                            "data-builder-mutation-source": "practices",
+                            "data-builder-mutation-mode": "context",
+                            "data-builder-mutation-context": "record",
+                            "data-builder-mutation-filter": "id",
+                            "data-builder-mutation-owner-field": "created_by",
+                            "data-builder-mutation-pending": "Guardando práctica…",
+                            "data-builder-mutation-success": "Práctica guardada correctamente."
                           },
                           "components": [
                             {
@@ -14296,11 +14664,11 @@
                                       "attributes": {
                                         "id": "practice-title",
                                         "name": "title",
-                                        "data-psl-bind-field": "title",
-                                        "data-psl-bind-target": "value",
-                                        "data-psl-data-source": "table-practices",
-                                        "data-psl-data-scope": "context",
-                                        "data-psl-mutation-field": "",
+                                        "data-builder-bind-field": "title",
+                                        "data-builder-bind-target": "value",
+                                        "data-builder-data-source": "table-practices",
+                                        "data-builder-data-scope": "context",
+                                        "data-builder-mutation-field": "",
                                         "required": true,
                                         "maxlength": "120",
                                         "type": "text"
@@ -14323,11 +14691,11 @@
                                       "attributes": {
                                         "id": "practice-description",
                                         "name": "description",
-                                        "data-psl-bind-field": "description",
-                                        "data-psl-bind-target": "value",
-                                        "data-psl-data-source": "table-practices",
-                                        "data-psl-data-scope": "context",
-                                        "data-psl-mutation-field": "",
+                                        "data-builder-bind-field": "description",
+                                        "data-builder-bind-target": "value",
+                                        "data-builder-data-source": "table-practices",
+                                        "data-builder-data-scope": "context",
+                                        "data-builder-mutation-field": "",
                                         "maxlength": "600",
                                         "rows": "5"
                                       }
@@ -14352,12 +14720,12 @@
                                               "attributes": {
                                                 "id": "practice-difficulty",
                                                 "name": "difficulty",
-                                                "data-psl-bind-field": "difficulty",
-                                                "data-psl-bind-target": "value",
-                                                "data-psl-data-source": "table-practices",
-                                                "data-psl-data-scope": "context",
-                                                "data-psl-mutation-field": "",
-                                                "data-psl-mutation-type": "number"
+                                                "data-builder-bind-field": "difficulty",
+                                                "data-builder-bind-target": "value",
+                                                "data-builder-data-source": "table-practices",
+                                                "data-builder-data-scope": "context",
+                                                "data-builder-mutation-field": "",
+                                                "data-builder-mutation-type": "number"
                                               },
                                               "components": [
                                                 {
@@ -14445,11 +14813,11 @@
                                               "attributes": {
                                                 "id": "practice-duration",
                                                 "name": "estimated_minutes",
-                                                "data-psl-bind-field": "estimated_minutes",
-                                                "data-psl-bind-target": "value",
-                                                "data-psl-data-source": "table-practices",
-                                                "data-psl-data-scope": "context",
-                                                "data-psl-mutation-field": "",
+                                                "data-builder-bind-field": "estimated_minutes",
+                                                "data-builder-bind-target": "value",
+                                                "data-builder-data-source": "table-practices",
+                                                "data-builder-data-scope": "context",
+                                                "data-builder-mutation-field": "",
                                                 "type": "number",
                                                 "min": "1",
                                                 "max": "120",
@@ -14590,14 +14958,28 @@
                                         "data-motion-reference-template-field": "mediapipe_reference",
                                         "data-motion-reference-url": "",
                                         "data-motion-reference-template": "",
+                                        "data-motion-reference-display": "video-reference",
+                                        "data-motion-show-results": "false",
+                                        "data-motion-reference-save": "form",
+                                        "data-motion-reference-save-table": "",
+                                        "data-motion-reference-save-context": "record",
+                                        "data-motion-reference-save-record-mode": "context",
+                                        "data-motion-reference-save-record-id": "",
+                                        "data-motion-reference-save-field": "mediapipe_reference",
                                         "data-motion-duration": "10000",
-                                        "data-motion-hands": "true",
-                                        "data-motion-pose": "true",
-                                        "data-motion-face": "true",
-                                        "data-motion-confidence": "0.5",
-                                        "data-motion-smoothing": "3",
-                                        "data-motion-checkpoints": "true",
-                                        "data-motion-passing-score": "75",
+                                        "data-vision-model": "holistic-landmarker",
+                                        "data-vision-model-url": "https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/1/holistic_landmarker.task",
+                                        "data-vision-delegate": "auto",
+                                        "data-vision-evaluator": "sequence",
+                                        "data-vision-landmarks": "hands,pose,face",
+                                        "data-vision-confidence": "0.5",
+                                        "data-vision-smoothing": "3",
+                                        "data-vision-checkpoints": "true",
+                                        "data-vision-passing-score": "75",
+                                        "data-vision-expected-label": "",
+                                        "data-vision-minimum-count": "1",
+                                        "data-vision-category-index": "0",
+                                        "data-vision-minimum-coverage": "0.25",
                                         "data-motion-save": "false",
                                         "data-motion-result-table": "",
                                         "data-motion-result-context": "record",
@@ -14636,7 +15018,7 @@
                                               "components": [
                                                 {
                                                   "type": "textnode",
-                                                  "content": "Comparar movimientos"
+                                                  "content": "Comparar referencias"
                                                 }
                                               ]
                                             }
@@ -15200,7 +15582,7 @@
                                               "components": [
                                                 {
                                                   "type": "textnode",
-                                                  "content": "0%"
+                                                  "content": "56% de coincidencia"
                                                 }
                                               ]
                                             },
@@ -15210,16 +15592,187 @@
                                               ],
                                               "attributes": {
                                                 "data-motion-scores": ""
-                                              }
+                                              },
+                                              "components": [
+                                                {
+                                                  "classes": [
+                                                    "motion-results__score"
+                                                  ],
+                                                  "components": [
+                                                    {
+                                                      "tagName": "small",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Forma de mano"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "strong",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "63%"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "classes": [
+                                                    "motion-results__score"
+                                                  ],
+                                                  "components": [
+                                                    {
+                                                      "tagName": "small",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Ubicación"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "strong",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "33%"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "classes": [
+                                                    "motion-results__score"
+                                                  ],
+                                                  "components": [
+                                                    {
+                                                      "tagName": "small",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Orientación"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "strong",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "73%"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "classes": [
+                                                    "motion-results__score"
+                                                  ],
+                                                  "components": [
+                                                    {
+                                                      "tagName": "small",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Trayectoria"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "strong",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "64%"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "classes": [
+                                                    "motion-results__score"
+                                                  ],
+                                                  "components": [
+                                                    {
+                                                      "tagName": "small",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Rostro y postura"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "strong",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "43%"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "classes": [
+                                                    "motion-results__score"
+                                                  ],
+                                                  "components": [
+                                                    {
+                                                      "tagName": "small",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "Ritmo"
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "strong",
+                                                      "type": "text",
+                                                      "components": [
+                                                        {
+                                                          "type": "textnode",
+                                                          "content": "47%"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
                                             },
                                             {
                                               "tagName": "p",
+                                              "type": "text",
                                               "classes": [
                                                 "motion-results__feedback"
                                               ],
                                               "attributes": {
                                                 "data-motion-feedback": ""
-                                              }
+                                              },
+                                              "components": [
+                                                {
+                                                  "type": "textnode",
+                                                  "content": "Compara la altura y la distancia de la palma respecto al rostro, los hombros o el pecho."
+                                                }
+                                              ]
                                             },
                                             {
                                               "tagName": "section",
@@ -15247,7 +15800,175 @@
                                                   ],
                                                   "attributes": {
                                                     "data-motion-stage-scores": ""
-                                                  }
+                                                  },
+                                                  "components": [
+                                                    {
+                                                      "tagName": "article",
+                                                      "classes": [
+                                                        "motion-stage-result",
+                                                        "is-not-scored"
+                                                      ],
+                                                      "components": [
+                                                        {
+                                                          "tagName": "span",
+                                                          "type": "text",
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "Inicio"
+                                                            }
+                                                          ]
+                                                        },
+                                                        {
+                                                          "tagName": "strong",
+                                                          "type": "text",
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "No cuenta"
+                                                            }
+                                                          ]
+                                                        },
+                                                        {
+                                                          "tagName": "button",
+                                                          "type": "text",
+                                                          "attributes": {
+                                                            "type": "button"
+                                                          },
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "Reproducir esta etapa"
+                                                            }
+                                                          ]
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "article",
+                                                      "classes": [
+                                                        "motion-stage-result"
+                                                      ],
+                                                      "components": [
+                                                        {
+                                                          "tagName": "span",
+                                                          "type": "text",
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "Momento clave 1"
+                                                            }
+                                                          ]
+                                                        },
+                                                        {
+                                                          "tagName": "strong",
+                                                          "type": "text",
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "54%"
+                                                            }
+                                                          ]
+                                                        },
+                                                        {
+                                                          "tagName": "button",
+                                                          "type": "text",
+                                                          "attributes": {
+                                                            "type": "button"
+                                                          },
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "Reproducir esta etapa"
+                                                            }
+                                                          ]
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "article",
+                                                      "classes": [
+                                                        "motion-stage-result"
+                                                      ],
+                                                      "components": [
+                                                        {
+                                                          "tagName": "span",
+                                                          "type": "text",
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "Momento clave 2"
+                                                            }
+                                                          ]
+                                                        },
+                                                        {
+                                                          "tagName": "strong",
+                                                          "type": "text",
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "57%"
+                                                            }
+                                                          ]
+                                                        },
+                                                        {
+                                                          "tagName": "button",
+                                                          "type": "text",
+                                                          "attributes": {
+                                                            "type": "button"
+                                                          },
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "Reproducir esta etapa"
+                                                            }
+                                                          ]
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "tagName": "article",
+                                                      "classes": [
+                                                        "motion-stage-result",
+                                                        "is-not-scored"
+                                                      ],
+                                                      "components": [
+                                                        {
+                                                          "tagName": "span",
+                                                          "type": "text",
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "Final"
+                                                            }
+                                                          ]
+                                                        },
+                                                        {
+                                                          "tagName": "strong",
+                                                          "type": "text",
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "No cuenta"
+                                                            }
+                                                          ]
+                                                        },
+                                                        {
+                                                          "tagName": "button",
+                                                          "type": "text",
+                                                          "attributes": {
+                                                            "type": "button"
+                                                          },
+                                                          "components": [
+                                                            {
+                                                              "type": "textnode",
+                                                              "content": "Reproducir esta etapa"
+                                                            }
+                                                          ]
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
                                                 }
                                               ]
                                             },
@@ -15285,7 +16006,7 @@
                                         "create-form-status"
                                       ],
                                       "attributes": {
-                                        "data-psl-mutation-status": "",
+                                        "data-builder-mutation-status": "",
                                         "aria-live": "polite",
                                         "role": "status"
                                       },
@@ -15311,7 +16032,7 @@
                                           "attributes": {
                                             "name": "published",
                                             "value": "false",
-                                            "data-psl-mutation-type": "boolean",
+                                            "data-builder-mutation-type": "boolean",
                                             "type": "submit"
                                           },
                                           "components": [
@@ -15331,7 +16052,7 @@
                                           "attributes": {
                                             "name": "published",
                                             "value": "true",
-                                            "data-psl-mutation-type": "boolean",
+                                            "data-builder-mutation-type": "boolean",
                                             "type": "submit"
                                           },
                                           "components": [
@@ -15352,7 +16073,7 @@
                               "void": true,
                               "attributes": {
                                 "name": "source",
-                                "data-psl-mutation-field": "",
+                                "data-builder-mutation-field": "",
                                 "type": "hidden",
                                 "value": "teacher"
                               }
@@ -15362,8 +16083,8 @@
                               "void": true,
                               "attributes": {
                                 "name": "mediapipe_reference",
-                                "data-psl-mutation-field": "",
-                                "data-psl-mutation-type": "json",
+                                "data-builder-mutation-field": "",
+                                "data-builder-mutation-type": "json",
                                 "data-motion-template-field": "",
                                 "type": "hidden"
                               }
@@ -15400,7 +16121,7 @@
                 "tagName": "html"
               }
             },
-            "id": "O4aGiPITxIqAwMz9"
+            "id": "GiQYA07RBapDYX0l"
           }
         ],
         "id": "editor-practica"

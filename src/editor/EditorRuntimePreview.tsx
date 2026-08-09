@@ -84,7 +84,7 @@ export function EditorRuntimePreview({
 
   function navigateToPage(pageId: string) {
     onRuntimeAction({
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       action: 'navigate',
       targetPage: pageId,
     })
@@ -105,7 +105,7 @@ export function EditorRuntimePreview({
   const access = page ? editorPreviewPageAccess(session.bundle, page) : 'public'
   const accessLabel = access === 'authenticated'
     ? 'Protegida'
-    : access === 'guestOnly' ? 'Solo visitantes' : 'Pública'
+    : access === 'guestOnly' ? 'Solo visitantes' : access === 'role' ? 'Por rol' : 'Pública'
 
   return (
     <div
@@ -143,9 +143,13 @@ export function EditorRuntimePreview({
           className={`gjs-preview-access gjs-preview-access-${access}`}
           title={access === 'authenticated'
             ? 'Requiere una sesión iniciada'
-            : access === 'guestOnly' ? 'Solo se muestra sin una sesión iniciada' : 'No requiere iniciar sesión'}
+            : access === 'guestOnly'
+              ? 'Solo se muestra sin una sesión iniciada'
+              : access === 'role'
+                ? `Disponible para: ${page?.roles?.join(', ') || 'ningún rol configurado'}`
+                : 'No requiere iniciar sesión'}
         >
-          <span aria-hidden="true">{access === 'authenticated' ? '◆' : access === 'guestOnly' ? '◇' : '●'}</span>
+          <span aria-hidden="true">{access === 'authenticated' ? '◆' : access === 'guestOnly' ? '◇' : access === 'role' ? '⬟' : '●'}</span>
           {accessLabel}
         </span>
       </div>

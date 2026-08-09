@@ -34,11 +34,15 @@ import {
   dataComponentTemplateById,
   dataComponentTemplates,
   defaultDataComponentOptions,
+  compatibleFieldsForSlot,
+  effectiveDataFields,
+  filterControlKind,
   suggestDataComponentMapping,
 } from './data-component-templates'
 import type {
   DataComponentMapping,
   DataComponentOptions,
+  DataComponentFixedFilter,
   DataComponentTemplateId,
 } from './data-component-templates'
 
@@ -546,9 +550,17 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
   const availableTables = config.tables.filter((table) => table.access !== 'private')
   const [step, setStep] = useState(initialTableId ? 3 : 1)
   const [templateId, setTemplateId] = useState<DataComponentTemplateId>(initialTemplateId ?? 'card_grid')
+  const [repeatMode, setRepeatMode] = useState<'collection' | 'first'>(() =>
+    dataComponentTemplateById(initialTemplateId ?? 'card_grid').repeatMode)
   const [tableId, setTableId] = useState(initialTableId ?? availableTables[0]?.id ?? '')
   const table = availableTables.find((candidate) => candidate.id === tableId)
   const template = dataComponentTemplateById(templateId)
+  const tableFields = table ? effectiveDataFields(table) : []
+  const textFields = tableFields.filter((field) => field.type === 'text' || field.type === 'long_text')
+  const filterableFields = tableFields.filter((field) => filterControlKind(field))
+  const sortableFields = tableFields.filter((field) => !['media', 'json'].includes(field.type))
+  const compatibleTemplates = dataComponentTemplates.filter((candidate) =>
+    candidate.repeatMode === repeatMode)
   const [mapping, setMapping] = useState<DataComponentMapping>(() => initialMapping ?? (table
     ? suggestDataComponentMapping(templateId, table)
     : {}))
@@ -565,7 +577,21 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
     setDisplayOptions((current) => ({
       ...defaultDataComponentOptions(nextTemplateId),
       mediaKind: current.mediaKind,
+      sortField: current.sortField,
+      sortDirection: current.sortDirection,
+      fixedFilters: current.fixedFilters,
+      searchField: current.searchField,
+      visitorFilters: current.visitorFilters,
+      visitorSort: current.visitorSort,
+      visitorSortFields: current.visitorSortFields,
     }))
+  }
+
+  function chooseRepeatMode(nextMode: 'collection' | 'first') {
+    setRepeatMode(nextMode)
+    const nextTemplate = dataComponentTemplates.find((candidate) =>
+      candidate.repeatMode === nextMode)?.id ?? 'card_grid'
+    chooseDataTemplate(nextTemplate)
   }
 
   function updateDisplayNumber(
@@ -586,6 +612,23 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
     setMapping(suggestDataComponentMapping(templateId, table))
     setMappingContext(nextContext)
   }, [mappingContext, table, tableId, templateId])
+
+  useEffect(() => {
+    if (!table) return
+    const availableNames = new Set(tableFields.map((field) => field.name))
+    setDisplayOptions((current) => ({
+      ...current,
+      ...(current.sortField && availableNames.has(current.sortField)
+        ? {}
+        : { sortField: undefined }),
+      ...(current.searchField && availableNames.has(current.searchField)
+        ? {}
+        : { searchField: undefined }),
+      fixedFilters: current.fixedFilters.filter((filter) => availableNames.has(filter.field)),
+      visitorFilters: current.visitorFilters.filter((filter) => availableNames.has(filter.field)),
+      visitorSortFields: current.visitorSortFields.filter((field) => availableNames.has(field)),
+    }))
+  }, [tableId])
 
   useEffect(() => {
     const field = mapping.media
@@ -613,40 +656,47 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
 
   return (
     <Modal onClose={onClose} title={editMode ? 'Editar componente con datos' : 'Añadir componente con datos'}>
-      <div className="gjs-data-wizard-progress" aria-label={`Paso ${step} de 3`}>
-        {[1, 2, 3].map((number) => <span className={number <= step ? 'active' : ''} key={number} />)}
+      <div className="gjs-data-wizard-progress" aria-label={`Paso ${step} de 5`}>
+        {[1, 2, 3, 4, 5].map((number) => <span className={number <= step ? 'active' : ''} key={number} />)}
       </div>
       {step === 1 && <div className="gjs-data-form">
-        <div className="gjs-flow-introduction"><span aria-hidden="true">▤</span><div><strong>¿Cómo quieres mostrar la información?</strong><p>Todos los componentes se adaptan a escritorio, tableta y móvil.</p></div></div>
+        <div className="gjs-flow-introduction"><span aria-hidden="true">▦</span><div><strong>¿Qué datos quieres mostrar?</strong><p>Primero elige la colección. Las siguientes preguntas usarán solamente sus campos reales.</p></div></div>
+        <div className="gjs-data-source-list">
+          {availableTables.map((candidate) => <button className={candidate.id === tableId ? 'selected' : ''} key={candidate.id} onClick={() => setTableId(candidate.id)} type="button">
+            <span>▦</span><span><strong>{collectionDisplayName(candidate)}</strong><small>{candidate.name} · {effectiveDataFields(candidate).length} campos disponibles</small></span><span>{candidate.setupStatus === 'verified' ? '✓' : '○'}</span>
+          </button>)}
+          {!availableTables.length && <div className="gjs-data-placeholder">Todavía no hay colecciones disponibles en este proyecto.</div>}
+        </div>
+        <button className="gjs-flow-secondary" onClick={() => onRequestCreate(templateId)} type="button">+ Crear una colección nueva</button>
+        {table && <div className="gjs-data-choice-grid">
+          <button className={repeatMode === 'collection' ? 'selected' : ''} onClick={() => chooseRepeatMode('collection')} type="button"><strong>Varios registros</strong><span>Una lista, cuadrícula o carrusel.</span></button>
+          <button className={repeatMode === 'first' ? 'selected' : ''} onClick={() => chooseRepeatMode('first')} type="button"><strong>Un registro</strong><span>Un detalle destacado.</span></button>
+        </div>}
+      </div>}
+      {step === 2 && <div className="gjs-data-form">
+        <div className="gjs-flow-introduction"><span aria-hidden="true">▤</span><div><strong>¿Cómo quieres mostrar la información?</strong><p>Solo aparecen presentaciones apropiadas para {repeatMode === 'collection' ? 'varios registros' : 'un registro'}.</p></div></div>
         <div className="gjs-data-component-grid">
-          {dataComponentTemplates.map((candidate) => <button className={candidate.id === templateId ? 'selected' : ''} key={candidate.id} onClick={() => chooseDataTemplate(candidate.id)} type="button">
+          {compatibleTemplates.map((candidate) => <button className={candidate.id === templateId ? 'selected' : ''} key={candidate.id} onClick={() => chooseDataTemplate(candidate.id)} type="button">
             <span className={`gjs-data-component-preview ${candidate.id}`} aria-hidden="true"><i /><i /><i /></span>
             <strong>{candidate.name}</strong><span>{candidate.description}</span><small>{candidate.responsiveSummary}</small>
           </button>)}
         </div>
       </div>}
-      {step === 2 && <div className="gjs-data-form">
-        <div className="gjs-flow-introduction"><span aria-hidden="true">▦</span><div><strong>¿Qué tabla quieres mostrar?</strong><p>Usa una tabla registrada en PSL o crea una nueva.</p></div></div>
-        <div className="gjs-data-source-list">
-          {availableTables.map((candidate) => <button className={candidate.id === tableId ? 'selected' : ''} key={candidate.id} onClick={() => setTableId(candidate.id)} type="button">
-            <span>▦</span><span><strong>{collectionDisplayName(candidate)}</strong><small>{candidate.name} · {candidate.fields.length} campos</small></span><span>{candidate.setupStatus === 'verified' ? '✓' : '○'}</span>
-          </button>)}
-          {!availableTables.length && <div className="gjs-data-placeholder">Todavía no hay tablas registradas en este proyecto.</div>}
-        </div>
-        <button className="gjs-flow-secondary" onClick={() => onRequestCreate(templateId)} type="button">+ Crear una tabla nueva</button>
-      </div>}
       {step === 3 && table && <div className="gjs-data-form">
-        <div className="gjs-flow-introduction"><span aria-hidden="true">↔</span><div><strong>Elige qué mostrará cada parte</strong><p>PSL sugirió campos compatibles. Puedes cambiar o dejar partes vacías.</p></div></div>
+        <div className="gjs-flow-introduction"><span aria-hidden="true">↔</span><div><strong>Elige qué mostrará cada parte</strong><p>Solo aparecen campos compatibles y disponibles en {collectionDisplayName(table)}.</p></div></div>
         <div className="gjs-data-mapping-summary"><strong>{template.name}</strong><span>←</span><strong>{collectionDisplayName(table)}</strong></div>
         <div className="gjs-data-mapping-list">
-          {template.slots.map((slot) => <label key={slot.id}>
-            <span>{slot.label}</span>
-            <select aria-label={slot.label} onChange={(event) => setMapping((current) => ({ ...current, [slot.id]: event.target.value || undefined }))} value={mapping[slot.id] ?? ''}>
-              <option value="">No mostrar</option>
-              {table.fields.map((field) => <option key={field.id} value={field.name}>{field.name} · {fieldTypeLabels[field.type]}</option>)}
-            </select>
-          </label>)}
+          {template.slots.map((slot) => ({ slot, fields: compatibleFieldsForSlot(templateId, slot.id, table, mapping) }))
+            .filter(({ fields }) => fields.length > 0)
+            .map(({ slot, fields }) => <label key={slot.id}>
+              <span>{slot.label}</span>
+              <select aria-label={slot.label} onChange={(event) => setMapping((current) => ({ ...current, [slot.id]: event.target.value || undefined }))} value={mapping[slot.id] ?? ''}>
+                <option value="">No mostrar</option>
+                {fields.map((field) => <option key={field.id} value={field.name}>{field.name} · {fieldTypeLabels[field.type]}</option>)}
+              </select>
+            </label>)}
         </div>
+        {!template.slots.some((slot) => compatibleFieldsForSlot(templateId, slot.id, table, mapping).length) && <p className="gjs-data-placeholder">Esta presentación no tiene partes compatibles con los campos de la colección.</p>}
         {mapping.media && <label>
           Mostrar el medio como
           <select aria-label="Tipo de medio" onChange={(event) => setMediaKind(event.target.value as DataComponentOptions['mediaKind'])} value={mediaKind}>
@@ -675,9 +725,11 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
           {!mediaSample.loading && mediaSample.error && <p role="status">{mediaSample.error}</p>}
           {!mediaSample.loading && mediaSample.url && <a href={mediaSample.url} rel="noreferrer" target="_blank">Abrir URL original ↗</a>}
         </section>}
-        {template.repeatMode === 'collection' && <details className="gjs-data-display-options" open>
-          <summary>Cantidad y páginas</summary>
-          <div className="gjs-data-display-options-body">
+        {table.setupStatus !== 'verified' && <p className="gjs-data-safety">Puedes diseñar con información de ejemplo. Conecta esta colección antes de publicar.</p>}
+      </div>}
+      {step === 4 && table && <div className="gjs-data-form">
+        <div className="gjs-flow-introduction"><span aria-hidden="true">☷</span><div><strong>Cantidad y orden</strong><p>Decide cuántos registros se solicitan y en qué orden aparecen.</p></div></div>
+        {template.repeatMode === 'collection' && <div className="gjs-data-display-options-body">
             <label>Máximo por página<input aria-label="Máximo de elementos por página" max="100" min="1" onChange={(event) => updateDisplayNumber('pageSize', event.target.value)} type="number" value={displayOptions.pageSize} /></label>
             <div className="gjs-data-responsive-counts">
               {([
@@ -691,17 +743,49 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
               </label>)}
             </div>
             <label className="gjs-data-pagination-toggle"><input checked={displayOptions.pagination} onChange={(event) => setDisplayOptions((current) => ({ ...current, pagination: event.target.checked }))} type="checkbox" /><span><strong>Mostrar Anterior y Siguiente</strong><small>Solo aparecen cuando hay más información disponible.</small></span></label>
-          </div>
-        </details>}
-        {table.setupStatus !== 'verified' && <p className="gjs-data-safety">Puedes diseñar con información de ejemplo. Conecta esta tabla antes de publicar.</p>}
+        </div>}
+        <label>Ordenar por<select aria-label="Campo para ordenar" onChange={(event) => setDisplayOptions((current) => ({ ...current, sortField: event.target.value || undefined }))} value={displayOptions.sortField ?? ''}><option value="">Orden predeterminado</option>{sortableFields.map((field) => <option key={field.id} value={field.name}>{field.name} · {fieldTypeLabels[field.type]}</option>)}</select></label>
+        {displayOptions.sortField && <label>Dirección<select aria-label="Dirección del orden" onChange={(event) => setDisplayOptions((current) => ({ ...current, sortDirection: event.target.value as 'asc' | 'desc' }))} value={displayOptions.sortDirection}><option value="asc">Ascendente</option><option value="desc">Descendente</option></select></label>}
       </div>}
-      {step === 3 && !table && <div className="gjs-data-form"><div className="gjs-data-placeholder">Selecciona o crea una tabla para continuar.</div></div>}
+      {step === 5 && table && <div className="gjs-data-form">
+        <div className="gjs-flow-introduction"><span aria-hidden="true">⌕</span><div><strong>Filtros y controles</strong><p>Añade reglas permanentes y decide qué puede buscar o filtrar quien visite el sitio.</p></div></div>
+        <section className="gjs-data-display-options"><strong>Reglas permanentes</strong><p>Estas reglas se aplican sin mostrar controles en la página.</p>
+          {displayOptions.fixedFilters.map((filter, index) => {
+            const field = tableFields.find((candidate) => candidate.name === filter.field)
+            const operators: Array<[DataComponentFixedFilter['operator'], string]> = field?.type === 'text' || field?.type === 'long_text'
+              ? [['eq', 'Es igual a'], ['contains', 'Contiene']]
+              : field?.type === 'number' || field?.type === 'date' || field?.type === 'datetime'
+                ? [['eq', 'Es igual a'], ['gte', 'Desde'], ['lte', 'Hasta']]
+                : [['eq', 'Es igual a']]
+            return <div className="gjs-data-field" key={`${filter.field}-${index}`}>
+              <select aria-label={`Campo de regla ${index + 1}`} onChange={(event) => setDisplayOptions((current) => ({ ...current, fixedFilters: current.fixedFilters.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, field: event.target.value, operator: 'eq', value: '' } : candidate) }))} value={filter.field}>{filterableFields.map((candidate) => <option key={candidate.id} value={candidate.name}>{candidate.name}</option>)}</select>
+              <select aria-label={`Condición de regla ${index + 1}`} onChange={(event) => setDisplayOptions((current) => ({ ...current, fixedFilters: current.fixedFilters.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, operator: event.target.value as DataComponentFixedFilter['operator'] } : candidate) }))} value={filter.operator}>{operators.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+              {field?.type === 'boolean' ? <select aria-label={`Valor de regla ${index + 1}`} onChange={(event) => setDisplayOptions((current) => ({ ...current, fixedFilters: current.fixedFilters.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, value: event.target.value } : candidate) }))} value={filter.value}><option value="true">Sí</option><option value="false">No</option></select> : <input aria-label={`Valor de regla ${index + 1}`} onChange={(event) => setDisplayOptions((current) => ({ ...current, fixedFilters: current.fixedFilters.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, value: event.target.value } : candidate) }))} type={field?.type === 'number' ? 'number' : field?.type === 'date' || field?.type === 'datetime' ? 'date' : 'text'} value={filter.value} />}
+              <button aria-label={`Eliminar regla ${index + 1}`} onClick={() => setDisplayOptions((current) => ({ ...current, fixedFilters: current.fixedFilters.filter((_, candidateIndex) => candidateIndex !== index) }))} type="button">×</button>
+            </div>
+          })}
+          <button className="gjs-flow-secondary" disabled={!filterableFields.length} onClick={() => {
+            const field = filterableFields[0]
+            if (field) setDisplayOptions((current) => ({ ...current, fixedFilters: [...current.fixedFilters, { field: field.name, operator: 'eq', value: field.type === 'boolean' ? 'true' : '' }] }))
+          }} type="button">+ Añadir regla</button>
+        </section>
+        <section className="gjs-data-display-options"><strong>Controles para visitantes</strong>
+          <label>Campo de búsqueda<select aria-label="Campo de búsqueda" onChange={(event) => setDisplayOptions((current) => ({ ...current, searchField: event.target.value || undefined, visitorFilters: current.visitorFilters.filter((filter) => filter.field !== event.target.value) }))} value={displayOptions.searchField ?? ''}><option value="">Sin búsqueda</option>{textFields.map((field) => <option key={field.id} value={field.name}>{field.name}</option>)}</select></label>
+          <div className="gjs-data-fields"><strong>Permitir filtrar por</strong>{filterableFields.filter((field) => field.name !== displayOptions.searchField).map((field) => {
+            const kind = filterControlKind(field)!
+            const checked = displayOptions.visitorFilters.some((filter) => filter.field === field.name)
+            return <label className="gjs-data-pagination-toggle" key={field.id}><input checked={checked} onChange={(event) => setDisplayOptions((current) => ({ ...current, visitorFilters: event.target.checked ? [...current.visitorFilters.filter((filter) => filter.field !== field.name), { field: field.name, kind }] : current.visitorFilters.filter((filter) => filter.field !== field.name) }))} type="checkbox" /><span><strong>{field.name}</strong><small>{fieldTypeLabels[field.type]}</small></span></label>
+          })}</div>
+          <label className="gjs-data-pagination-toggle"><input checked={displayOptions.visitorSort} onChange={(event) => setDisplayOptions((current) => ({ ...current, visitorSort: event.target.checked, visitorSortFields: event.target.checked && !current.visitorSortFields.length ? sortableFields.map((field) => field.name) : current.visitorSortFields }))} type="checkbox" /><span><strong>Permitir cambiar el orden</strong><small>Ofrece los campos ordenables en la página.</small></span></label>
+        </section>
+      </div>}
+      {step >= 3 && !table && <div className="gjs-data-form"><div className="gjs-data-placeholder">Selecciona o crea una colección para continuar.</div></div>}
       <div className="gjs-data-wizard-actions">
         {step > 1 ? <button onClick={() => setStep((current) => current - 1)} type="button">Atrás</button> : <span />}
-        <button className="gjs-flow-primary" disabled={(step === 2 && !tableId) || (step === 3 && !table)} onClick={() => {
-          if (step < 3) setStep((current) => current + 1)
+        <button className="gjs-flow-primary" disabled={!table || (step === 2 && !compatibleTemplates.length)} onClick={() => {
+          if (step < 5) setStep((current) => current + 1)
           else if (table) onSubmit(templateId, table.id, mapping, { ...displayOptions, mediaKind })
-        }} type="button">{step < 3 ? 'Continuar' : editMode ? 'Guardar cambios' : 'Añadir a la página'}</button>
+        }} type="button">{step < 5 ? 'Continuar' : editMode ? 'Guardar cambios' : 'Añadir a la página'}</button>
       </div>
     </Modal>
   )

@@ -3,7 +3,7 @@ import type { VisualBuilderProject } from '../core/project'
 export const demoProject: VisualBuilderProject = {
   version: 2,
   elementOverrides: [],
-  name: 'PSL Demo',
+  name: 'Visual Builder Demo',
   startPage: 'inicio',
   pages: [
     { id: 'inicio', name: 'Inicio', file: 'pages/inicio.html' },

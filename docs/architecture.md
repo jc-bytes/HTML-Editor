@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-PSL Visual Builder transforma pantallas HTML/CSS en una aplicación navegable con
+Visual Builder transforma pantallas HTML/CSS en una aplicación navegable con
 autenticación y análisis de movimiento opcionales y, en hitos posteriores, añadirá publicación. Cada una
 de esas capacidades debe poder evolucionar sin reescribir las demás.
 
@@ -95,7 +95,7 @@ importar desde `modules` ni `app`.
 - Recibe un `ProjectBundle` sin modificarlo.
 - Genera un ZIP estático con manifiesto actualizado, página de entrada y runtime.
 - Inyecta configuración por pantalla únicamente en las copias exportadas.
-- Aplica contenido editado y genera `psl-runtime/overrides.css` en las copias.
+- Aplica contenido editado y genera `builder-runtime/overrides.css` en las copias.
 - Expone `ProjectExporter` como puerto y `ZipProjectExporter` como adaptador.
 - Valida el ZIP final como un árbol estático sensible a mayúsculas antes de la
   descarga, sin acoplarse a la API de Cloudflare.
@@ -146,7 +146,7 @@ project.zip
 La versión del manifiesto se valida explícitamente. Un cambio incompatible
 requerirá una nueva versión y una migración, no una reinterpretación silenciosa.
 
-El exportador reserva `psl-runtime/navigation.js` para el runtime generado. Si
+El exportador reserva `builder-runtime/navigation.js` para el runtime generado. Si
 el proyecto ya utiliza `index.html` como pantalla, la conserva y le inyecta el
 runtime. En caso contrario genera un `index.html` de entrada. Los HTML
 importados solo se transforman en la copia exportada; el `ProjectBundle`

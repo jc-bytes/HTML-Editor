@@ -149,10 +149,10 @@ describe('buildPreviewDocument', () => {
     const editPreview = buildPreviewDocument(bundle, bundle.manifest.pages[0])
     const testPreview = buildPreviewDocument(bundle, bundle.manifest.pages[0], { mode: 'test' })
 
-    expect(editPreview).not.toContain('data-psl-runtime')
-    expect(testPreview).toContain('data-psl-config="true"')
-    expect(testPreview).toContain('data-psl-runtime="true"')
-    expect(testPreview).toContain('psl-navigation-runtime')
+    expect(editPreview).not.toContain('data-builder-runtime')
+    expect(testPreview).toContain('data-builder-config="true"')
+    expect(testPreview).toContain('data-builder-runtime="true"')
+    expect(testPreview).toContain('builder-navigation-runtime')
   })
 
   it('applies static record bindings for the active navigation context', () => {

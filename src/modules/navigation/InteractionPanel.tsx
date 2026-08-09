@@ -667,11 +667,11 @@ export function InteractionPanel({
             Dato recibido
             <input
               aria-label="Dato recibido"
-              list="psl-context-keys"
+              list="context-keys"
               onChange={(event) => setBindingContextKey(event.target.value)}
               value={bindingContextKey}
             />
-            <datalist id="psl-context-keys">
+            <datalist id="context-keys">
               {availableContextKeys.map((key) => <option key={key} value={key} />)}
             </datalist>
           </label>

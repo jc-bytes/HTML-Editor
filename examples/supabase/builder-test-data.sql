@@ -1,4 +1,4 @@
--- Representative development/test data for examples/supabase/psl-schema.sql.
+-- Representative development/test data for examples/supabase/builder-schema.sql.
 -- Run the schema first, then run this file in Supabase SQL Editor.
 --
 -- Development and staging only. The three auth.users rows are placeholders and
@@ -64,7 +64,7 @@ on conflict (user_id, role) do nothing;
 
 -- Extra system practices exercise every difficulty level, null/non-null
 -- descriptions, published/draft visibility, and MediaPipe capture states.
--- A reference is ready only when the JSON contains a version 2 `frames` array;
+-- A reference is ready only when the JSON contains a version 3 `frames` array and detectorTask;
 -- metadata by itself must remain pending_capture.
 insert into public.practices (
   id, published, sort_order, created_at, created_by, source, title,
@@ -224,7 +224,7 @@ begin
       '10000000-0000-4000-8000-000000000003'
     )
   ) <> 3 then
-    raise exception 'PSL fixture check failed: expected 3 users';
+    raise exception 'LSP fixture check failed: expected 3 users';
   end if;
 
   if (
@@ -241,7 +241,7 @@ begin
       '00000000-0000-4000-8000-000000000191'
     )
   ) <> 8 then
-    raise exception 'PSL fixture check failed: expected 8 practices';
+    raise exception 'LSP fixture check failed: expected 8 practices';
   end if;
 
   if (
@@ -249,7 +249,7 @@ begin
     from public.practice_attempts
     where id::text like '30000000-0000-4000-8000-0000000000%'
   ) <> 13 then
-    raise exception 'PSL fixture check failed: expected 13 attempts';
+    raise exception 'LSP fixture check failed: expected 13 attempts';
   end if;
 
   if exists (
@@ -271,7 +271,7 @@ begin
         )
       )
   ) then
-    raise exception 'PSL fixture check failed: progress does not match attempts';
+    raise exception 'LSP fixture check failed: progress does not match attempts';
   end if;
 end;
 $$;

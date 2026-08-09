@@ -82,7 +82,7 @@ export async function validateStaticArchive(source: Blob): Promise<StaticArchive
   const manifestEntry = archive.file('project.json')
 
   if (!filePaths.has('index.html')) errors.push('Falta index.html en la raíz del sitio.')
-  if (!filePaths.has('psl-runtime/navigation.js')) {
+  if (!filePaths.has('builder-runtime/navigation.js')) {
     errors.push('Falta el runtime de navegación.')
   }
   if (!manifestEntry) {
@@ -115,10 +115,10 @@ export async function validateStaticArchive(source: Blob): Promise<StaticArchive
 
     const markup = await entry.async('string')
     const { document, references } = htmlReferences(markup)
-    if (!document.querySelector('[data-psl-config]')) {
+    if (!document.querySelector('[data-builder-config]')) {
       errors.push(`${page.file} no contiene la configuración de navegación.`)
     }
-    if (!document.querySelector('[data-psl-runtime]')) {
+    if (!document.querySelector('[data-builder-runtime]')) {
       errors.push(`${page.file} no carga el runtime de navegación.`)
     }
     if (manifest.motionActivities?.some((activity) => activity.pageId === page.id)) {

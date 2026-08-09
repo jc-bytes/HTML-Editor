@@ -170,8 +170,8 @@ describe('Supabase editor data helpers', () => {
     expect(createSupabaseMigrationSql(config, 'practices')).toContain('create table if not exists public."practice_items"')
   })
 
-  it('imports the real PSL SQL schema into visual collections', () => {
-    const sql = readFileSync('examples/supabase/psl-schema.sql', 'utf8')
+  it('imports the real Visual Builder SQL schema into visual collections', () => {
+    const sql = readFileSync('examples/supabase/builder-schema.sql', 'utf8')
     const imported = importSupabaseSchemaSql(sql, { ...config, tables: [] })
 
     expect(imported.tables.map((table) => table.name)).toEqual([

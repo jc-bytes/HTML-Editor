@@ -23,7 +23,7 @@ describe('page import helpers', () => {
   it('scopes selectors and global roots to the imported page', () => {
     const css = scopePageCss(':root { --ink: #123; } body, .card { color: var(--ink); }', 'page-7')
 
-    expect(css).toContain('[data-psl-import-page="page-7"]')
+    expect(css).toContain('[data-builder-import-page="page-7"]')
     expect(css).toContain('--ink: #123')
     expect(css).not.toMatch(/(^|\})\s*\.card\s*\{/)
   })
@@ -35,7 +35,7 @@ describe('page import helpers', () => {
       css: '.hero { font-weight: 700; }',
     }, 'imported-1')
 
-    expect(page.html).toContain('data-psl-import-page="imported-1"')
+    expect(page.html).toContain('data-builder-import-page="imported-1"')
     expect(page.html).toContain('<main class="hero">Hello</main>')
     expect(page.html).not.toContain('<script')
     expect(page.css).toMatch(/color:\s*red/)
@@ -100,7 +100,7 @@ describe('page import helpers', () => {
     expect(result.drafts[0].css).toContain('@media')
     expect(prepared.html).toContain('class="navbar navbar-expand-lg navbar-dark bg-dark"')
     expect(prepared.html).not.toContain('<script')
-    expect(prepared.css).toContain('[data-psl-import-page="heroic-features"]')
+    expect(prepared.css).toContain('[data-builder-import-page="heroic-features"]')
     expect(prepared.css).toContain('@media')
     expect(prepared.css).toMatch(/navbar-collapse\.collapse[^}]*display:\s*flex\s*!important/i)
   })

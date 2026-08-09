@@ -1,7 +1,16 @@
-export const FLOW_ACTION_ATTRIBUTE = 'data-psl-flow-action'
-export const FLOW_TARGET_ATTRIBUTE = 'data-psl-flow-target'
-export const INTERACTION_ANIMATION_ATTRIBUTE = 'data-psl-interaction'
-const FLOW_PREVIEW_MESSAGE_SOURCE = 'psl-screen-flow-preview'
+export const FLOW_ACTION_ATTRIBUTE = 'data-builder-flow-action'
+export const FLOW_TARGET_ATTRIBUTE = 'data-builder-flow-target'
+export const FLOW_DATA_SOURCE_ATTRIBUTE = 'data-builder-flow-data-source'
+export const FLOW_OWNER_FIELD_ATTRIBUTE = 'data-builder-flow-owner-field'
+export const FLOW_RECORD_FIELD_ATTRIBUTE = 'data-builder-flow-record-field'
+export const FLOW_CONTEXT_ATTRIBUTE = 'data-builder-flow-context'
+export const FLOW_ACTIVE_LABEL_ATTRIBUTE = 'data-builder-flow-active-label'
+export const FLOW_INACTIVE_LABEL_ATTRIBUTE = 'data-builder-flow-inactive-label'
+export const FLOW_FIELD_MAP_ATTRIBUTE = 'data-builder-flow-field-map'
+export const FLOW_SUCCESS_MESSAGE_ATTRIBUTE = 'data-builder-flow-success-message'
+export const FLOW_CONFIRM_MESSAGE_ATTRIBUTE = 'data-builder-flow-confirm-message'
+export const INTERACTION_ANIMATION_ATTRIBUTE = 'data-builder-interaction'
+const FLOW_PREVIEW_MESSAGE_SOURCE = 'builder-screen-flow-preview'
 
 export const INTERACTION_ANIMATIONS = ['none', 'lift', 'pulse', 'glow'] as const
 export type InteractionAnimation = typeof INTERACTION_ANIMATIONS[number]
@@ -16,6 +25,28 @@ export function readInteractionAnimation(attributes: Record<string, unknown>): I
 export interface ScreenFlowConnection {
   action: 'navigate'
   targetPageId: string
+}
+
+export interface RecordToggleConnection {
+  action: 'toggle-record'
+  activeLabel: string
+  contextKey: string
+  dataSourceTableId: string
+  inactiveLabel: string
+  ownerField: string
+  recordField: string
+}
+
+export type DataActionKind = 'create-record' | 'update-record' | 'delete-record'
+
+export interface DataActionConnection {
+  action: DataActionKind
+  confirmMessage?: string
+  contextKey: string
+  dataSourceTableId: string
+  fieldMappings: Array<{ field: string; inputName: string }>
+  ownerField?: string
+  successMessage: string
 }
 
 export function readScreenFlowConnection(
@@ -36,6 +67,102 @@ export function screenFlowAttributes(targetPageId: string) {
     [FLOW_ACTION_ATTRIBUTE]: 'navigate',
     [FLOW_TARGET_ATTRIBUTE]: targetPageId,
   } as const
+}
+
+export function readRecordToggleConnection(
+  attributes: Record<string, unknown>,
+): RecordToggleConnection | null {
+  if (attributes[FLOW_ACTION_ATTRIBUTE] !== 'toggle-record') return null
+  const dataSourceTableId = attributes[FLOW_DATA_SOURCE_ATTRIBUTE]
+  const ownerField = attributes[FLOW_OWNER_FIELD_ATTRIBUTE]
+  const recordField = attributes[FLOW_RECORD_FIELD_ATTRIBUTE]
+  if (typeof dataSourceTableId !== 'string' || !dataSourceTableId.trim()
+    || typeof ownerField !== 'string' || !ownerField.trim()
+    || typeof recordField !== 'string' || !recordField.trim()) return null
+  return {
+    action: 'toggle-record',
+    dataSourceTableId,
+    ownerField,
+    recordField,
+    contextKey: typeof attributes[FLOW_CONTEXT_ATTRIBUTE] === 'string'
+      ? attributes[FLOW_CONTEXT_ATTRIBUTE] as string
+      : 'record',
+    activeLabel: typeof attributes[FLOW_ACTIVE_LABEL_ATTRIBUTE] === 'string'
+      ? attributes[FLOW_ACTIVE_LABEL_ATTRIBUTE] as string
+      : '★ Guardado',
+    inactiveLabel: typeof attributes[FLOW_INACTIVE_LABEL_ATTRIBUTE] === 'string'
+      ? attributes[FLOW_INACTIVE_LABEL_ATTRIBUTE] as string
+      : '☆ Guardar',
+  }
+}
+
+export function recordToggleAttributes(connection: Omit<RecordToggleConnection, 'action'>) {
+  return {
+    [FLOW_ACTION_ATTRIBUTE]: 'toggle-record',
+    [FLOW_DATA_SOURCE_ATTRIBUTE]: connection.dataSourceTableId,
+    [FLOW_OWNER_FIELD_ATTRIBUTE]: connection.ownerField,
+    [FLOW_RECORD_FIELD_ATTRIBUTE]: connection.recordField,
+    [FLOW_CONTEXT_ATTRIBUTE]: connection.contextKey,
+    [FLOW_ACTIVE_LABEL_ATTRIBUTE]: connection.activeLabel,
+    [FLOW_INACTIVE_LABEL_ATTRIBUTE]: connection.inactiveLabel,
+  } as const
+}
+
+export function readDataActionConnection(
+  attributes: Record<string, unknown>,
+): DataActionConnection | null {
+  const action = attributes[FLOW_ACTION_ATTRIBUTE]
+  if (action !== 'create-record' && action !== 'update-record' && action !== 'delete-record') return null
+  const dataSourceTableId = attributes[FLOW_DATA_SOURCE_ATTRIBUTE]
+  if (typeof dataSourceTableId !== 'string' || !dataSourceTableId.trim()) return null
+  let fieldMappings: DataActionConnection['fieldMappings'] = []
+  const encodedMappings = attributes[FLOW_FIELD_MAP_ATTRIBUTE]
+  if (typeof encodedMappings === 'string') {
+    try {
+      const parsed = JSON.parse(encodedMappings) as unknown
+      if (Array.isArray(parsed)) {
+        fieldMappings = parsed.flatMap((mapping) => {
+          if (!mapping || typeof mapping !== 'object') return []
+          const field = (mapping as Record<string, unknown>).field
+          const inputName = (mapping as Record<string, unknown>).inputName
+          return typeof field === 'string' && typeof inputName === 'string' && field && inputName
+            ? [{ field, inputName }]
+            : []
+        })
+      }
+    } catch {
+      fieldMappings = []
+    }
+  }
+  const ownerField = attributes[FLOW_OWNER_FIELD_ATTRIBUTE]
+  const confirmMessage = attributes[FLOW_CONFIRM_MESSAGE_ATTRIBUTE]
+  const successMessage = attributes[FLOW_SUCCESS_MESSAGE_ATTRIBUTE]
+  return {
+    action,
+    dataSourceTableId,
+    contextKey: typeof attributes[FLOW_CONTEXT_ATTRIBUTE] === 'string'
+      ? attributes[FLOW_CONTEXT_ATTRIBUTE] as string
+      : 'record',
+    fieldMappings,
+    ...(typeof ownerField === 'string' && ownerField.trim() ? { ownerField } : {}),
+    ...(typeof confirmMessage === 'string' && confirmMessage.trim() ? { confirmMessage } : {}),
+    successMessage: typeof successMessage === 'string' && successMessage.trim()
+      ? successMessage
+      : action === 'create-record' ? 'Registro creado.'
+        : action === 'update-record' ? 'Cambios guardados.' : 'Registro eliminado.',
+  }
+}
+
+export function dataActionAttributes(connection: DataActionConnection) {
+  return {
+    [FLOW_ACTION_ATTRIBUTE]: connection.action,
+    [FLOW_DATA_SOURCE_ATTRIBUTE]: connection.dataSourceTableId,
+    [FLOW_CONTEXT_ATTRIBUTE]: connection.contextKey,
+    [FLOW_FIELD_MAP_ATTRIBUTE]: JSON.stringify(connection.fieldMappings),
+    [FLOW_SUCCESS_MESSAGE_ATTRIBUTE]: connection.successMessage,
+    ...(connection.ownerField ? { [FLOW_OWNER_FIELD_ATTRIBUTE]: connection.ownerField } : {}),
+    ...(connection.confirmMessage ? { [FLOW_CONFIRM_MESSAGE_ATTRIBUTE]: connection.confirmMessage } : {}),
+  }
 }
 
 interface FlowNavigationOptions {

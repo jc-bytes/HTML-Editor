@@ -35,7 +35,7 @@ describe('editor preview session', () => {
   it('carries the clicked record context to the destination and restores it on back', () => {
     const started = createEditorPreviewSession(bundle, 'catalog')
     const navigated = applyEditorPreviewAction(started, {
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       action: 'navigate',
       targetPage: 'detail',
       context: {
@@ -47,7 +47,7 @@ describe('editor preview session', () => {
     expect(navigated.context.record?.recordId).toBe('practice-2')
 
     const returned = applyEditorPreviewAction(navigated, {
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       action: 'back',
     }).session
     expect(returned.pageId).toBe('catalog')
@@ -57,17 +57,17 @@ describe('editor preview session', () => {
   it('ignores deleted destinations and permits only http(s) external URLs', () => {
     const session = createEditorPreviewSession(bundle)
     const missing = applyEditorPreviewAction(session, {
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       action: 'navigate',
       targetPage: 'missing',
     })
     const unsafe = applyEditorPreviewAction(session, {
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       action: 'url',
       url: 'javascript:alert(1)',
     })
     const safe = applyEditorPreviewAction(session, {
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       action: 'url',
       url: 'https://example.com/path',
     })

@@ -1,11 +1,11 @@
 import type { Component, Editor } from 'grapesjs'
 
-export const SECTION_GRID_ATTRIBUTE = 'data-psl-section-grid'
-export const SECTION_COLUMNS_ATTRIBUTE = 'data-psl-section-columns'
-export const SECTION_GAP_ATTRIBUTE = 'data-psl-section-gap'
-export const SECTION_MARGIN_ATTRIBUTE = 'data-psl-section-margin'
-export const SECTION_PADDING_ATTRIBUTE = 'data-psl-section-padding'
-export const SECTION_LAYOUT_OPEN_EVENT = 'psl:section-layout:open'
+export const SECTION_GRID_ATTRIBUTE = 'data-builder-section-grid'
+export const SECTION_COLUMNS_ATTRIBUTE = 'data-builder-section-columns'
+export const SECTION_GAP_ATTRIBUTE = 'data-builder-section-gap'
+export const SECTION_MARGIN_ATTRIBUTE = 'data-builder-section-margin'
+export const SECTION_PADDING_ATTRIBUTE = 'data-builder-section-padding'
+export const SECTION_LAYOUT_OPEN_EVENT = 'builder:section-layout:open'
 
 export const DEFAULT_SECTION_GAP = 20
 export const DEFAULT_SECTION_MARGIN = 0
@@ -45,15 +45,15 @@ function normalizedColumns(values: number[], fallbackCount = 1) {
 
 function inferredColumnCount(grid: Component) {
   const classes = grid.getClasses()
-  if (classes.includes('psl-starter-grid--3')) return 3
-  if (classes.includes('psl-starter-grid--2') || classes.includes('psl-starter-grid--aside')) return 2
+  if (classes.includes('builder-starter-grid--3')) return 3
+  if (classes.includes('builder-starter-grid--2') || classes.includes('builder-starter-grid--aside')) return 2
   return Math.min(6, Math.max(1, grid.components().length || 1))
 }
 
 function sectionForGrid(grid?: Component | null) {
   let current = grid?.parent()
   while (current) {
-    if (hasClass(current, 'psl-starter-section')) return current
+    if (hasClass(current, 'builder-starter-section')) return current
     current = current.parent()
   }
   return undefined
@@ -61,7 +61,7 @@ function sectionForGrid(grid?: Component | null) {
 
 export function isSectionGrid(component?: Component | null) {
   return Boolean(component && (
-    hasClass(component, 'psl-starter-grid')
+    hasClass(component, 'builder-starter-grid')
     || Object.prototype.hasOwnProperty.call(component.getAttributes(), SECTION_GRID_ATTRIBUTE)
   ))
 }
@@ -102,7 +102,7 @@ function storeColumns(grid: Component, columns: number[]) {
     [SECTION_COLUMNS_ATTRIBUTE]: normalized.join(','),
   })
   grid.addStyle({
-    '--psl-section-columns': normalized.map((value) => `minmax(0, ${value}fr)`).join(' '),
+    '--builder-section-columns': normalized.map((value) => `minmax(0, ${value}fr)`).join(' '),
   })
   return normalized
 }
@@ -149,17 +149,17 @@ export function updateSectionPadding(grid: Component, padding: number) {
 }
 
 export const SECTION_LAYOUT_STYLES = `
-.psl-starter-grid[data-psl-section-grid] {
-  grid-template-columns: var(--psl-section-columns, minmax(0, 1fr));
+.builder-starter-grid[data-builder-section-grid] {
+  grid-template-columns: var(--builder-section-columns, minmax(0, 1fr));
 }
 @media (max-width: 767px) {
-  .psl-starter-grid[data-psl-section-grid] { grid-template-columns: minmax(0, 1fr); }
+  .builder-starter-grid[data-builder-section-grid] { grid-template-columns: minmax(0, 1fr); }
 }
 `
 
 export function createSectionLayoutPlugin(editor: Editor) {
-  editor.DomComponents.addType('psl-section-grid', {
-    isComponent: (element) => element.classList?.contains('psl-starter-grid')
+  editor.DomComponents.addType('builder-section-grid', {
+    isComponent: (element) => element.classList?.contains('builder-starter-grid')
       || element.hasAttribute?.(SECTION_GRID_ATTRIBUTE),
     model: {
       defaults: {

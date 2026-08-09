@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { VisualBuilderProject } from './schema'
-import { ProjectSchema } from './schema'
+import { DataActionSchema, DataRepeaterSchema, ProjectSchema } from './schema'
 
 const validProject: VisualBuilderProject = {
   version: 2,
@@ -15,6 +15,33 @@ const validProject: VisualBuilderProject = {
 }
 
 describe('ProjectSchema', () => {
+  it('validates safe query settings for dynamic collections', () => {
+    const base = {
+      id: 'cards', pageId: 'home', elementId: 'card', dataSourceId: 'items', itemContext: 'record',
+    }
+    expect(DataRepeaterSchema.safeParse({
+      ...base,
+      orderColumn: 'created_at', orderDirection: 'desc',
+      fixedFilters: [{ field: 'difficulty', operator: 'gte', value: '2' }],
+      searchField: 'title',
+      filterControls: [{ field: 'difficulty', kind: 'number' }],
+      visitorSortFields: ['title', 'created_at'],
+    }).success).toBe(true)
+    expect(DataRepeaterSchema.safeParse({ ...base, searchField: 'title,or(secret)' }).success).toBe(false)
+  })
+
+  it('validates mapped fields for data-changing actions', () => {
+    const action = {
+      id: 'create-project', pageId: 'home', elementId: 'form', dataSourceId: 'projects',
+      action: 'create', contextKey: 'record', ownerField: 'user_id', successMessage: 'Created.',
+      fieldMappings: [{ field: 'title', inputName: 'project-title' }],
+    }
+    expect(DataActionSchema.safeParse(action).success).toBe(true)
+    expect(DataActionSchema.safeParse({
+      ...action, fieldMappings: [{ field: 'title,secret', inputName: 'project-title' }],
+    }).success).toBe(false)
+  })
+
   it('accepts the milestone zero demo project', () => {
     expect(ProjectSchema.parse(validProject)).toEqual(validProject)
   })
@@ -152,8 +179,13 @@ describe('ProjectSchema', () => {
       elementId: 'practice::section:1',
       input: { type: 'camera' as const, durationMs: 3000 },
       reference: { type: 'url' as const, url: 'https://media.example/reference.mp4' },
-      features: { hands: true, pose: true, face: false },
-      passingScore: 75,
+      detector: {
+        provider: 'mediapipe' as const,
+        task: 'holistic-landmarker' as const,
+        modelUrl: 'https://models.example/holistic.task',
+        landmarks: { hands: true, pose: true, face: false },
+      },
+      evaluator: { type: 'sequence' as const, passingScore: 75 },
     }
     expect(ProjectSchema.safeParse({ ...validProject, motionActivities: [activity] }).success)
       .toBe(true)

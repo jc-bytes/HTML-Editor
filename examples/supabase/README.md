@@ -1,7 +1,7 @@
-# Importar el esquema real de PSL
+# Importar el esquema de ejemplo
 
 1. Abre el editor del sitio y entra en **Datos → Mis datos → `</> SQL`**.
-2. Copia todo `psl-schema.sql`, pégalo y selecciona **Importar y mostrar visualmente**.
+2. Copia todo `builder-schema.sql`, pégalo y selecciona **Importar y mostrar visualmente**.
 3. Confirma que aparezcan seis colecciones: `profiles`, `user_roles`,
    `practices`, `practice_attempts`, `practice_progress` y
    `favorite_practices`.
@@ -33,7 +33,7 @@ limit 3;
 
 ## Datos de prueba
 
-Después de instalar el esquema, ejecuta `psl-test-data.sql` en **Supabase →
+Después de instalar el esquema, ejecuta `builder-test-data.sql` en **Supabase →
 SQL Editor**. El archivo agrega tres cuentas ficticias sin contraseña, ocho
 prácticas adicionales, historiales de intentos, progreso, favoritos y contenido
 creado por una docente. Se puede ejecutar más de una vez sin duplicar filas.

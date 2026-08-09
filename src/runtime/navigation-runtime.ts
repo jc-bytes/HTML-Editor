@@ -1,10 +1,12 @@
 import type {
   DataBinding,
+  DataAction,
   DataRepeater,
   DataSource,
   NavigationContext,
   NavigationContextValue,
   ProjectAuthentication,
+  RecordToggle,
 } from '../core/project'
 import { AUTH_DESTINATION_ATTRIBUTE } from '../core/auth-components'
 
@@ -29,21 +31,35 @@ export interface NavigationRuntimeConfig {
   bindings?: DataBinding[]
   currentContext?: NavigationContext
   repeaters?: DataRepeater[]
+  recordToggles?: RecordToggle[]
+  dataActions?: DataAction[]
   authentication?: ProjectAuthentication
-  pageAccess?: Record<string, 'public' | 'authenticated' | 'guestOnly'>
+  pageAccess?: Record<string, 'public' | 'authenticated' | 'guestOnly' | 'role'>
+  pageRoles?: Record<string, string[]>
 }
 
 export interface NavigationRuntimeMessage {
   action: 'navigate' | 'back' | 'url'
-  source: 'psl-navigation-runtime'
+  source: 'builder-navigation-runtime'
   targetPage?: string
   url?: string
   context?: NavigationContext
 }
 
+interface RepeaterQuery {
+  controlFilters?: Array<{ field: string; operator: 'eq' | 'contains' | 'gte' | 'lte'; value: string }>
+  fixedFilters?: Array<{ field: string; operator: 'eq' | 'contains' | 'gte' | 'lte'; value: string }>
+  includeUnpublished?: boolean
+  orderColumn?: string
+  orderDirection?: 'asc' | 'desc'
+  searchField?: string
+  searchTerm?: string
+  userFilterColumn?: string
+}
+
 declare global {
   interface Window {
-    __PSL_NAVIGATION__?: NavigationRuntimeConfig
+    __BUILDER_NAVIGATION__?: NavigationRuntimeConfig
   }
 }
 
@@ -51,10 +67,10 @@ export function installNavigationRuntime(
   runtimeWindow: Window = window,
   runtimeDocument: Document = document,
 ) {
-  const config = runtimeWindow.__PSL_NAVIGATION__
+  const config = runtimeWindow.__BUILDER_NAVIGATION__
   if (!config) return () => undefined
   const runtimeConfig = config
-  const contextParameterPrefix = 'psl-context-'
+  const contextParameterPrefix = 'context-'
 
   function elementPosition(element: Element) {
     let position = 1
@@ -82,7 +98,7 @@ export function installNavigationRuntime(
 
   runtimeDocument.body.querySelectorAll<HTMLElement>('*').forEach((element) => {
     if (!['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE'].includes(element.tagName)) {
-      element.dataset.pslElementId = stableElementId(element)
+      element.dataset.builderElementId = stableElementId(element)
     }
   })
 
@@ -125,8 +141,8 @@ export function installNavigationRuntime(
     afterLogoutPage: runtimeConfig.currentPage,
   } : undefined)
   const authStorageKey = authProject
-    ? `psl-auth:${new URL(authProject.projectUrl).hostname}`
-    : 'psl-auth'
+    ? `builder-auth:${new URL(authProject.projectUrl).hostname}`
+    : 'builder-auth'
   const authReturnStorageKey = `${authStorageKey}:return-page`
   const practiceVideoBucket = 'practice-reference-videos'
 
@@ -213,46 +229,50 @@ export function installNavigationRuntime(
 
   const authSessionPromise = authProject ? loadAuthSession() : Promise.resolve(undefined)
   const roleVisibleElements = [...runtimeDocument.querySelectorAll<HTMLElement>(
-    '[data-psl-role-visible]',
+    '[data-builder-role-visible]',
   )]
   roleVisibleElements.forEach((element) => {
     element.hidden = true
   })
 
-  async function currentUserRoles() {
-    if (!roleVisibleElements.length) return new Set<string>()
-    const session = await authSessionPromise
-    if (!session) return new Set<string>()
-    const source = runtimeConfig.dataSources?.find((candidate) =>
-      candidate.name === 'user_roles'
-      || (candidate.type === 'supabase' && candidate.table === 'user_roles'))
-    if (!source) return new Set<string>()
-    if (source.type === 'static') {
-      return new Set(source.records.flatMap((record) =>
-        typeof record.role === 'string' ? [record.role] : []))
-    }
-    if (source.type !== 'supabase') return new Set<string>()
-    try {
-      const request = dataRequest(source, undefined, session)
-      if (!request) return new Set<string>()
-      const response = await runtimeWindow.fetch(request.url, request.options)
-      if (!response.ok) return new Set<string>()
-      const result = await response.json() as unknown
-      if (!Array.isArray(result)) return new Set<string>()
-      return new Set(result.flatMap((record) => {
-        if (!record || typeof record !== 'object') return []
-        const role = (record as Record<string, unknown>).role
-        return typeof role === 'string' ? [role] : []
-      }))
-    } catch {
-      return new Set<string>()
-    }
+  let userRolesPromise: Promise<Set<string>> | undefined
+  function currentUserRoles() {
+    if (userRolesPromise) return userRolesPromise
+    userRolesPromise = (async () => {
+      const session = await authSessionPromise
+      if (!session) return new Set<string>()
+      const source = runtimeConfig.dataSources?.find((candidate) =>
+        /(^|_)roles?($|_)/i.test(candidate.name)
+        || (candidate.type === 'supabase' && /(^|_)roles?($|_)/i.test(candidate.table)))
+      if (!source) return new Set<string>()
+      if (source.type === 'static') {
+        return new Set(source.records.flatMap((record) =>
+          typeof record.role === 'string' ? [record.role] : []))
+      }
+      if (source.type !== 'supabase') return new Set<string>()
+      try {
+        const request = dataRequest(source, undefined, session)
+        if (!request) return new Set<string>()
+        const response = await runtimeWindow.fetch(request.url, request.options)
+        if (!response.ok) return new Set<string>()
+        const result = await response.json() as unknown
+        if (!Array.isArray(result)) return new Set<string>()
+        return new Set(result.flatMap((record) => {
+          if (!record || typeof record !== 'object') return []
+          const role = (record as Record<string, unknown>).role
+          return typeof role === 'string' ? [role] : []
+        }))
+      } catch {
+        return new Set<string>()
+      }
+    })()
+    return userRolesPromise
   }
 
   async function applyRoleVisibility() {
     const roles = await currentUserRoles()
     roleVisibleElements.forEach((element) => {
-      const expected = element.dataset.pslRoleVisible
+      const expected = element.dataset.builderRoleVisible
       element.hidden = !expected || !roles.has(expected)
     })
   }
@@ -278,7 +298,7 @@ export function installNavigationRuntime(
   function navigateToPage(pageId: string, replace = false) {
     if (runtimeConfig.transport === 'message') {
       const message: NavigationRuntimeMessage = {
-        source: 'psl-navigation-runtime',
+        source: 'builder-navigation-runtime',
         action: 'navigate',
         targetPage: pageId,
       }
@@ -309,6 +329,20 @@ export function installNavigationRuntime(
       navigateToPage(authentication.loginPage, true)
       return false
     }
+    if (access === 'role') {
+      if (!session) {
+        saveReturnPage(runtimeConfig.currentPage)
+        navigateToPage(authentication.loginPage, true)
+        return false
+      }
+      const permittedRoles = runtimeConfig.pageRoles?.[runtimeConfig.currentPage] ?? []
+      const userRoles = await currentUserRoles()
+      if (!permittedRoles.some((role) => userRoles.has(role))) {
+        runtimeDocument.body.innerHTML = '<main role="main" style="max-width:36rem;margin:12vh auto;padding:2rem;font-family:system-ui,sans-serif"><h1>Acceso restringido</h1><p>Tu cuenta no tiene un rol autorizado para ver esta página.</p></main>'
+        revealDocument()
+        return false
+      }
+    }
     if (access === 'guestOnly' && session) {
       const destination = storedReturnPage() ?? authentication.afterLoginPage
       saveReturnPage()
@@ -326,7 +360,7 @@ export function installNavigationRuntime(
     recordId?: string,
     session?: AuthSession,
     range?: { limit: number; offset: number },
-    query?: { userFilterColumn?: string; includeUnpublished?: boolean },
+    query?: RepeaterQuery,
   ) {
     if (source.type !== 'supabase') return null
     const url = new URL(
@@ -338,8 +372,28 @@ export function installNavigationRuntime(
     if (query?.userFilterColumn && session?.user?.id) {
       url.searchParams.set(query.userFilterColumn, `eq.${session.user.id}`)
     }
-    if (source.orderColumn && recordId === undefined) {
-      url.searchParams.set('order', `${source.orderColumn}.${source.orderDirection ?? 'asc'}`)
+    const safeColumn = (value: string | undefined) => value && /^[a-z][a-z0-9_]*$/.test(value)
+      ? value
+      : undefined
+    const cleanValue = (value: string) => value.trim().slice(0, 500)
+    const addFilter = (field: string, operator: 'eq' | 'contains' | 'gte' | 'lte', rawValue: string) => {
+      const column = safeColumn(field)
+      const value = operator === 'contains'
+        ? cleanValue(rawValue).replace(/[*%]/g, '').trim()
+        : cleanValue(rawValue)
+      if (!column || !value) return
+      const expression = operator === 'contains'
+        ? `ilike.*${value}*`
+        : `${operator}.${value}`
+      url.searchParams.append(column, expression)
+    }
+    query?.fixedFilters?.forEach((filter) => addFilter(filter.field, filter.operator, filter.value))
+    query?.controlFilters?.forEach((filter) => addFilter(filter.field, filter.operator, filter.value))
+    if (query?.searchField && query.searchTerm) addFilter(query.searchField, 'contains', query.searchTerm)
+    const orderColumn = safeColumn(query?.orderColumn) ?? source.orderColumn
+    const orderDirection = query?.orderColumn ? query.orderDirection : source.orderDirection
+    if (orderColumn && recordId === undefined) {
+      url.searchParams.set('order', `${orderColumn}.${orderDirection ?? 'asc'}`)
     }
     if (range && recordId === undefined) {
       url.searchParams.set('limit', String(range.limit))
@@ -402,7 +456,7 @@ export function installNavigationRuntime(
   async function resolveRecords(
     dataSourceId: string,
     range?: { limit: number; offset: number },
-    query?: { userFilterColumn?: string; includeUnpublished?: boolean },
+    query?: RepeaterQuery,
   ) {
     const source = runtimeConfig.dataSources?.find((candidate) => candidate.id === dataSourceId)
     if (!source) {
@@ -506,11 +560,11 @@ export function installNavigationRuntime(
   }
 
   async function applyRecordToRoot(root: HTMLElement, contextKey: string, record: unknown) {
-    const candidates = [root, ...root.querySelectorAll<HTMLElement>('[data-psl-element-id]')]
+    const candidates = [root, ...root.querySelectorAll<HTMLElement>('[data-builder-element-id]')]
     for (const binding of runtimeConfig.bindings ?? []) {
       if (binding.pageId !== runtimeConfig.currentPage || binding.contextKey !== contextKey) continue
       const element = candidates.find((candidate) =>
-        candidate.dataset.pslElementId === binding.elementId)
+        candidate.dataset.builderElementId === binding.elementId)
       const rawValue = fieldValue(record, binding.field) ?? binding.fallback
       if (element && rawValue !== undefined && rawValue !== null) {
         await applyBinding(element, binding, String(rawValue))
@@ -521,20 +575,21 @@ export function installNavigationRuntime(
   async function applyRepeaters() {
     for (const repeater of runtimeConfig.repeaters ?? []) {
       if (repeater.pageId !== runtimeConfig.currentPage) continue
-      const template = [...runtimeDocument.querySelectorAll<HTMLElement>('[data-psl-element-id]')]
-        .find((candidate) => candidate.dataset.pslElementId === repeater.elementId)
+      const template = [...runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-element-id]')]
+        .find((candidate) => candidate.dataset.builderElementId === repeater.elementId)
       if (!template) continue
       const pageSize = repeater.pageSize
       const usesPagination = Boolean(repeater.pagination && pageSize)
       const repeaterHost = template.parentElement
-      const anchor = runtimeDocument.createComment(`psl-repeater:${repeater.id}`)
+      const componentRoot = template.closest<HTMLElement>('[data-builder-data-component]')
+      const anchor = runtimeDocument.createComment(`builder-repeater:${repeater.id}`)
       template.parentNode?.insertBefore(anchor, template)
       template.remove()
       Array.from(repeaterHost?.children ?? []).forEach((element) => {
-        if (element.getAttribute('data-psl-design-placeholder') === 'true') element.remove()
+        if (element.getAttribute('data-builder-design-placeholder') === 'true') element.remove()
       })
       const controls = runtimeDocument.createElement('nav')
-      controls.className = 'psl-data-pagination'
+      controls.className = 'builder-data-pagination'
       controls.setAttribute('aria-label', 'Páginas de información')
       const previous = runtimeDocument.createElement('button')
       previous.type = 'button'
@@ -545,31 +600,75 @@ export function installNavigationRuntime(
       next.textContent = 'Siguiente →'
       controls.append(previous, pageLabel, next)
       let currentPage = 0
+      let renderVersion = 0
+
+      const currentQuery = (): RepeaterQuery => {
+        const query: RepeaterQuery = {
+          userFilterColumn: repeater.userFilterColumn,
+          includeUnpublished: repeater.includeUnpublished,
+          fixedFilters: repeater.fixedFilters,
+          orderColumn: repeater.orderColumn,
+          orderDirection: repeater.orderDirection,
+        }
+        if (!componentRoot) return query
+        const search = componentRoot.querySelector<HTMLInputElement>('[data-builder-search-field]')
+        if (repeater.searchField && search?.getAttribute('data-builder-search-field') === repeater.searchField) {
+          query.searchField = repeater.searchField
+          query.searchTerm = search.value
+        }
+        const allowedControls = new Map((repeater.filterControls ?? [])
+          .map((control) => [`${control.field}:${control.kind}`, control]))
+        const controlFilters: NonNullable<RepeaterQuery['controlFilters']> = []
+        componentRoot.querySelectorAll<HTMLElement>('[data-builder-filter-control][data-builder-filter-field]')
+          .forEach((control) => {
+            const field = control.getAttribute('data-builder-filter-field') ?? ''
+            const kind = control.getAttribute('data-builder-filter-control') ?? ''
+            if (!allowedControls.has(`${field}:${kind}`)) return
+            if (kind === 'number' || kind === 'date') {
+              const minimum = control.querySelector<HTMLInputElement>('[data-builder-filter-bound="min"]')?.value
+              const maximum = control.querySelector<HTMLInputElement>('[data-builder-filter-bound="max"]')?.value
+              if (minimum) controlFilters.push({ field, operator: 'gte', value: minimum })
+              if (maximum) controlFilters.push({ field, operator: 'lte', value: maximum })
+              return
+            }
+            const value = (control as HTMLInputElement | HTMLSelectElement).value
+            if (value) controlFilters.push({ field, operator: kind === 'text' ? 'contains' : 'eq', value })
+          })
+        query.controlFilters = controlFilters
+        const sort = componentRoot.querySelector<HTMLSelectElement>('[data-builder-sort-control]')
+        const [requestedField, requestedDirection] = sort?.value.split('.') ?? []
+        if ((repeater.visitorSortFields ?? []).includes(requestedField)
+          && (requestedDirection === 'asc' || requestedDirection === 'desc')) {
+          query.orderColumn = requestedField
+          query.orderDirection = requestedDirection
+        }
+        return query
+      }
 
       const renderPage = async () => {
+        const requestedVersion = ++renderVersion
         previous.disabled = true
         next.disabled = true
+        componentRoot?.setAttribute('aria-busy', 'true')
         const offset = pageSize ? currentPage * pageSize : 0
         const requestedLimit = pageSize ? pageSize + (usesPagination ? 1 : 0) : undefined
         const records = await resolveRecords(
           repeater.dataSourceId,
           requestedLimit ? { limit: requestedLimit, offset } : undefined,
-          {
-            userFilterColumn: repeater.userFilterColumn,
-            includeUnpublished: repeater.includeUnpublished,
-          },
+          currentQuery(),
         )
-        runtimeDocument.querySelectorAll<HTMLElement>('[data-psl-repeater-instance]')
+        if (requestedVersion !== renderVersion) return
+        runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-repeater-instance]')
           .forEach((element) => {
-            if (element.dataset.pslRepeaterInstance === repeater.id) element.remove()
+            if (element.dataset.builderRepeaterInstance === repeater.id) element.remove()
           })
         const visibleRecords = pageSize ? records.slice(0, pageSize) : records
         const hasNextPage = Boolean(pageSize && records.length > pageSize)
         if (!visibleRecords.length) {
           const hasError = dataSourceErrors.has(repeater.dataSourceId)
           const status = runtimeDocument.createElement('div')
-          status.dataset.pslRepeaterInstance = repeater.id
-          status.dataset.pslDataStatus = hasError ? 'error' : 'empty'
+          status.dataset.builderRepeaterInstance = repeater.id
+          status.dataset.builderDataStatus = hasError ? 'error' : 'empty'
           status.setAttribute('role', hasError ? 'alert' : 'status')
           status.textContent = hasError
             ? repeater.errorMessage ?? 'No se pudo cargar esta información.'
@@ -584,9 +683,9 @@ export function installNavigationRuntime(
             const recordId = (record as Record<string, unknown>).id
             if (typeof recordId !== 'string' && typeof recordId !== 'number') continue
             const clone = template.cloneNode(true) as HTMLElement
-            clone.dataset.pslRepeaterInstance = repeater.id
-            clone.dataset.pslRecordId = String(recordId)
-            clone.dataset.pslDataSourceId = repeater.dataSourceId
+            clone.dataset.builderRepeaterInstance = repeater.id
+            clone.dataset.builderRecordId = String(recordId)
+            clone.dataset.builderDataSourceId = repeater.dataSourceId
             await applyRecordToRoot(clone, repeater.itemContext, record)
             anchor.parentNode?.insertBefore(clone, anchor)
           }
@@ -600,9 +699,10 @@ export function installNavigationRuntime(
             repeaterHost.parentNode.insertBefore(controls, repeaterHost.nextSibling)
           }
         }
-        if (repeaterHost?.classList.contains('psl-data-carousel')) {
+        if (repeaterHost?.classList.contains('builder-data-carousel')) {
           repeaterHost.scrollLeft = 0
         }
+        componentRoot?.removeAttribute('aria-busy')
       }
       previous.addEventListener('click', () => {
         if (currentPage === 0) return
@@ -613,6 +713,35 @@ export function installNavigationRuntime(
         currentPage += 1
         void renderPage()
       })
+      if (componentRoot) {
+        let inputTimer: number | undefined
+        const refresh = () => {
+          currentPage = 0
+          void renderPage()
+        }
+        const onInput = (event: Event) => {
+          const target = event.target as Element | null
+          if (!target?.matches('[data-builder-search-field], [data-builder-filter-control="text"]')) return
+          runtimeWindow.clearTimeout(inputTimer)
+          inputTimer = runtimeWindow.setTimeout(refresh, 250)
+        }
+        const onChange = (event: Event) => {
+          const target = event.target as Element | null
+          if (!target?.matches('[data-builder-filter-control], [data-builder-filter-bound], [data-builder-sort-control]')) return
+          refresh()
+        }
+        const filterForm = componentRoot.querySelector<HTMLFormElement>('[data-builder-filter-form]')
+        const onReset = () => runtimeWindow.setTimeout(refresh, 0)
+        componentRoot.addEventListener('input', onInput)
+        componentRoot.addEventListener('change', onChange)
+        filterForm?.addEventListener('reset', onReset)
+        dataControlDisposers.push(() => {
+          runtimeWindow.clearTimeout(inputTimer)
+          componentRoot.removeEventListener('input', onInput)
+          componentRoot.removeEventListener('change', onChange)
+          filterForm?.removeEventListener('reset', onReset)
+        })
+      }
       await renderPage()
     }
   }
@@ -638,25 +767,74 @@ export function installNavigationRuntime(
       if (binding.dataSourceId) applyMutationFormRecord(binding.dataSourceId, record)
       const rawValue = fieldValue(record, binding.field) ?? binding.fallback
       if (rawValue === undefined || rawValue === null) continue
-      const element = [...runtimeDocument.querySelectorAll<HTMLElement>('[data-psl-element-id]')]
-        .find((candidate) => candidate.dataset.pslElementId === binding.elementId)
+      const element = [...runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-element-id]')]
+        .find((candidate) => candidate.dataset.builderElementId === binding.elementId)
       if (element) await applyBinding(element, binding, String(rawValue))
     }
   }
 
   function setAuthStatus(root: Element, message: string, isError = false) {
-    const status = root.querySelector<HTMLElement>('[data-psl-auth-status]')
+    const status = root.querySelector<HTMLElement>('[data-builder-auth-status]')
     if (!status) return
     status.textContent = message
     status.setAttribute('role', isError ? 'alert' : 'status')
   }
 
+  async function syncSignupProfileFields(session: AuthSession) {
+    const userId = session.user?.id
+    const metadata = session.user?.user_metadata
+    if (typeof userId !== 'string' || !metadata || typeof metadata !== 'object') return
+    const groups = new Map<string, Record<string, unknown>>()
+    runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-auth-metadata-definition]')
+      .forEach((definition) => {
+        const tableId = definition.getAttribute('data-builder-auth-metadata-table')?.trim()
+        const field = definition.getAttribute('data-builder-auth-metadata-field')?.trim()
+        const key = definition.getAttribute('data-builder-auth-metadata-definition')?.trim()
+        if (!tableId || !field || !key || !/^[a-z][a-z0-9_]*$/.test(field)) return
+        const value = (metadata as Record<string, unknown>)[key]
+        if (value === undefined || value === null || value === '') return
+        const current = groups.get(tableId) ?? {}
+        current[field] = value
+        groups.set(tableId, current)
+      })
+    for (const [tableId, values] of groups) {
+      const normalizedTableId = tableId.toLowerCase().replace(/[^a-z0-9_]+/g, '_')
+        .replace(/^[^a-z]+/, '').slice(0, 63)
+      const source = runtimeConfig.dataSources?.find((candidate) => candidate.type === 'supabase'
+        && (candidate.id === tableId || candidate.id === `supabase-${normalizedTableId}`
+          || candidate.name === tableId || candidate.table === tableId))
+      if (!source || source.type !== 'supabase') continue
+      const url = new URL(`${source.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(source.table)}`)
+      url.searchParams.set('select', 'id')
+      url.searchParams.set('user_id', `eq.${userId}`)
+      url.searchParams.set('limit', '1')
+      const headers = { apikey: source.publishableKey, Authorization: `Bearer ${session.access_token}` }
+      const existingResponse = await runtimeWindow.fetch(url.href, { headers })
+      if (!existingResponse.ok) throw new Error('La cuenta se creó, pero no pudimos comprobar su perfil.')
+      const existing = await existingResponse.json() as unknown
+      const existingId = Array.isArray(existing) && existing[0] && typeof existing[0] === 'object'
+        ? (existing[0] as Record<string, unknown>).id
+        : undefined
+      const writeUrl = new URL(`${source.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(source.table)}`)
+      if (typeof existingId === 'string' || typeof existingId === 'number') {
+        writeUrl.searchParams.set('id', `eq.${existingId}`)
+      }
+      const response = await runtimeWindow.fetch(writeUrl.href, {
+        method: existingId === undefined ? 'POST' : 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ ...(existingId === undefined ? { user_id: userId } : {}), ...values }),
+      })
+      if (!response.ok) throw new Error('La cuenta se creó, pero no pudimos guardar sus datos de perfil.')
+    }
+  }
+
   const authDisposers: Array<() => void> = []
   const mutationDisposers: Array<() => void> = []
   const wizardDisposers: Array<() => void> = []
+  const dataControlDisposers: Array<() => void> = []
 
   function setMutationStatus(root: Element, message: string, isError = false) {
-    const status = root.querySelector<HTMLElement>('[data-psl-mutation-status]')
+    const status = root.querySelector<HTMLElement>('[data-builder-mutation-status]')
     if (!status) return
     status.textContent = message
     status.setAttribute('role', isError ? 'alert' : 'status')
@@ -784,21 +962,21 @@ export function installNavigationRuntime(
     if (!record || typeof record !== 'object') return
     const source = runtimeConfig.dataSources?.find((candidate) => candidate.id === dataSourceId)
     if (!source) return
-    runtimeDocument.querySelectorAll<HTMLFormElement>('form[data-psl-mutation-source]')
+    runtimeDocument.querySelectorAll<HTMLFormElement>('form[data-builder-mutation-source]')
       .forEach((form) => {
-        const sourceKey = form.dataset.pslMutationSource
+        const sourceKey = form.dataset.builderMutationSource
         const matches = source.id === sourceKey
           || source.name === sourceKey
           || (source.type === 'supabase' && source.table === sourceKey)
         if (!matches) return
         form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-          '[data-psl-mutation-field][name]',
+          '[data-builder-mutation-field][name]',
         ).forEach((field) => {
           const value = fieldValue(record, field.name)
           if (value === undefined || value === null) return
           if (field instanceof HTMLInputElement && field.type === 'checkbox') {
             field.checked = Boolean(value)
-          } else if (field.dataset.pslMutationType === 'json' && typeof value === 'object') {
+          } else if (field.dataset.builderMutationType === 'json' && typeof value === 'object') {
             field.value = JSON.stringify(value)
           } else {
             field.value = String(value)
@@ -816,36 +994,36 @@ export function installNavigationRuntime(
   async function applySourceRecord(dataSourceId: string, record: unknown) {
     if (!record || typeof record !== 'object') return
     applyMutationFormRecord(dataSourceId, record)
-    const elements = [...runtimeDocument.querySelectorAll<HTMLElement>('[data-psl-element-id]')]
+    const elements = [...runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-element-id]')]
     for (const binding of runtimeConfig.bindings ?? []) {
       if (binding.pageId !== runtimeConfig.currentPage
         || binding.dataSourceId !== dataSourceId) continue
       const rawValue = fieldValue(record, binding.field) ?? binding.fallback
       if (rawValue === undefined || rawValue === null) continue
       const element = elements.find((candidate) =>
-        candidate.dataset.pslElementId === binding.elementId)
+        candidate.dataset.builderElementId === binding.elementId)
       if (element) await applyBinding(element, binding, String(rawValue))
     }
   }
 
   function installDataMutations() {
-    runtimeDocument.querySelectorAll<HTMLFormElement>('form[data-psl-mutation-source]')
+    runtimeDocument.querySelectorAll<HTMLFormElement>('form[data-builder-mutation-source]')
       .forEach((form) => {
-        const formContextKey = form.dataset.pslMutationContext ?? 'record'
-        const editingContext = form.dataset.pslMutationMode === 'context'
+        const formContextKey = form.dataset.builderMutationContext ?? 'record'
+        const editingContext = form.dataset.builderMutationMode === 'context'
           ? activeContext[formContextKey]
           : undefined
         if (editingContext) {
-          const mode = runtimeDocument.querySelector<HTMLElement>('[data-psl-editor-mode]')
-          const title = runtimeDocument.querySelector<HTMLElement>('[data-psl-editor-title]')
-          const description = runtimeDocument.querySelector<HTMLElement>('[data-psl-editor-description]')
+          const mode = runtimeDocument.querySelector<HTMLElement>('[data-builder-editor-mode]')
+          const title = runtimeDocument.querySelector<HTMLElement>('[data-builder-editor-title]')
+          const description = runtimeDocument.querySelector<HTMLElement>('[data-builder-editor-description]')
           if (mode) mode.textContent = 'Editar'
           if (title) title.textContent = 'Editar práctica'
           if (description) description.textContent = 'Actualiza la información o la referencia de movimiento.'
         }
         const submit = async (event: Event) => {
           event.preventDefault()
-          const sourceKey = form.dataset.pslMutationSource
+          const sourceKey = form.dataset.builderMutationSource
           const source = runtimeConfig.dataSources?.find((candidate) =>
             candidate.id === sourceKey
               || candidate.name === sourceKey
@@ -854,9 +1032,9 @@ export function installNavigationRuntime(
             setMutationStatus(form, 'No se encontró la colección para guardar el perfil.', true)
             return
           }
-          const filterField = form.dataset.pslMutationFilter
-          const requestedMode = form.dataset.pslMutationMode
-          const contextKey = form.dataset.pslMutationContext ?? 'record'
+          const filterField = form.dataset.builderMutationFilter
+          const requestedMode = form.dataset.builderMutationMode
+          const contextKey = form.dataset.builderMutationContext ?? 'record'
           const contextRecord = activeContext[contextKey]
           const mutationMode = requestedMode === 'insert'
             || (requestedMode === 'context' && !contextRecord)
@@ -881,13 +1059,13 @@ export function installNavigationRuntime(
           }
           const fields = [...form.querySelectorAll<
             HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-          >('[data-psl-mutation-field][name]')]
+          >('[data-builder-mutation-field][name]')]
           const parseValue = (field: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement) => {
             const value = field.value.trim()
             if (!value) return null
-            if (field.dataset.pslMutationType === 'json') return JSON.parse(value) as unknown
-            if (field.dataset.pslMutationType === 'boolean') return value === 'true'
-            if (field.dataset.pslMutationType === 'number'
+            if (field.dataset.builderMutationType === 'json') return JSON.parse(value) as unknown
+            if (field.dataset.builderMutationType === 'boolean') return value === 'true'
+            if (field.dataset.builderMutationType === 'number'
               || (field instanceof HTMLInputElement && field.type === 'number')) return Number(value)
             return value
           }
@@ -901,11 +1079,11 @@ export function installNavigationRuntime(
             ? event.submitter as HTMLButtonElement | HTMLInputElement | null
             : null
           if (submitter?.name) {
-            values[submitter.name] = submitter.dataset.pslMutationType === 'boolean'
+            values[submitter.name] = submitter.dataset.builderMutationType === 'boolean'
               ? submitter.value === 'true'
               : submitter.value
           }
-          const ownerField = form.dataset.pslMutationOwnerField
+          const ownerField = form.dataset.builderMutationOwnerField
           if (mutationMode === 'insert' && ownerField) values[ownerField] = userId
           const videoInput = runtimeDocument.querySelector<HTMLInputElement & {
             __motionReferenceClip?: File
@@ -922,7 +1100,7 @@ export function installNavigationRuntime(
           }
           const submitButton = form.querySelector<HTMLButtonElement>('button[type="submit"]')
           if (submitButton) submitButton.disabled = true
-          setMutationStatus(form, form.dataset.pslMutationPending
+          setMutationStatus(form, form.dataset.builderMutationPending
             ?? (mutationMode === 'insert' ? 'Guardando práctica…' : 'Guardando perfil…'))
           try {
             const url = new URL(
@@ -972,7 +1150,7 @@ export function installNavigationRuntime(
               updated = await updatePracticeMediaUrl(source, session, practiceId, mediaUrl)
             }
             await applySourceRecord(source.id, updated)
-            setMutationStatus(form, form.dataset.pslMutationSuccess
+            setMutationStatus(form, form.dataset.builderMutationSuccess
               ?? (mutationMode === 'insert'
                 ? 'Práctica guardada correctamente.'
                 : 'Perfil guardado correctamente.'))
@@ -993,32 +1171,32 @@ export function installNavigationRuntime(
   }
 
   function installAuthControls() {
-    runtimeDocument.querySelectorAll<HTMLElement>('[data-psl-auth-tab]')
+    runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-auth-tab]')
       .forEach((tab) => {
         const selectTab = (event: Event) => {
           event.preventDefault()
-          const selected = tab.dataset.pslAuthTab
-          const root = tab.closest('[data-psl-auth-visible="signed-out"]') ?? runtimeDocument
-          root.querySelectorAll<HTMLElement>('[data-psl-auth-tab]')
+          const selected = tab.dataset.builderAuthTab
+          const root = tab.closest('[data-builder-auth-visible="signed-out"]') ?? runtimeDocument
+          root.querySelectorAll<HTMLElement>('[data-builder-auth-tab]')
             .forEach((candidate) => {
-              const active = candidate.dataset.pslAuthTab === selected
+              const active = candidate.dataset.builderAuthTab === selected
               candidate.setAttribute('aria-selected', String(active))
               candidate.setAttribute('tabindex', active ? '0' : '-1')
             })
-          root.querySelectorAll<HTMLElement>('[data-psl-auth-panel]')
+          root.querySelectorAll<HTMLElement>('[data-builder-auth-panel]')
             .forEach((panel) => {
-              panel.hidden = panel.dataset.pslAuthPanel !== selected
+              panel.hidden = panel.dataset.builderAuthPanel !== selected
             })
         }
         tab.addEventListener('click', selectTab)
         authDisposers.push(() => tab.removeEventListener('click', selectTab))
       })
 
-    runtimeDocument.querySelectorAll<HTMLFormElement>('form[data-psl-auth-action]')
+    runtimeDocument.querySelectorAll<HTMLFormElement>('form[data-builder-auth-action]')
       .forEach((form) => {
         const submit = async (event: Event) => {
           event.preventDefault()
-          const action = form.dataset.pslAuthAction
+          const action = form.dataset.builderAuthAction
           if (action !== 'login' && action !== 'signup') return
           const data = new FormData(form)
           const email = String(data.get('email') ?? '').trim()
@@ -1031,11 +1209,12 @@ export function installNavigationRuntime(
           try {
             const metadata = Object.fromEntries(
               [...form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-                '[data-psl-auth-metadata][name]',
-              )].flatMap((field) => {
-                if (field instanceof HTMLInputElement
-                  && (field.type === 'radio' || field.type === 'checkbox')
-                  && !field.checked) return []
+                '[data-builder-auth-metadata][name]',
+              )].flatMap((field): Array<[string, unknown]> => {
+                if (field instanceof HTMLInputElement && field.type === 'radio' && !field.checked) return []
+                if (field instanceof HTMLInputElement && field.type === 'checkbox') {
+                  return field.name ? [[field.name, field.checked]] : []
+                }
                 const value = field.value.trim()
                 return field.name && value ? [[field.name, value]] : []
               }),
@@ -1054,6 +1233,7 @@ export function installNavigationRuntime(
               return
             }
             saveSession(session)
+            await syncSignupProfileFields(session)
             const destination = form.getAttribute(AUTH_DESTINATION_ATTRIBUTE)?.trim()
               || storedReturnPage()
               || runtimeConfig.authentication?.afterLoginPage
@@ -1068,7 +1248,7 @@ export function installNavigationRuntime(
         authDisposers.push(() => form.removeEventListener('submit', submit))
       })
 
-    runtimeDocument.querySelectorAll<HTMLElement>('[data-psl-auth-action="logout"]')
+    runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-auth-action="logout"]')
       .forEach((button) => {
         const logout = async (event: Event) => {
           event.preventDefault()
@@ -1090,17 +1270,22 @@ export function installNavigationRuntime(
       })
 
     void authSessionPromise.then((session) => {
-      runtimeDocument.querySelectorAll<HTMLElement>('[data-psl-auth-visible]')
+      runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-auth-visible]')
         .forEach((element) => {
-          const expected = element.dataset.pslAuthVisible
+          const expected = element.dataset.builderAuthVisible
           element.hidden = expected === 'signed-in' ? !session : Boolean(session)
         })
-      runtimeDocument.querySelectorAll<HTMLElement>('[data-psl-auth-field]')
+      runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-auth-field]')
         .forEach((element) => {
-          const field = element.dataset.pslAuthField
+          const field = element.dataset.builderAuthField
           const value = field && session?.user ? fieldValue(session.user, field) : undefined
           if (value !== undefined && value !== null) element.textContent = String(value)
         })
+      if (session) void syncSignupProfileFields(session).catch((error: unknown) => {
+        const signupForm = runtimeDocument.querySelector<HTMLFormElement>('form[data-builder-auth-action="signup"]')
+        if (signupForm) setAuthStatus(signupForm,
+          error instanceof Error ? error.message : 'No pudimos completar los datos del perfil.', true)
+      })
     })
   }
 
@@ -1110,16 +1295,247 @@ export function installNavigationRuntime(
   ) {
     return Object.fromEntries(Object.entries(connection.context ?? {}).flatMap(([key, value]) => {
       if (value.recordId !== '$record.id') return [[key, value]]
-      const recordRoot = sourceElement?.closest<HTMLElement>('[data-psl-record-id]')
-      const recordId = recordRoot?.dataset.pslRecordId
-      const dataSourceId = recordRoot?.dataset.pslDataSourceId ?? value.dataSourceId
+      const recordRoot = sourceElement?.closest<HTMLElement>('[data-builder-record-id]')
+      const recordId = recordRoot?.dataset.builderRecordId
+      const dataSourceId = recordRoot?.dataset.builderDataSourceId ?? value.dataSourceId
       return recordId ? [[key, { dataSourceId, recordId }]] : []
     })) as NavigationContext
   }
 
+  function recordToggleRecordId(toggle: RecordToggle, sourceElement?: Element | null) {
+    const repeatedRecord = sourceElement?.closest<HTMLElement>('[data-builder-record-id]')
+      ?.dataset.builderRecordId
+    return repeatedRecord ?? activeContext[toggle.contextKey]?.recordId
+  }
+
+  function recordToggleElement(toggle: RecordToggle) {
+    return [...runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-element-id]')]
+      .find((candidate) => candidate.dataset.builderElementId === toggle.elementId)
+  }
+
+  function setRecordToggleState(element: HTMLElement, toggle: RecordToggle, active: boolean) {
+    element.textContent = active ? toggle.activeLabel : toggle.inactiveLabel
+    element.setAttribute('aria-pressed', String(active))
+    element.dataset.builderRecordToggleState = active ? 'active' : 'inactive'
+    element.removeAttribute('title')
+  }
+
+  async function recordToggleState(
+    toggle: RecordToggle,
+    sourceElement?: HTMLElement | null,
+  ) {
+    const source = runtimeConfig.dataSources?.find((candidate) =>
+      candidate.id === toggle.dataSourceId)
+    const session = await authSessionPromise
+    const userId = session?.user?.id
+    const recordId = recordToggleRecordId(toggle, sourceElement)
+    if (!source || source.type !== 'supabase' || !session || typeof userId !== 'string' || !recordId) {
+      return undefined
+    }
+    const url = new URL(
+      `${source.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(source.table)}`,
+    )
+    url.searchParams.set('select', 'id')
+    url.searchParams.set(toggle.ownerField, `eq.${userId}`)
+    url.searchParams.set(toggle.recordField, `eq.${recordId}`)
+    url.searchParams.set('limit', '1')
+    const response = await runtimeWindow.fetch(url.href, { headers: {
+      apikey: source.publishableKey,
+      Authorization: `Bearer ${session.access_token}`,
+    } })
+    if (!response.ok) throw new Error('No se pudo comprobar si este elemento está guardado.')
+    const rows = await response.json() as unknown
+    return Array.isArray(rows) && rows.length > 0
+  }
+
+  async function executeRecordToggle(toggle: RecordToggle, sourceElement: HTMLElement) {
+    const source = runtimeConfig.dataSources?.find((candidate) =>
+      candidate.id === toggle.dataSourceId)
+    const session = await authSessionPromise
+    const userId = session?.user?.id
+    const recordId = recordToggleRecordId(toggle, sourceElement)
+    if (!source || source.type !== 'supabase') {
+      sourceElement.title = 'La colección para guardar no está disponible.'
+      return
+    }
+    if (!session || typeof userId !== 'string') {
+      sourceElement.title = 'Inicia sesión para guardar este elemento.'
+      return
+    }
+    if (!recordId) {
+      sourceElement.title = 'Abre un registro antes de guardarlo.'
+      return
+    }
+    sourceElement.setAttribute('aria-busy', 'true')
+    sourceElement.setAttribute('disabled', '')
+    try {
+      const active = await recordToggleState(toggle, sourceElement)
+      const url = new URL(
+        `${source.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(source.table)}`,
+      )
+      const headers = {
+        apikey: source.publishableKey,
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      }
+      let response: Response
+      if (active) {
+        url.searchParams.set(toggle.ownerField, `eq.${userId}`)
+        url.searchParams.set(toggle.recordField, `eq.${recordId}`)
+        response = await runtimeWindow.fetch(url.href, { method: 'DELETE', headers })
+      } else {
+        response = await runtimeWindow.fetch(url.href, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            [toggle.ownerField]: userId,
+            [toggle.recordField]: recordId,
+          }),
+        })
+      }
+      if (!response.ok) throw new Error(active
+        ? 'No se pudo quitar de tus guardados.'
+        : 'No se pudo guardar este elemento.')
+      setRecordToggleState(sourceElement, toggle, !active)
+    } catch (cause) {
+      sourceElement.title = cause instanceof Error ? cause.message : 'No se pudo actualizar.'
+    } finally {
+      sourceElement.removeAttribute('aria-busy')
+      sourceElement.removeAttribute('disabled')
+    }
+  }
+
+  async function initializeRecordToggles() {
+    for (const toggle of runtimeConfig.recordToggles ?? []) {
+      if (toggle.pageId !== runtimeConfig.currentPage) continue
+      const element = recordToggleElement(toggle)
+      if (!element) continue
+      try {
+        const active = await recordToggleState(toggle, element)
+        if (active !== undefined) setRecordToggleState(element, toggle, active)
+      } catch (cause) {
+        element.title = cause instanceof Error ? cause.message : 'No se pudo comprobar este elemento.'
+      }
+    }
+  }
+
+  function dataActionRecordId(action: DataAction, sourceElement: Element) {
+    return sourceElement.closest<HTMLElement>('[data-builder-record-id]')?.dataset.builderRecordId
+      ?? activeContext[action.contextKey]?.recordId
+  }
+
+  function setDataActionStatus(element: HTMLElement, message: string, isError = false) {
+    const host = element instanceof HTMLFormElement ? element : element.closest('form') ?? element.parentElement
+    if (!host) return
+    let status = host.querySelector<HTMLElement>('[data-builder-data-action-status]')
+    if (!status) {
+      status = runtimeDocument.createElement('p')
+      status.dataset.builderDataActionStatus = 'true'
+      status.setAttribute('aria-live', 'polite')
+      host.append(status)
+    }
+    status.textContent = message
+    status.setAttribute('role', isError ? 'alert' : 'status')
+  }
+
+  function dataActionValues(action: DataAction, element: HTMLElement) {
+    const form = element instanceof HTMLFormElement ? element : element.closest('form')
+    if (!form) return null
+    if (!form.checkValidity()) {
+      form.reportValidity()
+      return null
+    }
+    const controls = [...form.elements].filter((control): control is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
+      control instanceof HTMLInputElement
+        || control instanceof HTMLSelectElement
+        || control instanceof HTMLTextAreaElement)
+    const values: Record<string, unknown> = {}
+    action.fieldMappings.forEach((mapping) => {
+      const control = controls.find((candidate) => candidate.name === mapping.inputName)
+      if (!control || control.disabled) return
+      if (control instanceof HTMLInputElement && (control.type === 'radio' || control.type === 'checkbox')) {
+        if (control.type === 'radio' && !control.checked) return
+        values[mapping.field] = control.type === 'checkbox' ? control.checked : control.value
+        return
+      }
+      if (control instanceof HTMLInputElement && control.type === 'number') {
+        values[mapping.field] = control.value === '' ? null : control.valueAsNumber
+        return
+      }
+      values[mapping.field] = control.value === '' ? null : control.value
+    })
+    return { form, values }
+  }
+
+  async function executeDataAction(action: DataAction, sourceElement: HTMLElement) {
+    const source = runtimeConfig.dataSources?.find((candidate) => candidate.id === action.dataSourceId)
+    if (!source || source.type !== 'supabase') {
+      setDataActionStatus(sourceElement, 'La colección seleccionada no está disponible.', true)
+      return
+    }
+    const session = await authSessionPromise
+    const userId = session?.user?.id
+    if (!session || typeof userId !== 'string') {
+      setDataActionStatus(sourceElement, 'Inicia sesión para modificar esta información.', true)
+      return
+    }
+    if (action.confirmMessage && !runtimeWindow.confirm(action.confirmMessage)) return
+    const recordId = action.action === 'create' ? undefined : dataActionRecordId(action, sourceElement)
+    if (action.action !== 'create' && !recordId) {
+      setDataActionStatus(sourceElement, 'No se encontró el registro que quieres modificar.', true)
+      return
+    }
+    const collected = action.action === 'delete' ? undefined : dataActionValues(action, sourceElement)
+    if (action.action !== 'delete' && !collected) {
+      setDataActionStatus(sourceElement, 'Completa los campos requeridos.', true)
+      return
+    }
+    const values = collected?.values ?? {}
+    if (action.ownerField && action.action === 'create') values[action.ownerField] = userId
+    if (action.action !== 'delete' && !Object.keys(values).length) {
+      setDataActionStatus(sourceElement, 'Conecta al menos un campo del formulario.', true)
+      return
+    }
+    const wasDisabled = sourceElement.hasAttribute('disabled')
+    sourceElement.setAttribute('aria-busy', 'true')
+    sourceElement.setAttribute('disabled', '')
+    setDataActionStatus(sourceElement, action.action === 'create' ? 'Creando registro…'
+      : action.action === 'update' ? 'Guardando cambios…' : 'Eliminando registro…')
+    try {
+      const url = new URL(`${source.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(source.table)}`)
+      if (recordId) url.searchParams.set('id', `eq.${recordId}`)
+      const response = await runtimeWindow.fetch(url.href, {
+        method: action.action === 'create' ? 'POST' : action.action === 'update' ? 'PATCH' : 'DELETE',
+        headers: {
+          apikey: source.publishableKey,
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        ...(action.action === 'delete' ? {} : { body: JSON.stringify(values) }),
+      })
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({})) as Record<string, unknown>
+        const detail = result.message ?? result.details ?? result.hint
+        throw new Error(typeof detail === 'string' ? detail : 'Supabase rechazó el cambio.')
+      }
+      setDataActionStatus(sourceElement, action.successMessage)
+      if (action.action === 'create') collected?.form.reset()
+      if (action.action === 'delete') {
+        sourceElement.closest<HTMLElement>('[data-builder-repeater-instance]')?.remove()
+      }
+    } catch (cause) {
+      setDataActionStatus(sourceElement, cause instanceof Error ? cause.message : 'No se pudo completar el cambio.', true)
+    } finally {
+      sourceElement.removeAttribute('aria-busy')
+      if (!wasDisabled) sourceElement.removeAttribute('disabled')
+    }
+  }
+
   function sendMessage(connection: NavigationRuntimeConnection, context: NavigationContext) {
     const message: NavigationRuntimeMessage = {
-      source: 'psl-navigation-runtime',
+      source: 'builder-navigation-runtime',
       action: connection.action,
       ...(connection.targetPage ? { targetPage: connection.targetPage } : {}),
       ...(connection.url ? { url: connection.url } : {}),
@@ -1165,24 +1581,53 @@ export function installNavigationRuntime(
       ? eventTarget as Element
       : null
     let connection: NavigationRuntimeConnection | undefined
+    let recordToggle: RecordToggle | undefined
+    let dataAction: DataAction | undefined
 
     while (element && element !== runtimeDocument.body) {
-      const elementId = element.getAttribute('data-psl-element-id')
+      const elementId = element.getAttribute('data-builder-element-id')
       connection = runtimeConfig.connections.find((candidate) =>
         candidate.sourcePage === runtimeConfig.currentPage
           && candidate.elementId === elementId
           && candidate.event === 'click')
-      if (connection) break
+      recordToggle = runtimeConfig.recordToggles?.find((candidate) =>
+        candidate.pageId === runtimeConfig.currentPage
+          && candidate.elementId === elementId)
+      dataAction = runtimeConfig.dataActions?.find((candidate) =>
+        candidate.pageId === runtimeConfig.currentPage
+          && candidate.elementId === elementId)
+      if (connection || recordToggle || dataAction) break
       element = element.parentElement
     }
 
-    if (!connection) return
+    if (dataAction && element instanceof HTMLFormElement) return
+    if (!connection && !recordToggle && !dataAction) return
     event.preventDefault()
     event.stopPropagation()
-    execute(connection, element)
+    if (recordToggle && element instanceof HTMLElement) {
+      void executeRecordToggle(recordToggle, element)
+      return
+    }
+    if (dataAction && element instanceof HTMLElement) {
+      void executeDataAction(dataAction, element)
+      return
+    }
+    if (connection) execute(connection, element)
   }
 
   runtimeDocument.addEventListener('click', handleClick, true)
+  const handleSubmit = (event: Event) => {
+    const form = event.target
+    if (!(form instanceof HTMLFormElement)) return
+    const elementId = form.dataset.builderElementId
+    const action = runtimeConfig.dataActions?.find((candidate) =>
+      candidate.pageId === runtimeConfig.currentPage && candidate.elementId === elementId)
+    if (!action) return
+    event.preventDefault()
+    event.stopPropagation()
+    void executeDataAction(action, form)
+  }
+  runtimeDocument.addEventListener('submit', handleSubmit, true)
   installAuthControls()
   installPracticeWizards()
   installDataMutations()
@@ -1190,13 +1635,16 @@ export function installNavigationRuntime(
     if (allowed) return applyRoleVisibility()
       .then(() => applyRepeaters())
       .then(() => applyDataBindings())
+      .then(() => initializeRecordToggles())
     return undefined
   })
   return () => {
     runtimeDocument.removeEventListener('click', handleClick, true)
+    runtimeDocument.removeEventListener('submit', handleSubmit, true)
     authDisposers.forEach((dispose) => dispose())
     mutationDisposers.forEach((dispose) => dispose())
     wizardDisposers.forEach((dispose) => dispose())
+    dataControlDisposers.forEach((dispose) => dispose())
   }
 }
 
@@ -1206,13 +1654,13 @@ export function createNavigationRuntimeSource() {
 
 export function createNavigationConfigSource(config: NavigationRuntimeConfig) {
   const serialized = JSON.stringify(config).replaceAll('<', '\\u003c')
-  return `window.__PSL_NAVIGATION__ = ${serialized};\n`
+  return `window.__BUILDER_NAVIGATION__ = ${serialized};\n`
 }
 
 export function isNavigationRuntimeMessage(value: unknown): value is NavigationRuntimeMessage {
   if (!value || typeof value !== 'object') return false
   const message = value as Record<string, unknown>
-  if (message.source !== 'psl-navigation-runtime') return false
+  if (message.source !== 'builder-navigation-runtime') return false
   if (message.action === 'back') return true
   if (message.action === 'navigate') {
     if (typeof message.targetPage !== 'string') return false

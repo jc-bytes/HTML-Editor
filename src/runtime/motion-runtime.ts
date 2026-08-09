@@ -17,6 +17,8 @@ import {
   suggestMotionStages,
 } from '../core/motion'
 import type { MotionFeatureFrame, MotionStageComparison, MotionStageDefinition } from '../core/motion'
+import { createMediaPipeVisionDetector } from './vision/mediapipe-adapter'
+import type { VisionDetector, VisionFrameResult } from './vision/contracts'
 
 export interface MotionRuntimeConfig {
   activities: MotionActivity[]
@@ -32,17 +34,17 @@ export interface MotionReferenceRuntimeMessage {
   source: 'motion-analysis-runtime'
   template: {
     approvedAt?: string
+    detectorTask: MotionActivity['detector']['task']
     durationMs: number
     frames: MotionFeatureFrame[]
     landmarkFrames?: RuntimeLandmarkFrame[]
-    measurementModel?: 'body-relative-v2'
     requiredHand?: RuntimeRequiredHand
     stages?: MotionStageDefinition[]
     sourceCrop?: { height: number; width: number; x: number; y: number }
     sourceSegment?: { endSeconds: number; startSeconds: number }
     storedClip?: boolean
     storedClipDurationMs?: number
-    version: 2
+    version: 3
   }
 }
 
@@ -52,7 +54,7 @@ export function isMotionReferenceRuntimeMessage(value: unknown): value is Motion
   return message.source === 'motion-analysis-runtime'
     && message.action === 'reference'
     && typeof message.activityId === 'string'
-    && message.template?.version === 2
+    && message.template?.version === 3
     && Array.isArray(message.template.frames)
 }
 
@@ -63,8 +65,8 @@ declare global {
 }
 
 export type RuntimeLandmark = { x: number; y: number; z?: number; visibility?: number }
-type RuntimeResult = Record<string, unknown>
-export type RuntimeLandmarkFrame = RuntimeResult & {
+type RuntimeResult = Partial<VisionFrameResult> & Record<string, unknown>
+export type RuntimeLandmarkFrame = Record<string, unknown> & {
   faceLandmarks: RuntimeLandmark[][]
   height: number
   leftHandLandmarks: RuntimeLandmark[][]
@@ -74,10 +76,7 @@ export type RuntimeLandmarkFrame = RuntimeResult & {
   t: number
   width: number
 }
-type RuntimeLandmarker = {
-  close: () => void
-  detectForVideo: (image: ImageBitmap, timestamp: number) => RuntimeResult
-}
+type RuntimeFeatures = { face: boolean; hands: boolean; pose: boolean }
 type RuntimeSourceCrop = { height: number; width: number; x: number; y: number }
 export type RuntimeRequiredHand = 'left' | 'right' | 'both' | 'either'
 type MotionRuntimeHelpers = {
@@ -87,6 +86,7 @@ type MotionRuntimeHelpers = {
   reduceMotionCheckpoints: typeof reduceMotionCheckpoints
   smoothMotionSequence: typeof smoothMotionSequence
   suggestMotionStages: typeof suggestMotionStages
+  createMediaPipeVisionDetector: typeof createMediaPipeVisionDetector
 }
 
 export function installMotionRuntime(
@@ -99,63 +99,37 @@ export function installMotionRuntime(
   if (!helpers) throw new Error('Motion runtime helpers are unavailable.')
   const runtimeHelpers = helpers
   const runtimeConfig = config
-  const moduleUrl = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm'
-  const wasmRoot = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
-  const modelUrl = 'https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/1/holistic_landmarker.task'
-  let landmarker: RuntimeLandmarker | undefined
-  let landmarkerPromise: Promise<RuntimeLandmarker> | undefined
-  let landmarkerDelegate: 'GPU' | 'CPU' | undefined
+  const detectors = new Map<string, Promise<VisionDetector>>()
   let mediaPipeTimestamp = 0
 
-  async function createLandmarker(delegate: 'GPU' | 'CPU') {
-    const dynamicImport = Function('url', 'return import(url)') as (url: string) => Promise<unknown>
-    const visionModule = await dynamicImport(moduleUrl) as {
-      FilesetResolver: { forVisionTasks: (root: string) => Promise<unknown> }
-      HolisticLandmarker: { createFromOptions: (
-        vision: unknown,
-        options: Record<string, unknown>,
-      ) => Promise<RuntimeLandmarker> }
+  function activityFeatures(activity: MotionActivity): RuntimeFeatures {
+    if (activity.detector.task === 'holistic-landmarker') return activity.detector.landmarks
+    return {
+      hands: activity.detector.task === 'hand-landmarker' || activity.detector.task === 'gesture-recognizer',
+      pose: activity.detector.task === 'pose-landmarker',
+      face: activity.detector.task === 'face-landmarker',
     }
-    const vision = await visionModule.FilesetResolver.forVisionTasks(wasmRoot)
-    return visionModule.HolisticLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: modelUrl, delegate },
-      runningMode: 'VIDEO',
-      minFaceDetectionConfidence: 0.5,
-      minFacePresenceConfidence: 0.5,
-      minFaceSuppressionThreshold: 0.3,
-      minHandLandmarksConfidence: 0.5,
-      minPoseDetectionConfidence: 0.5,
-      minPosePresenceConfidence: 0.5,
-      minPoseSuppressionThreshold: 0.3,
-      // The live guide needs landmarks, not the additional expression model.
-      // That model is unsupported by some browser WebGL implementations.
-      outputFaceBlendshapes: false,
-    })
   }
 
-  async function ensureLandmarker() {
-    if (landmarker) return landmarker
-    if (landmarkerPromise) return landmarkerPromise
-    landmarkerPromise = createLandmarker('GPU')
-      .then((created) => {
-        landmarkerDelegate = 'GPU'
-        landmarker = created
-        return created
-      })
-      .catch(() => createLandmarker('CPU').then((created) => {
-        landmarkerDelegate = 'CPU'
-        landmarker = created
-        return created
-      }))
+  function passingScore(activity: MotionActivity) {
+    return activity.evaluator.type === 'quality' ? 0 : activity.evaluator.passingScore
+  }
+
+  async function ensureDetector(activity: MotionActivity) {
+    const key = JSON.stringify(activity.detector)
+    const existing = detectors.get(key)
+    if (existing) return existing
+    const created = runtimeHelpers.createMediaPipeVisionDetector(runtimeWindow, activity.detector)
       .catch((error) => {
-        landmarkerPromise = undefined
+        detectors.delete(key)
         throw error
       })
-    return landmarkerPromise
+    detectors.set(key, created)
+    return created
   }
 
-  async function detectFrame(source: HTMLVideoElement, crop?: RuntimeSourceCrop) {
-    const activeLandmarker = await ensureLandmarker()
+  async function detectFrame(activity: MotionActivity, source: HTMLVideoElement, crop?: RuntimeSourceCrop) {
+    const detector = await ensureDetector(activity)
     const bitmap = crop
       ? await createImageBitmap(
           source,
@@ -168,17 +142,8 @@ export function installMotionRuntime(
     mediaPipeTimestamp += 100
     try {
       try {
-        return activeLandmarker.detectForVideo(bitmap, mediaPipeTimestamp)
-      } catch (error) {
-        // A GPU graph can initialize successfully and still fail on its first
-        // frame. Retry that frame on CPU instead of exposing the raw error.
-        if (landmarkerDelegate !== 'GPU') throw error
-        activeLandmarker.close()
-        landmarker = await createLandmarker('CPU')
-        landmarkerDelegate = 'CPU'
-        landmarkerPromise = Promise.resolve(landmarker)
-        return landmarker.detectForVideo(bitmap, mediaPipeTimestamp)
-      }
+        return await detector.detectForVideo(bitmap, mediaPipeTimestamp) as RuntimeResult
+      } catch (error) { throw error }
     } finally {
       bitmap.close()
     }
@@ -195,7 +160,7 @@ export function installMotionRuntime(
     sourceWidth: number,
     sourceHeight: number,
     result: RuntimeResult,
-    features: MotionActivity['features'],
+    features: RuntimeFeatures,
     fit: 'contain' | 'cover' = 'contain',
   ) {
     const width = canvas.clientWidth || 640
@@ -445,7 +410,7 @@ export function installMotionRuntime(
   function featureFrame(
     result: RuntimeResult,
     t: number,
-    features: MotionActivity['features'],
+    features: RuntimeFeatures,
   ): MotionFeatureFrame {
     const pose = features.pose ? landmarks(result, 'poseLandmarks') : []
     const left = features.hands ? landmarks(result, 'leftHandLandmarks') : []
@@ -512,6 +477,14 @@ export function installMotionRuntime(
         : 0] : []),
       ...(features.face ? [face.length ? 1 : 0] : []),
     ]
+    if (!qualitySignals.length) {
+      const categoryScores = [
+        ...(result.categories ?? []).map((category) => category.score),
+        ...(result.detections ?? []).flatMap((detection) => detection.categories.map((category) => category.score)),
+        ...Object.values(result.segmentationCoverage ?? {}),
+      ]
+      qualitySignals.push(Math.max(0, ...categoryScores))
+    }
     return {
       t,
       handShape: [
@@ -527,7 +500,7 @@ export function installMotionRuntime(
       facePosture,
       quality: qualitySignals.length
         ? qualitySignals.reduce((total, value) => total + value, 0) / qualitySignals.length
-        : 1,
+        : 0,
     }
   }
 
@@ -543,7 +516,7 @@ export function installMotionRuntime(
   }
 
   function prepareSequence(frames: MotionFeatureFrame[], activity: MotionActivity) {
-    const tracked = runtimeHelpers.filterMotionFrames(frames, activity.processing.minConfidence)
+    const tracked = runtimeHelpers.filterMotionFrames(frames, activity.detector.minConfidence)
     const smoothed = runtimeHelpers.smoothMotionSequence(addTrajectories(tracked), activity.processing.smoothing)
     return activity.processing.checkpointReduction ? runtimeHelpers.reduceMotionCheckpoints(smoothed) : smoothed
   }
@@ -553,10 +526,10 @@ export function installMotionRuntime(
     try {
       const parameters = new URLSearchParams(runtimeWindow.location.search)
       parameters.forEach((value, key) => {
-        if (!key.startsWith('psl-context-')) return
+        if (!key.startsWith('context-')) return
         const parsed = JSON.parse(value) as { dataSourceId?: unknown; recordId?: unknown }
         if (typeof parsed.dataSourceId === 'string' && typeof parsed.recordId === 'string') {
-          context[key.slice('psl-context-'.length)] = {
+          context[key.slice('context-'.length)] = {
             dataSourceId: parsed.dataSourceId,
             recordId: parsed.recordId,
           }
@@ -582,7 +555,7 @@ export function installMotionRuntime(
   function storedSession(source: Extract<DataSource, { type: 'supabase' }>) {
     try {
       const project = runtimeConfig.authentication ?? source
-      const key = `psl-auth:${new URL(project.projectUrl).hostname}`
+      const key = `builder-auth:${new URL(project.projectUrl).hostname}`
       const value = JSON.parse(runtimeWindow.localStorage.getItem(key) ?? 'null') as RuntimeSession | null
       return typeof value?.access_token === 'string' ? value : undefined
     } catch {
@@ -628,6 +601,7 @@ export function installMotionRuntime(
     if (!source) return undefined
     const recordMode = selector?.recordMode ?? 'context'
     const contextualReference = activeContext()[contextKey]
+    if (recordMode === 'context' && contextualReference?.dataSourceId !== dataSourceId) return undefined
     const selectedRecordId = recordMode === 'specific'
       ? selector?.recordId
       : recordMode === 'context' ? contextualReference?.recordId : undefined
@@ -672,7 +646,7 @@ export function installMotionRuntime(
       const parsed = typeof value === 'string' ? JSON.parse(value) as unknown : value
       if (!parsed || typeof parsed !== 'object') return undefined
       const record = parsed as Record<string, unknown>
-      if (record.version !== 2) return undefined
+      if (record.version !== 3 || typeof record.detectorTask !== 'string') return undefined
       const frames = record.frames
       if (!Array.isArray(frames) || !frames.length) return undefined
       const landmarkFrames = Array.isArray(record.landmarkFrames)
@@ -701,9 +675,6 @@ export function installMotionRuntime(
         || record.requiredHand === 'either'
         ? record.requiredHand as RuntimeRequiredHand
         : 'either'
-      const measurementModel = record.measurementModel === 'body-relative-v2'
-        ? 'body-relative-v2' as const
-        : undefined
       const stages: MotionStageDefinition[] = Array.isArray(record.stages)
         ? record.stages.filter((stage): stage is MotionStageDefinition => Boolean(
             stage && typeof stage === 'object'
@@ -722,8 +693,8 @@ export function installMotionRuntime(
           ? Number(record.durationMs)
           : (frames as MotionFeatureFrame[]).at(-1)?.t ?? 0,
         frames: frames as MotionFeatureFrame[],
+        detectorTask: record.detectorTask as MotionActivity['detector']['task'],
         landmarkFrames,
-        measurementModel,
         requiredHand,
         sourceCrop,
         sourceSegment,
@@ -732,7 +703,7 @@ export function installMotionRuntime(
           ? Number(record.storedClipDurationMs)
           : undefined,
         stages,
-        version: 2 as const,
+        version: 3 as const,
       }
     } catch {
       return undefined
@@ -771,7 +742,7 @@ export function installMotionRuntime(
     await waiting
   }
 
-  async function analyzeReferenceVideo(url: string, features: MotionActivity['features']) {
+  async function analyzeReferenceVideo(url: string, activity: MotionActivity) {
     const video = runtimeDocument.createElement('video')
     video.crossOrigin = 'anonymous'
     video.muted = true
@@ -781,28 +752,28 @@ export function installMotionRuntime(
     await waitFor(video, 'loadedmetadata')
     const duration = Math.min(Number.isFinite(video.duration) ? video.duration : 4, 8)
     const frames: MotionFeatureFrame[] = []
+    const visionResults: RuntimeResult[] = []
     const count = 16
     for (let index = 0; index < count; index += 1) {
       const time = duration * index / Math.max(1, count - 1)
       await seek(video, Math.min(time, Math.max(0, duration - 0.01)))
-      frames.push(featureFrame(await detectFrame(video), time * 1_000, features))
+      const result = await detectFrame(activity, video)
+      visionResults.push(result)
+      frames.push(featureFrame(result, time * 1_000, activityFeatures(activity)))
     }
     video.removeAttribute('src')
     video.load()
-    return addTrajectories(frames)
+    return { durationMs: duration * 1_000, frames: addTrajectories(frames), visionResults }
   }
 
-  function templateFramesForCurrentMeasurements(
+  function templateFramesForActivity(
     template: NonNullable<ReturnType<typeof parsedTemplate>>,
     activity: MotionActivity,
   ) {
-    if (template.measurementModel === 'body-relative-v2' || !template.landmarkFrames.length) {
-      return template.frames
+    if (template.detectorTask !== activity.detector.task) {
+      throw new Error('La referencia fue creada con otro modelo de visión.')
     }
-    // Older references already contain the original landmarks. Rebuild their
-    // feature vectors in memory so they receive the improved body-relative
-    // measurements without requiring another recording or a database change.
-    return template.landmarkFrames.map((frame) => featureFrame(frame, frame.t, activity.features))
+    return template.frames
   }
 
   async function referenceFrames(activity: MotionActivity) {
@@ -816,8 +787,11 @@ export function installMotionRuntime(
         activity.reference,
       )
       if (!record) {
+        const selectedContext = activeContext()[activity.reference.contextKey]
         throw new Error(activity.reference.recordMode === 'context'
-          ? 'Abre esta página desde una tarjeta para seleccionar la práctica.'
+          ? selectedContext && selectedContext.dataSourceId !== activity.reference.dataSourceId
+            ? 'El parámetro context-record pertenece a otra colección.'
+            : 'Falta el parámetro de navegación context-record.'
           : activity.reference.recordMode === 'specific'
             ? 'El registro específico no está disponible.'
             : 'La colección no contiene un registro visible.')
@@ -825,7 +799,7 @@ export function installMotionRuntime(
       const storedReference = fieldValue(record, activity.reference.templateField)
       const template = parsedTemplate(storedReference)
       if (template) {
-        const frames = templateFramesForCurrentMeasurements(template, activity)
+        const frames = templateFramesForActivity(template, activity)
         return {
           frames,
           requiredHand: template.requiredHand,
@@ -844,8 +818,8 @@ export function installMotionRuntime(
         throw new Error('El registro no contiene una plantilla o un video de referencia válido.')
       }
       try {
-        const frames = await analyzeReferenceVideo(resolvedVideo.url, activity.features)
-        return { frames, requiredHand: 'either' as const, stages: runtimeHelpers.suggestMotionStages(frames) }
+        const analyzed = await analyzeReferenceVideo(resolvedVideo.url, activity)
+        return { frames: analyzed.frames, requiredHand: 'either' as const, stages: runtimeHelpers.suggestMotionStages(analyzed.frames) }
       } finally {
         if (resolvedVideo.revoke) URL.revokeObjectURL(resolvedVideo.url)
       }
@@ -862,7 +836,7 @@ export function installMotionRuntime(
       if (!response.ok) throw new Error('No se pudo cargar la plantilla de referencia.')
       const template = parsedTemplate(await response.json())
       if (template) {
-        const frames = templateFramesForCurrentMeasurements(template, activity)
+        const frames = templateFramesForActivity(template, activity)
         return {
           frames,
           requiredHand: template.requiredHand,
@@ -873,13 +847,13 @@ export function installMotionRuntime(
       }
       throw new Error('La plantilla de referencia no contiene cuadros válidos.')
     }
-    const frames = await analyzeReferenceVideo(activity.reference.url, activity.features)
-    return { frames, requiredHand: 'either' as const, stages: runtimeHelpers.suggestMotionStages(frames) }
+    const analyzed = await analyzeReferenceVideo(activity.reference.url, activity)
+    return { frames: analyzed.frames, requiredHand: 'either' as const, stages: runtimeHelpers.suggestMotionStages(analyzed.frames) }
   }
 
   async function saveResult(
     activity: MotionActivity,
-    result: ReturnType<typeof compareMotionSequences>,
+    result: { feedback: string; overallScore: number; path?: unknown[]; scores: Record<string, number> },
     durationMs: number,
     landmarkFrames: RuntimeLandmarkFrame[],
     stageResults: MotionStageComparison[] = [],
@@ -894,11 +868,13 @@ export function installMotionRuntime(
       [activity.persistence.scoreField]: result.overallScore,
       [activity.persistence.feedbackField]: result.feedback,
       [activity.persistence.resultField]: {
-        engine: 'mediapipe-holistic',
-        templateVersion: 2,
+        engine: 'mediapipe',
+        evaluator: activity.evaluator.type,
+        task: activity.detector.task,
+        templateVersion: 3,
         scores: result.scores,
         stages: stageResults,
-        alignmentFrames: result.path.length,
+        alignmentFrames: result.path?.length ?? 0,
         landmarkFrames,
       },
       [activity.persistence.durationField]: Math.round(durationMs / 1_000),
@@ -923,6 +899,38 @@ export function installMotionRuntime(
     if (!response.ok) throw new Error('El resultado se calculó, pero no pudo guardarse.')
   }
 
+  async function saveReferenceTemplate(
+    activity: MotionActivity,
+    template: MotionReferenceRuntimeMessage['template'],
+  ) {
+    if (activity.referenceOutput.type !== 'supabase') return false
+    const output = activity.referenceOutput
+    const source = runtimeConfig.dataSources?.find((candidate) => candidate.id === output.dataSourceId)
+    if (!source || source.type !== 'supabase') throw new Error('La colección de referencias no está disponible.')
+    const session = storedSession(source)
+    if (source.requiresAuth && !session) throw new Error('Inicia sesión para guardar la referencia.')
+    const selectedRecord = activeContext()[output.contextKey]
+    const recordId = output.recordMode === 'specific' ? output.recordId : selectedRecord?.recordId
+    if (!recordId) throw new Error('Selecciona un registro antes de guardar la referencia.')
+    if (output.recordMode === 'context' && selectedRecord?.dataSourceId !== source.id) {
+      throw new Error('El registro seleccionado pertenece a otra colección.')
+    }
+    const url = new URL(`${source.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(source.table)}`)
+    url.searchParams.set('id', `eq.${recordId}`)
+    const response = await runtimeWindow.fetch(url.href, {
+      method: 'PATCH',
+      headers: {
+        apikey: source.publishableKey,
+        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ [output.templateField]: template }),
+    })
+    if (!response.ok) throw new Error('La referencia se creó, pero Supabase no permitió guardarla.')
+    return true
+  }
+
   function scoreLabel(component: string) {
     const labels: Record<string, string> = {
       handShape: 'Forma de mano',
@@ -935,9 +943,49 @@ export function installMotionRuntime(
     return labels[component] ?? component
   }
 
+  function evaluateVisionResults(activity: MotionActivity, frames: MotionFeatureFrame[], results: RuntimeResult[]) {
+    const expected = activity.evaluator.type === 'gesture'
+      || activity.evaluator.type === 'detection'
+      || activity.evaluator.type === 'classification'
+      ? activity.evaluator.expectedLabel.trim().toLocaleLowerCase()
+      : ''
+    const matchingCategories = results.flatMap((result) => [
+      ...(result.categories ?? []),
+      ...(result.detections ?? []).flatMap((detection) => detection.categories),
+    ]).filter((category) => category.label.trim().toLocaleLowerCase() === expected)
+    let score = 0
+    let label = 'Calidad'
+    if (activity.evaluator.type === 'quality') {
+      score = Math.round(frames.reduce((total, frame) => total + (frame.quality ?? 1), 0) / Math.max(1, frames.length) * 100)
+    } else if (activity.evaluator.type === 'gesture' || activity.evaluator.type === 'classification') {
+      label = activity.evaluator.type === 'gesture' ? 'Gesto' : 'Categoría'
+      score = Math.round(Math.max(0, ...matchingCategories.map((category) => category.score)) * 100)
+    } else if (activity.evaluator.type === 'detection') {
+      label = 'Objetos'
+      const perFrame = results.map((result) => (result.detections ?? []).filter((detection) =>
+        detection.categories.some((category) => category.label.trim().toLocaleLowerCase() === expected)))
+      const bestCount = Math.max(0, ...perFrame.map((detections) => detections.length))
+      const bestConfidence = Math.max(0, ...matchingCategories.map((category) => category.score))
+      score = Math.round(Math.min(1, bestCount / activity.evaluator.minimumCount) * bestConfidence * 100)
+    } else if (activity.evaluator.type === 'segmentation') {
+      label = 'Cobertura'
+      const evaluator = activity.evaluator
+      const coverage = Math.max(0, ...results.map((result) => result.segmentationCoverage?.[String(evaluator.categoryIndex)] ?? 0))
+      score = Math.round(Math.min(1, coverage / Math.max(0.001, evaluator.minimumCoverage)) * 100)
+    }
+    const threshold = passingScore(activity)
+    return {
+      feedback: score >= threshold
+        ? `${label} detectada correctamente.`
+        : expected ? `No se detectó “${activity.evaluator.type === 'segmentation' ? activity.evaluator.categoryIndex : expected}” con suficiente confianza.` : 'Mejora la iluminación y mantén el objetivo dentro del encuadre.',
+      overallScore: score,
+      scores: { [label]: score },
+    }
+  }
+
   function findActivityRoot(activity: MotionActivity) {
     return [...runtimeDocument.querySelectorAll<HTMLElement>('[data-motion-activity]')]
-      .find((element) => element.getAttribute('data-psl-element-id') === activity.elementId)
+      .find((element) => element.getAttribute('data-builder-element-id') === activity.elementId)
       ?? runtimeDocument.querySelectorAll<HTMLElement>('[data-motion-activity]')[
         runtimeConfig.activities.filter((candidate) => candidate.pageId === activity.pageId).indexOf(activity)
       ]
@@ -1003,10 +1051,10 @@ export function installMotionRuntime(
     if (!button || !video || !status || !results || !overall || !scores || !feedback) continue
     if (activity.mode === 'compare' && resultsDock) resultsDock.append(results)
     button.textContent = activity.mode === 'reference' ? 'Iniciar grabación'
-      : activity.mode === 'analyze' ? 'Analizar movimiento' : 'Comenzar comparación'
+      : activity.mode === 'analyze' ? 'Iniciar análisis' : 'Comenzar comparación'
     if (stopButton) stopButton.textContent = activity.mode === 'compare'
       ? 'Detener y comparar'
-      : 'Detener y guardar'
+      : activity.mode === 'analyze' ? 'Detener análisis' : 'Detener y guardar'
     if (replayButton) replayButton.textContent = activity.mode === 'compare'
       ? 'Ver mi intento'
       : 'Reproducir referencia'
@@ -1110,7 +1158,7 @@ export function installMotionRuntime(
         frame.width,
         frame.height,
         frame,
-        activity.features,
+        activityFeatures(activity),
       )
     }
     const redrawDisplayedReference = () => {
@@ -1185,7 +1233,7 @@ export function installMotionRuntime(
       const frame = recordedLandmarkFrames[frameIndex]
       if (frame && overlay) {
         overlay.hidden = false
-        drawHolisticOverlay(overlay, frame.width, frame.height, frame, activity.features)
+        drawHolisticOverlay(overlay, frame.width, frame.height, frame, activityFeatures(activity))
         if (placeholder) placeholder.hidden = true
       }
       const template = stageTemplate()
@@ -1586,7 +1634,7 @@ export function installMotionRuntime(
       video.hidden = true
       if (overlay) {
         overlay.hidden = false
-        drawHolisticOverlay(overlay, firstFrame.width, firstFrame.height, firstFrame, activity.features)
+        drawHolisticOverlay(overlay, firstFrame.width, firstFrame.height, firstFrame, activityFeatures(activity))
       }
       if (placeholder) placeholder.hidden = true
       if (replayButton) replayButton.hidden = false
@@ -1620,7 +1668,9 @@ export function installMotionRuntime(
       const startedAt = performance.now()
       const frames: MotionFeatureFrame[] = []
       const landmarkFrames: RuntimeLandmarkFrame[] = []
+      const visionResults: RuntimeResult[] = []
       let displayedSecond = -1
+      let lastLiveUpdate = 0
       while (performance.now() - startedAt < durationMs && !(manualStop && stopRequested)) {
         const elapsed = performance.now() - startedAt
         const displayedTime = manualStop
@@ -1628,9 +1678,12 @@ export function installMotionRuntime(
           : Math.max(1, Math.ceil((durationMs - elapsed) / 1_000))
         if (displayedTime !== displayedSecond) {
           displayedSecond = displayedTime
-          status.textContent = `Grabando movimiento… ${displayedTime} s`
+          status.textContent = activity.mode === 'analyze'
+            ? `Analizando en vivo… ${displayedTime} s`
+            : `Grabando movimiento… ${displayedTime} s`
         }
-        const result = await detectFrame(source)
+        const result = await detectFrame(activity, source)
+        visionResults.push(result)
         if (overlay) {
           overlay.hidden = false
           drawHolisticOverlay(
@@ -1638,17 +1691,38 @@ export function installMotionRuntime(
             source.videoWidth || 640,
             source.videoHeight || 480,
             result,
-            activity.features,
+            activityFeatures(activity),
           )
         }
-        frames.push(featureFrame(result, elapsed, activity.features))
+        const frame = featureFrame(result, elapsed, activityFeatures(activity))
+        frames.push(frame)
         landmarkFrames.push(replayLandmarkFrame(result, source, elapsed))
+        if (activity.mode === 'analyze') {
+          while (frames.length > 120) frames.shift()
+          while (landmarkFrames.length > 120) landmarkFrames.shift()
+          while (visionResults.length > 120) visionResults.shift()
+          if (elapsed - lastLiveUpdate >= 250) {
+            lastLiveUpdate = elapsed
+            const live = evaluateVisionResults(activity, [frame], [result])
+            overall.textContent = `${live.overallScore}%`
+            scores.replaceChildren(...Object.entries(live.scores).map(([label, score]) => {
+              const item = runtimeDocument.createElement('div')
+              item.className = 'motion-results__score'
+              item.innerHTML = `<small>${label}</small><strong>${score}%</strong>`
+              return item
+            }))
+            feedback.textContent = live.feedback
+            results.hidden = !activity.presentation.showResults
+            root.dispatchEvent(new CustomEvent('motion:live-result', { bubbles: true, detail: live }))
+          }
+        }
         await new Promise((resolve) => runtimeWindow.setTimeout(resolve, 60))
       }
       return {
         durationMs: Math.min(durationMs, performance.now() - startedAt),
         frames,
         landmarkFrames,
+        visionResults,
         sourceCrop: undefined,
         sourceSegment: undefined,
       }
@@ -1671,6 +1745,7 @@ export function installMotionRuntime(
       const crop = selectedSourceCrop()
       const frames: MotionFeatureFrame[] = []
       const landmarkFrames: RuntimeLandmarkFrame[] = []
+      const visionResults: RuntimeResult[] = []
       video.hidden = false
       applyVideoCrop(video, crop)
       if (placeholder) placeholder.hidden = true
@@ -1680,7 +1755,8 @@ export function installMotionRuntime(
         const elapsed = segmentDuration * progress * 1_000
         status.textContent = `Analizando video… ${Math.round(progress * 100)}%`
         await seek(source, Math.min(sourceTime, Math.max(0, duration - 0.01)))
-        const result = await detectFrame(source, crop)
+        const result = await detectFrame(activity, source, crop)
+        visionResults.push(result)
         if (overlay) {
           overlay.hidden = false
           drawHolisticOverlay(
@@ -1688,17 +1764,18 @@ export function installMotionRuntime(
             crop ? (source.videoWidth || 640) * crop.width : source.videoWidth || 640,
             crop ? (source.videoHeight || 480) * crop.height : source.videoHeight || 480,
             result,
-            activity.features,
+            activityFeatures(activity),
             crop ? 'cover' : 'contain',
           )
         }
-        frames.push(featureFrame(result, elapsed, activity.features))
+        frames.push(featureFrame(result, elapsed, activityFeatures(activity)))
         landmarkFrames.push(replayLandmarkFrame(result, source, elapsed, crop))
       }
       return {
         durationMs: segmentDuration * 1_000,
         frames,
         landmarkFrames,
+        visionResults,
         sourceCrop: crop,
         sourceSegment: { endSeconds, startSeconds },
       }
@@ -1786,6 +1863,10 @@ export function installMotionRuntime(
     }
     const loadReferencePreview = async () => {
       if (!referencePreview || !referencePreviewStatus || (activity.mode !== 'compare' && activity.componentType !== 'reference-view')) return
+      const display = activity.presentation.referenceDisplay
+      const showVideo = display === 'video' || display === 'video-reference'
+      const showFrame = display === 'frame' || display === 'frame-reference'
+      const showReference = display === 'reference' || display === 'frame-reference' || display === 'video-reference'
       try {
         if (activity.reference.type === 'data') {
           const record = await resolveDataRecord(
@@ -1794,8 +1875,11 @@ export function installMotionRuntime(
             activity.reference,
           )
           if (!record) {
+            const selectedContext = activeContext()[activity.reference.contextKey]
             throw new Error(activity.reference.recordMode === 'context'
-              ? 'Abre esta página desde una tarjeta para seleccionar la práctica.'
+              ? selectedContext && selectedContext.dataSourceId !== activity.reference.dataSourceId
+                ? 'El parámetro context-record pertenece a otra colección.'
+                : 'Falta el parámetro de navegación context-record.'
               : 'No se encontró el registro configurado.')
           }
           previewTemplate = parsedTemplate(fieldValue(record, activity.reference.templateField))
@@ -1807,7 +1891,6 @@ export function installMotionRuntime(
           previewTemplate = {
             ...activity.reference.template,
             landmarkFrames: [],
-            measurementModel: undefined,
             requiredHand: 'either',
             sourceCrop: undefined,
             sourceSegment: undefined,
@@ -1825,20 +1908,29 @@ export function installMotionRuntime(
             previewVideoUrl = activity.reference.url
           }
         }
-        if (referenceVideo && previewVideoUrl) {
+        if (referenceVideo && previewVideoUrl && (showVideo || showFrame)) {
           referenceVideo.src = previewVideoUrl
           referenceVideo.hidden = false
+          if (showFrame) {
+            if (referenceVideo.readyState < 1) await waitFor(referenceVideo, 'loadedmetadata')
+            const frameTime = previewTemplate?.storedClip ? 0 : previewTemplate?.sourceSegment?.startSeconds ?? 0
+            await seek(referenceVideo, frameTime)
+            referenceVideo.pause()
+          }
           syncReferencePresentation()
+        } else if (referenceVideo) {
+          referenceVideo.hidden = true
         }
-        if (!previewTemplate?.landmarkFrames.length) {
+        if (!showReference || !previewTemplate?.landmarkFrames.length) {
+          referencePreview.hidden = true
           referencePreviewStatus.textContent = previewVideoUrl
-            ? 'Video de referencia listo. Esta fuente no incluye puntos guardados.'
+            ? showFrame ? 'Frame listo.' : showReference ? 'El origen no incluye puntos analizados.' : 'Video listo.'
             : 'La práctica no tiene una reproducción visual guardada.'
           if (referenceEmpty) {
             referenceEmpty.hidden = Boolean(previewVideoUrl)
             referenceEmpty.textContent = 'Referencia visual no disponible.'
           }
-          if (referenceReplay) referenceReplay.disabled = !previewVideoUrl
+          if (referenceReplay) referenceReplay.disabled = !previewVideoUrl || showFrame
           return
         }
         const firstFrame = previewTemplate.landmarkFrames[0]
@@ -1850,8 +1942,8 @@ export function installMotionRuntime(
         const segment = previewTemplate.sourceSegment
           ? ` · ${previewTemplate.sourceSegment.startSeconds.toFixed(1)}–${previewTemplate.sourceSegment.endSeconds.toFixed(1)} s`
           : ''
-        referencePreviewStatus.textContent = previewVideoUrl
-          ? `Video y puntos listos${segment}.`
+        referencePreviewStatus.textContent = previewVideoUrl && (showVideo || showFrame)
+          ? `${showFrame ? 'Frame' : 'Video'} y referencia listos${segment}.`
           : `Puntos de referencia listos${segment}. El video original no está guardado.`
       } catch (error) {
         referencePreviewStatus.textContent = error instanceof Error
@@ -1870,7 +1962,17 @@ export function installMotionRuntime(
     }
     const replayStoredReference = async (range: [number, number] = [0, 1]) => {
       if (!referencePreview || !referenceReplay) return
-      if (!previewTemplate?.landmarkFrames.length && referenceVideo && previewVideoUrl) {
+      const display = activity.presentation.referenceDisplay
+      const showVideo = display === 'video' || display === 'video-reference'
+      const showFrame = display === 'frame' || display === 'frame-reference'
+      const showReference = display === 'reference' || display === 'frame-reference' || display === 'video-reference'
+      if (showFrame) {
+        if (showReference && previewTemplate?.landmarkFrames.length) drawReferenceFrame(previewTemplate.landmarkFrames[0])
+        referenceVideo?.pause()
+        referencePreviewStatus!.textContent = 'Frame de referencia listo.'
+        return
+      }
+      if (!showReference && showVideo && referenceVideo && previewVideoUrl) {
         referenceReplay.disabled = true
         referencePreviewStatus!.textContent = 'Reproduciendo video de referencia…'
         try {
@@ -1883,7 +1985,7 @@ export function installMotionRuntime(
         }
         return
       }
-      if (!previewTemplate?.landmarkFrames.length) return
+      if (!showReference || !previewTemplate?.landmarkFrames.length) return
       const replayFrames = landmarkRange(previewTemplate.landmarkFrames, range)
       if (!replayFrames.length) return
       const generation = ++referenceReplayGeneration
@@ -1891,7 +1993,7 @@ export function installMotionRuntime(
       if (referenceEmpty) referenceEmpty.hidden = true
       referencePreviewStatus!.textContent = 'Reproduciendo referencia…'
       try {
-        if (referenceVideo && previewVideoUrl) {
+        if (showVideo && referenceVideo && previewVideoUrl) {
           if (referenceVideo.readyState < 1) await waitFor(referenceVideo, 'loadedmetadata')
           const segmentStartTime = previewTemplate.storedClip
             ? 0
@@ -1931,11 +2033,12 @@ export function installMotionRuntime(
         video.src = activity.input.url
         video.hidden = false
         if (placeholder) placeholder.hidden = true
-        const frames = await analyzeReferenceVideo(activity.input.url, activity.features)
+        const analyzed = await analyzeReferenceVideo(activity.input.url, activity)
         return {
-          durationMs: frames.at(-1)?.t ?? 0,
-          frames,
+          durationMs: analyzed.durationMs,
+          frames: analyzed.frames,
           landmarkFrames: [],
+          visionResults: analyzed.visionResults,
           sourceCrop: undefined,
           sourceSegment: undefined,
         }
@@ -1945,7 +2048,11 @@ export function installMotionRuntime(
         const source = runtimeDocument.querySelector<HTMLVideoElement>(activity.input.selector)
         if (!source) throw new Error('No se encontró el video configurado como entrada.')
         if (placeholder) placeholder.hidden = true
-        return captureVideo(source, activity.input.durationMs)
+        if (activity.input.continuous && stopButton) {
+          stopButton.hidden = false
+          stopButton.disabled = false
+        }
+        return captureVideo(source, activity.input.continuous ? Number.POSITIVE_INFINITY : activity.input.durationMs, activity.input.continuous)
       }
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: activity.input.facingMode }, audio: false,
@@ -1957,7 +2064,7 @@ export function installMotionRuntime(
       if (placeholder) placeholder.hidden = true
       status.textContent = 'Prepárate…'
       await new Promise((resolve) => runtimeWindow.setTimeout(resolve, 1_000))
-      const manualStop = activity.mode === 'reference' || activity.mode === 'compare'
+      const manualStop = activity.input.continuous || activity.mode === 'reference' || activity.mode === 'compare'
       if (manualStop && stopButton) {
         stopButton.hidden = false
         stopButton.disabled = false
@@ -1984,7 +2091,7 @@ export function installMotionRuntime(
           recorderStopped = undefined
         }
       }
-      const captured = await captureVideo(video, activity.input.durationMs, manualStop)
+      const captured = await captureVideo(video, activity.input.continuous ? Number.POSITIVE_INFINITY : activity.input.durationMs, manualStop)
       if (recorder?.state === 'recording') {
         recorder.stop()
         await recorderStopped
@@ -2030,7 +2137,7 @@ export function installMotionRuntime(
           frame.width,
           frame.height,
           frame,
-          activity.features,
+          activityFeatures(activity),
         )
         previousTime = frame.t
       }
@@ -2191,33 +2298,56 @@ export function installMotionRuntime(
       if (stageResults) stageResults.hidden = true
       if (stageScores) stageScores.replaceChildren()
       if (download) download.hidden = true
-      status.textContent = activity.mode === 'compare'
-        ? 'Cargando MediaPipe y la referencia…' : 'Cargando MediaPipe…'
+      const usesSequence = activity.evaluator.type === 'sequence'
+      status.textContent = activity.mode === 'compare' && usesSequence
+        ? 'Cargando el modelo y la referencia…' : 'Cargando el modelo de visión…'
       try {
         // Do not count model download and initialization as recording time.
-        await ensureLandmarker()
-        const referenceData = activity.mode === 'compare'
+        await ensureDetector(activity)
+        if (activity.mode === 'reference' && !usesSequence) {
+          throw new Error('La captura de referencias requiere el evaluador de secuencia.')
+        }
+        const referenceData = activity.mode === 'compare' && usesSequence
           ? await referenceFrames(activity)
           : { frames: [], requiredHand: 'either' as const, stages: [] as MotionStageDefinition[] }
         const reference = prepareSequence(referenceData.frames, activity)
-        if (activity.mode === 'compare' && reference.length < 4) {
+        if (activity.mode === 'compare' && usesSequence && reference.length < 4) {
           throw new Error('La referencia no contiene suficientes cuadros confiables.')
         }
-        if (activity.mode === 'compare' && activity.features.hands
+        if (activity.mode === 'compare' && usesSequence && activityFeatures(activity).hands
           && !reference.some(hasTrackedHand)) {
           throw new Error('La referencia no contiene seguimiento de manos suficiente.')
         }
         status.textContent = 'Realiza el movimiento ahora…'
         const captured = await captureInput()
         if (activity.mode === 'compare') recordedLandmarkFrames = captured.landmarkFrames
+        if (!usesSequence) {
+          const evaluation = evaluateVisionResults(activity, captured.frames, captured.visionResults)
+          overall.textContent = `${evaluation.overallScore}%`
+          overall.setAttribute('aria-label', `${evaluation.overallScore}%`)
+          scores.replaceChildren(...Object.entries(evaluation.scores).map(([label, score]) => {
+            const item = runtimeDocument.createElement('div')
+            item.className = 'motion-results__score'
+            item.innerHTML = `<small>${label}</small><strong>${score}%</strong>`
+            return item
+          }))
+          feedback.textContent = evaluation.feedback
+          results.hidden = !activity.presentation.showResults
+          status.textContent = activity.mode === 'analyze'
+            ? 'Análisis detenido.'
+            : evaluation.overallScore >= passingScore(activity) ? 'Objetivo alcanzado.' : 'No se alcanzó el objetivo.'
+          root.dispatchEvent(new CustomEvent('motion:result', { bubbles: true, detail: evaluation }))
+          await saveResult(activity, evaluation, captured.durationMs, captured.landmarkFrames)
+          return
+        }
         const preparedInput = prepareSequence(captured.frames, activity)
         if (preparedInput.length < 4) {
           throw new Error('No hubo suficientes cuadros con seguimiento confiable. Mejora la luz y mantente dentro del encuadre.')
         }
-        if (activity.features.hands && !preparedInput.some(hasTrackedHand)) {
+        if (activityFeatures(activity).hands && !preparedInput.some(hasTrackedHand)) {
           throw new Error('Mantén las manos visibles durante todo el movimiento.')
         }
-        if (activity.features.pose && !preparedInput.some((frame) => frame.facePosture.length)) {
+        if (activityFeatures(activity).pose && !preparedInput.some((frame) => frame.facePosture.length)) {
           throw new Error('Asegúrate de que la cabeza y los hombros estén visibles.')
         }
         const averageQuality = Math.round(preparedInput.reduce((total, frame) => total + (frame.quality ?? 1), 0) / preparedInput.length * 100)
@@ -2226,7 +2356,7 @@ export function installMotionRuntime(
           overall.textContent = `${averageQuality}% de seguimiento`
           scores.replaceChildren()
           feedback.textContent = `Se extrajeron ${preparedInput.length} puntos temporales confiables. La secuencia está lista para usarse en otra acción.`
-          results.hidden = false
+          results.hidden = !activity.presentation.showResults
           status.textContent = 'Análisis completado.'
           root.dispatchEvent(new CustomEvent('motion:analysis', { bubbles: true, detail: { frames: preparedInput, quality: averageQuality } }))
           return
@@ -2254,11 +2384,11 @@ export function installMotionRuntime(
             if (preparedClipInput) preparedClipInput.__motionReferenceClip = preparedClip
           }
           const template = {
-            version: 2 as const,
+            version: 3 as const,
+            detectorTask: activity.detector.task,
             durationMs: captured.durationMs,
             frames: preparedInput,
             landmarkFrames: recordedLandmarkFrames,
-            measurementModel: 'body-relative-v2' as const,
             requiredHand,
             stages: runtimeHelpers.suggestMotionStages(preparedInput),
             sourceCrop: captured.sourceCrop,
@@ -2282,14 +2412,16 @@ export function installMotionRuntime(
             ? ` · tramo ${captured.sourceSegment.startSeconds.toFixed(1)}–${captured.sourceSegment.endSeconds.toFixed(1)} s`
             : ''
           feedback.textContent = `${preparedInput.length} puntos clave · ${averageQuality}% de calidad de seguimiento${segmentLabel}. Revisa y guarda esta plantilla como referencia aprobada.`
-          if (download) {
+          if (download && activity.referenceOutput.type === 'download') {
             if (downloadUrl) URL.revokeObjectURL(downloadUrl)
             downloadUrl = URL.createObjectURL(new Blob([JSON.stringify(template)], { type: 'application/json' }))
             download.href = downloadUrl
             download.download = 'motion-reference.json'
             download.hidden = false
+          } else if (download) {
+            download.hidden = true
           }
-          results.hidden = false
+          results.hidden = !activity.presentation.showResults
           if (replayButton && recordedLandmarkFrames.length) replayButton.hidden = false
           status.textContent = 'Plantilla compilada localmente.'
           root.dispatchEvent(new CustomEvent('motion:reference', { bubbles: true, detail: template }))
@@ -2297,6 +2429,12 @@ export function installMotionRuntime(
             runtimeWindow.parent.postMessage({
               source: 'motion-analysis-runtime', action: 'reference', activityId: activity.id, template,
             } satisfies MotionReferenceRuntimeMessage, '*')
+          }
+          if (activity.referenceOutput.type === 'supabase') {
+            await saveReferenceTemplate(activity, template)
+            status.textContent = 'Referencia guardada en Supabase.'
+          } else if (activity.referenceOutput.type === 'form') {
+            status.textContent = 'Referencia lista para guardarse con el formulario.'
           }
           return
         }
@@ -2322,7 +2460,7 @@ export function installMotionRuntime(
           const previousHandScore = comparison.scores.handShape
           comparison.scores.handShape = 0
           comparison.overallScore = Math.min(
-            activity.passingScore - 1,
+            passingScore(activity) - 1,
             Math.max(0, Math.round(comparison.overallScore - previousHandScore * 0.27)),
           )
           comparison.feedback = requiredHandFeedback(referenceData.requiredHand)
@@ -2342,13 +2480,13 @@ export function installMotionRuntime(
           ? `${comparison.feedback} Revisa especialmente: ${weakestStage.label}.`
           : comparison.feedback
         renderStageComparisons(stageComparisons)
-        results.hidden = false
+        results.hidden = !activity.presentation.showResults
         if (replayButton && recordedLandmarkFrames.length) replayButton.hidden = false
         if (syncReplayButton && recordedLandmarkFrames.length && previewTemplate?.landmarkFrames.length) {
           syncReplayButton.hidden = false
           if (syncReplayStatus) syncReplayStatus.textContent = 'Resultado listo. Reproduce ambas vistas para compararlas lado a lado.'
         }
-        status.textContent = comparison.overallScore >= activity.passingScore ? 'Objetivo alcanzado.' : 'Inténtalo nuevamente con la sugerencia indicada.'
+        status.textContent = comparison.overallScore >= passingScore(activity) ? 'Objetivo alcanzado.' : 'Inténtalo nuevamente con la sugerencia indicada.'
         root.dispatchEvent(new CustomEvent('motion:result', {
           bubbles: true,
           detail: comparison,
@@ -2462,10 +2600,8 @@ export function installMotionRuntime(
 
   const close = () => {
     disposers.forEach((dispose) => dispose())
-    landmarker?.close()
-    landmarker = undefined
-    landmarkerPromise = undefined
-    landmarkerDelegate = undefined
+    detectors.forEach((detector) => { void detector.then((value) => value.close()).catch(() => undefined) })
+    detectors.clear()
   }
   runtimeWindow.addEventListener('pagehide', close, { once: true })
   return close
@@ -2475,6 +2611,7 @@ export function createMotionRuntimeSource() {
   const serializedFunction = (value: (...args: never[]) => unknown) =>
     `const ${value.name} = ${value.toString()};`
   return [
+    serializedFunction(createMediaPipeVisionDetector as (...args: never[]) => unknown),
     serializedFunction(motionVectorDistance),
     serializedFunction(motionFrameDistance),
     serializedFunction(filterMotionFrames),
@@ -2485,7 +2622,7 @@ export function createMotionRuntimeSource() {
     serializedFunction(compareMotionSequences),
     serializedFunction(suggestMotionStages),
     serializedFunction(compareMotionStages),
-    `(${installMotionRuntime.toString()})(window, document, { compareMotionStages, compareMotionSequences, filterMotionFrames, reduceMotionCheckpoints, smoothMotionSequence, suggestMotionStages });`,
+    `(${installMotionRuntime.toString()})(window, document, { compareMotionStages, compareMotionSequences, createMediaPipeVisionDetector, filterMotionFrames, reduceMotionCheckpoints, smoothMotionSequence, suggestMotionStages });`,
   ].join('\n')
 }
 

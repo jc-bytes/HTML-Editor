@@ -16,7 +16,7 @@ function safeFilename(name: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
 
-  return `${normalized || 'proyecto'}-psl.zip`
+  return `${normalized || 'proyecto'}-builder.zip`
 }
 
 export function ExportProjectButton({ bundle, disabled }: ExportProjectButtonProps) {
