@@ -10,10 +10,39 @@ import {
   cssColorToHex,
   disableCanvasResizing,
   installEditorCanvasLayoutGuards,
+  isEditableCanvasTarget,
   keepToolbarInsideBounds,
+  reorderedPageIndex,
   authMetadataFieldMarkup,
 } from './OpenSourceEditor'
 import grapesjs from 'grapesjs'
+import type { Component } from 'grapesjs'
+
+describe('section double-click routing', () => {
+  it('lets editable text handle double-clicks while section chrome keeps its own action', () => {
+    const section = document.createElement('section')
+    const paragraph = document.createElement('p')
+    const inlineText = document.createElement('span')
+    paragraph.append(inlineText)
+    section.append(paragraph)
+    const components = [{ getEl: () => section, get: () => false }, {
+      getEl: () => paragraph,
+      get: (key: string) => key === 'editable',
+    }] as unknown as Component[]
+
+    expect(isEditableCanvasTarget(inlineText, components)).toBe(true)
+    expect(isEditableCanvasTarget(section, components)).toBe(false)
+  })
+})
+
+describe('page reordering', () => {
+  it('calculates stable insertion indexes when dragging in either direction', () => {
+    expect(reorderedPageIndex(0, 2, 'before')).toBe(1)
+    expect(reorderedPageIndex(0, 2, 'after')).toBe(2)
+    expect(reorderedPageIndex(2, 0, 'before')).toBe(0)
+    expect(reorderedPageIndex(2, 0, 'after')).toBe(1)
+  })
+})
 
 describe('inline typography controls', () => {
   it('renders a mapped signup radio group from visual settings', () => {

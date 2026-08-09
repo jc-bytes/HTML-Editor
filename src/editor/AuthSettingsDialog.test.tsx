@@ -3,6 +3,24 @@ import { describe, expect, it, vi } from 'vitest'
 import { AuthSettingsDialog } from './AuthSettingsDialog'
 
 describe('AuthSettingsDialog', () => {
+  it('selects how the logout button is presented', () => {
+    const onSave = vi.fn()
+    render(<AuthSettingsDialog
+      action="logout"
+      destinationPageId=""
+      metadataFields={[]}
+      onClose={vi.fn()}
+      onSave={onSave}
+      pages={[]}
+      presentation="icon"
+    />)
+
+    fireEvent.click(screen.getByRole('radio', { name: /Icono y texto/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(onSave).toHaveBeenCalledWith('', [], 'both')
+  })
+
   it('saves the selected destination page', () => {
     const onSave = vi.fn()
     render(<AuthSettingsDialog

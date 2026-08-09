@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AUTH_ACTION_ATTRIBUTE,
   AUTH_DESTINATION_ATTRIBUTE,
+  AUTH_PRESENTATION_ATTRIBUTE,
   readAuthMetadataFields,
   readAuthComponentSettings,
 } from './auth-components'
@@ -16,6 +17,13 @@ describe('auth component settings', () => {
 
   it('rejects unsupported auth actions', () => {
     expect(readAuthComponentSettings({ [AUTH_ACTION_ATTRIBUTE]: 'reset-password' })).toBeNull()
+  })
+
+  it('reads the saved logout presentation', () => {
+    expect(readAuthComponentSettings({
+      [AUTH_ACTION_ATTRIBUTE]: 'logout',
+      [AUTH_PRESENTATION_ATTRIBUTE]: 'both',
+    })).toEqual({ action: 'logout', presentation: 'both' })
   })
 
   it('reads signup metadata fields and their visible labels', () => {
