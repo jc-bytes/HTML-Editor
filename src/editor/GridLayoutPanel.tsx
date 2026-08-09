@@ -1,7 +1,6 @@
 import type { Component, Editor } from 'grapesjs'
+import { useState, type ReactNode } from 'react'
 import {
-  appendLayoutRow,
-  type LayoutPreset,
   LAYOUT_PRESETS,
   layoutRowFor,
   layoutRowOrder,
@@ -21,6 +20,27 @@ import {
   updateSectionMargin,
   updateSectionPadding,
 } from './section-layout'
+
+function LayoutAccordion({ children, defaultOpen = false, title }: {
+  children: ReactNode
+  defaultOpen?: boolean
+  title: string
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <details
+      className="gjs-grid-layout-card gjs-grid-layout-accordion"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      open={open}
+    >
+      <summary className="gjs-grid-layout-heading">
+        <i aria-hidden="true" className="gjs-grid-layout-chevron" />
+        <strong>{title}</strong>
+      </summary>
+      <div className="gjs-grid-layout-body">{children}</div>
+    </details>
+  )
+}
 
 export function GridLayoutPanel({
   editor,
@@ -50,26 +70,13 @@ export function GridLayoutPanel({
     onChange({ select })
   }
 
-  const addRow = (preset: LayoutPreset) => {
-    if (!editor) return
-    const addedRow = appendLayoutRow(editor, preset)
-    if (addedRow) editor.select(addedRow)
-    onChange({ select: addedRow })
-  }
-
   return (
     <div className="gjs-grid-layout-panel">
-      <section className="gjs-grid-layout-card">
-        <div className="gjs-grid-layout-heading">
-          <span aria-hidden="true">↔</span>
-          <div>
-            <strong>Margen general</strong>
-            <small>Espacio exterior común para toda la página.</small>
-          </div>
-          <output>{margin}px</output>
-        </div>
+      <LayoutAccordion title="Margen general">
+        <label className="gjs-grid-layout-label" htmlFor="psl-site-margin">Margen · {margin}px</label>
         <input
           aria-label="Margen general del sitio"
+          id="psl-site-margin"
           max="96"
           min="0"
           onInput={(event) => applyMargin(Number(event.currentTarget.value))}
@@ -88,21 +95,14 @@ export function GridLayoutPanel({
             >{value}px</button>
           ))}
         </div>
-      </section>
+      </LayoutAccordion>
 
       {sectionGrid && (
-        <section className="gjs-grid-layout-card">
-          <div className="gjs-grid-layout-heading">
-            <span aria-hidden="true">▦</span>
-            <div>
-              <strong>Columnas de la sección</strong>
-              <small>Distribuye sus tarjetas sin cambiar otras secciones.</small>
-            </div>
-          </div>
+        <LayoutAccordion defaultOpen title="Diseño de tarjetas">
 
-          <label className="gjs-grid-layout-label" htmlFor="psl-section-column-count">Cantidad de columnas</label>
+          <label className="gjs-grid-layout-label" htmlFor="psl-section-column-count">Tarjetas por fila</label>
           <select
-            aria-label="Cantidad de columnas de la sección"
+            aria-label="Tarjetas por fila"
             id="psl-section-column-count"
             onChange={(event) => commit(() => updateSectionColumnCount(sectionGrid, Number(event.currentTarget.value)), sectionGrid)}
             value={sectionSettings.columns.length}
@@ -110,13 +110,13 @@ export function GridLayoutPanel({
             {[1, 2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count}</option>)}
           </select>
 
-          <label className="gjs-grid-layout-label">Ancho de columnas · 100% total</label>
+          <label className="gjs-grid-layout-label">Ancho de tarjetas · 100% total</label>
           <div className="gjs-section-column-widths">
             {sectionSettings.columns.map((width, index) => (
               <label key={index}>
                 <span>{index + 1}</span>
                 <input
-                  aria-label={`Ancho de columna ${index + 1}`}
+                  aria-label={`Ancho de tarjeta ${index + 1}`}
                   disabled={index === sectionSettings.columns.length - 1}
                   max="95"
                   min="5"
@@ -131,9 +131,9 @@ export function GridLayoutPanel({
               </label>
             ))}
           </div>
-          <p className="gjs-grid-direct-hint">La última columna recibe automáticamente el porcentaje restante.</p>
+          <p className="gjs-grid-direct-hint">La última tarjeta recibe automáticamente el porcentaje restante.</p>
 
-          <label className="gjs-grid-layout-label" htmlFor="psl-section-gap">Espacio entre columnas · {sectionSettings.gap}px</label>
+          <label className="gjs-grid-layout-label" htmlFor="psl-section-gap">Espacio entre tarjetas · {sectionSettings.gap}px</label>
           <input
             id="psl-section-gap"
             max="64"
@@ -165,19 +165,12 @@ export function GridLayoutPanel({
             type="range"
             value={sectionSettings.padding}
           />
-          <p className="gjs-grid-direct-hint">En móvil, las columnas se apilan automáticamente.</p>
-        </section>
+          <p className="gjs-grid-direct-hint">En móvil, las tarjetas se apilan automáticamente.</p>
+        </LayoutAccordion>
       )}
 
       {row && (
-        <section className="gjs-grid-layout-card">
-          <div className="gjs-grid-layout-heading">
-            <span aria-hidden="true">▥</span>
-            <div>
-              <strong>Fila de diseño</strong>
-              <small>Solo modifica las columnas de esta fila.</small>
-            </div>
-          </div>
+        <LayoutAccordion defaultOpen={!sectionGrid} title="Fila de diseño">
 
           <label className="gjs-grid-layout-label">Distribución</label>
           <div className="gjs-layout-preset-options">
@@ -233,26 +226,9 @@ export function GridLayoutPanel({
               type="button"
             >↓ Bajar</button>
           </div>
-        </section>
+        </LayoutAccordion>
       )}
 
-      <section className="gjs-grid-layout-card">
-        <div className="gjs-grid-layout-heading">
-          <span aria-hidden="true">＋</span>
-          <div>
-            <strong>Añadir fila</strong>
-            <small>Elige una distribución preparada.</small>
-          </div>
-        </div>
-        <div className="gjs-layout-add-options">
-          {LAYOUT_PRESETS.map((preset) => (
-            <button disabled={!editor} key={preset.id} onClick={() => addRow(preset.id)} type="button">
-              {preset.label}
-            </button>
-          ))}
-        </div>
-      </section>
-      <p className="gjs-grid-section-note">Las filas se apilan verticalmente. Arrastra elementos entre sus columnas para colocarlos lado a lado.</p>
     </div>
   )
 }

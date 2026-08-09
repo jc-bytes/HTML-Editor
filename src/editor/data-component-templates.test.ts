@@ -84,7 +84,7 @@ describe('responsive data component templates', () => {
     expect(document.querySelector('[data-psl-repeater]')?.getAttribute('data-psl-design-preview-count')).toBe('6')
   })
 
-  it('recovers dynamic options from generated and legacy component markup', () => {
+  it('recovers dynamic options from generated component markup', () => {
     const html = createDataComponentMarkup('simple_list', table.id, {
       media: 'media_url',
       title: 'practice_title',
@@ -114,11 +114,6 @@ describe('responsive data component templates', () => {
       tableId: table.id,
       templateId: 'simple_list',
     })
-
-    root.removeAttribute('data-psl-data-component')
-    const legacyRoot = findDataComponentRoot(nestedTitle)!
-    expect(legacyRoot).toBe(document.querySelector('.psl-data-list'))
-    expect(readDataComponentSettings(legacyRoot)?.templateId).toBe('simple_list')
   })
 
   it('creates a single-record detail component and responsive breakpoints', () => {

@@ -8,11 +8,7 @@ import {
   createGridLayoutPlugin,
   ensurePageGrid,
   GRID_EDITOR_STYLES,
-  GRID_ITEM_ATTRIBUTE,
   GRID_LAYOUT_STYLES,
-  GRID_ROW_ATTRIBUTE,
-  GRID_SPAN_ATTRIBUTE,
-  GRID_START_ATTRIBUTE,
   isGridItem,
   LAYOUT_COLUMN_ATTRIBUTE,
   LAYOUT_PRESET_ATTRIBUTE,
@@ -20,7 +16,6 @@ import {
   layoutRowFor,
   layoutRowOrder,
   moveLayoutRow,
-  PAGE_GRID_ATTRIBUTE,
   PAGE_LAYOUT_ATTRIBUTE,
   placeComponentInGrid,
   readLayoutSettings,
@@ -77,6 +72,37 @@ describe('page layout rows', () => {
     expect(layout.components()).toHaveLength(3)
   })
 
+  it('repairs stale one-column styles when a populated row changes preset', () => {
+    const current = createEditor()
+    const row = ensurePageGrid(current)!.components().at(0)!
+    row.components().at(0)!.append('<section>Contenido existente</section>')
+    row.addStyle({ display: 'block', 'grid-template-columns': 'minmax(0, 1fr)' })
+
+    updateLayoutPreset(row, 'equal-3')
+
+    expect(row.components()).toHaveLength(3)
+    expect(current.getHtml()).toContain('Contenido existente')
+    expect(row.getStyle()).toMatchObject({ display: 'grid', width: '100%' })
+    expect(row.getStyle()).not.toHaveProperty('grid-template-columns')
+  })
+
+  it('repairs stale structural row styles when an existing project loads', () => {
+    const current = createEditor()
+    current.setComponents(`<main ${PAGE_LAYOUT_ATTRIBUTE} class="psl-page-layout">
+      <section ${LAYOUT_ROW_ATTRIBUTE} ${LAYOUT_PRESET_ATTRIBUTE}="equal-2" class="psl-layout-row" style="display:block;grid-template-columns:1fr">
+        <div ${LAYOUT_COLUMN_ATTRIBUTE} class="psl-layout-column"><p>Izquierda</p></div>
+        <div ${LAYOUT_COLUMN_ATTRIBUTE} class="psl-layout-column"><p>Derecha</p></div>
+      </section>
+    </main>`)
+
+    const row = ensurePageGrid(current)!.components().at(0)!
+
+    expect(row.getStyle()).toMatchObject({ display: 'grid', width: '100%' })
+    expect(row.getStyle()).not.toHaveProperty('grid-template-columns')
+    expect(readLayoutSettings(row).preset).toBe('equal-2')
+    expect(row.components()).toHaveLength(2)
+  })
+
   it('changes only the selected row gap and minimum height', () => {
     const current = createEditor()
     const first = ensurePageGrid(current)!.components().at(0)!
@@ -86,6 +112,7 @@ describe('page layout rows', () => {
     updateLayoutMinHeight(second, 280)
 
     expect(readLayoutSettings(second)).toEqual({ preset: 'equal-2', gap: 36, minHeight: 280 })
+    expect(second.getStyle().gap).toBe('36px')
     expect(readLayoutSettings(first)).toEqual({ preset: 'single', gap: 20, minHeight: 120 })
   })
 
@@ -156,27 +183,6 @@ describe('page layout rows', () => {
     expect(current.getHtml()).toContain('Contenido anterior')
   })
 
-  it('migrates same-row experimental grid items into one two-column row', () => {
-    const current = createEditor()
-    current.setComponents(`<div ${PAGE_GRID_ATTRIBUTE} class="psl-page-grid">
-      <div ${GRID_ITEM_ATTRIBUTE} ${GRID_ROW_ATTRIBUTE}="1" ${GRID_START_ATTRIBUTE}="1" ${GRID_SPAN_ATTRIBUTE}="6"><p>Izquierda</p></div>
-      <div ${GRID_ITEM_ATTRIBUTE} ${GRID_ROW_ATTRIBUTE}="1" ${GRID_START_ATTRIBUTE}="7" ${GRID_SPAN_ATTRIBUTE}="6"><p>Derecha</p></div>
-      <div ${GRID_ITEM_ATTRIBUTE} ${GRID_ROW_ATTRIBUTE}="2"><p>Debajo</p></div>
-    </div>`)
-
-    const layout = ensurePageGrid(current)!
-
-    expect(layout.getAttributes()).toHaveProperty(PAGE_LAYOUT_ATTRIBUTE)
-    expect(layout.getAttributes()).not.toHaveProperty(PAGE_GRID_ATTRIBUTE)
-    expect(layout.components()).toHaveLength(2)
-    expect(layout.components().at(0)?.getAttributes()[LAYOUT_PRESET_ATTRIBUTE]).toBe('equal-2')
-    expect(layout.components().at(0)?.components()).toHaveLength(2)
-    expect(layout.components().at(1)?.getAttributes()[LAYOUT_PRESET_ATTRIBUTE]).toBe('single')
-    expect(current.getHtml()).toContain('Izquierda')
-    expect(current.getHtml()).toContain('Derecha')
-    expect(current.getHtml()).toContain('Debajo')
-  })
-
   it('reorders complete rows without changing their internal columns', () => {
     const current = createEditor()
     const first = ensurePageGrid(current)!.components().at(0)!
@@ -217,32 +223,39 @@ describe('page layout rows', () => {
     expect(restoredRow.components()).toHaveLength(2)
   })
 
-  it('updates responsive site margin variables', () => {
+  it('updates responsive site margin rules', () => {
     const current = createEditor()
     ensurePageGrid(current)
     current.Css.addRules(GRID_LAYOUT_STYLES)
 
     expect(updateSiteMargin(current, 40)).toBe(40)
     expect(readSiteMargin(current)).toBe(40)
-    expect(current.getCss()).toContain('--psl-site-margin-desktop:40px')
-    expect(current.getCss()).toContain('--psl-site-margin-tablet:30px')
-    expect(current.getCss()).toContain('--psl-site-margin-mobile:20px')
+    expect(current.getCss()).toContain('padding-left:40px')
+    expect(current.getCss()).toContain('@media (max-width: 991px)')
+    expect(current.getCss()).toContain('padding-left:30px')
+    expect(current.getCss()).toContain('@media (max-width: 767px)')
+    expect(current.getCss()).toContain('padding-left:20px')
   })
 
   it('exports responsive rows while keeping editor-only drop hints separate', () => {
     expect(GRID_LAYOUT_STYLES).toContain('min-height: 100vh')
     expect(GRID_LAYOUT_STYLES).toContain('repeat(2')
     expect(GRID_LAYOUT_STYLES).toContain('repeat(3')
+    expect(GRID_LAYOUT_STYLES).toContain('display: grid !important')
+    expect(GRID_LAYOUT_STYLES).toContain('repeat(2, minmax(0, 1fr)) !important')
     expect(GRID_LAYOUT_STYLES).toContain('@media (max-width: 767px)')
     expect(GRID_LAYOUT_STYLES).toContain('align-items: start')
     expect(GRID_LAYOUT_STYLES).toContain('min-height: 0')
+    expect(GRID_LAYOUT_STYLES).not.toContain('min-height: var(--psl-layout-min-height')
     expect(GRID_LAYOUT_STYLES).not.toContain('Arrastra un elemento aquí')
     expect(GRID_EDITOR_STYLES).toContain('Arrastra un elemento aquí')
+    expect(GRID_EDITOR_STYLES).toContain('min-height: var(--psl-layout-min-height')
   })
 
   it('registers each layout preset as an add-panel block', () => {
     const current = createEditor()
     expect(current.BlockManager.get('psl-layout-single')?.getLabel()).toBe('Una columna')
+    expect(current.BlockManager.get('psl-layout-single')?.get('media')).toContain('<svg')
     expect(current.BlockManager.get('psl-layout-equal-2')?.getLabel()).toBe('Dos columnas')
     expect(current.BlockManager.get('psl-layout-equal-3')?.getLabel()).toBe('Tres columnas')
   })

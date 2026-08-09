@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   readEditorConnection,
@@ -72,6 +72,7 @@ interface SupabaseDataPanelProps {
   onSaveBinding: (tableId: string, field: string, target: string, scope: 'context' | 'first') => void
   onToggleRepeater: (tableId: string) => void
   onUpdateDataComponent: (templateId: DataComponentTemplateId, tableId: string, mapping: DataComponentMapping, options: DataComponentOptions) => void
+  scope?: 'all' | 'element' | 'project'
   selectedElement: SelectedDataElement | null
 }
 
@@ -1078,6 +1079,9 @@ function ElementDataControls({ config, element, onRemoveBinding, onSaveBinding, 
 
 export function SupabaseDataPanel(props: SupabaseDataPanelProps) {
   const { config, onChange, selectedElement } = props
+  const scope = props.scope ?? 'all'
+  const showsProjectData = scope !== 'element'
+  const showsElementData = scope !== 'project'
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [dataComponentOpen, setDataComponentOpen] = useState(false)
@@ -1090,20 +1094,19 @@ export function SupabaseDataPanel(props: SupabaseDataPanelProps) {
   }>({})
   const [pendingDataTemplate, setPendingDataTemplate] = useState<DataComponentTemplateId | undefined>()
   const [openTableId, setOpenTableId] = useState<string | null>(null)
-  const connected = Boolean(config.projectUrl && config.publishableKey && isSafePublishableKey(config.publishableKey))
-  const [openSections, setOpenSections] = useState({
-    connection: !connected,
-    tables: true,
-    element: true,
-  })
+  const [elementSectionOpen, setElementSectionOpen] = useState(true)
+  const [sqlTransferStatus, setSqlTransferStatus] = useState('')
+  const sqlFileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    if (!showsProjectData) return
     if (!props.dataComponentRequest) return
     setDataComponentDefaults({})
     setDataComponentOpen(true)
-  }, [props.dataComponentRequest])
+  }, [props.dataComponentRequest, showsProjectData])
 
   useEffect(() => {
+    if (!showsProjectData) return
     const request = props.dataComponentEditRequest
     if (!request) return
     setDataComponentDefaults({
@@ -1114,11 +1117,7 @@ export function SupabaseDataPanel(props: SupabaseDataPanelProps) {
       templateId: request.templateId,
     })
     setDataComponentOpen(true)
-  }, [props.dataComponentEditRequest])
-
-  function toggleSection(section: keyof typeof openSections) {
-    setOpenSections((current) => ({ ...current, [section]: !current[section] }))
-  }
+  }, [props.dataComponentEditRequest, showsProjectData])
 
   function addCollections(tables: SupabaseTableConfig[]) {
     const importedIds = new Set(tables.map((table) => table.id))
@@ -1152,62 +1151,98 @@ export function SupabaseDataPanel(props: SupabaseDataPanelProps) {
     setWizardOpen(true)
   }
 
+  async function importSqlFile(file?: File) {
+    if (!file) return
+    try {
+      if (!file.name.toLowerCase().endsWith('.sql')) throw new Error('Selecciona un archivo .sql.')
+      const imported = importSupabaseSchemaSql(await file.text(), config)
+      const importedIds = new Set(imported.tables.map((table) => table.id))
+      const importedNames = new Set(imported.tables.map((table) => table.name))
+      onChange(normalizedSupabaseConfig({
+        ...config,
+        tables: [
+          ...config.tables.filter((table) => !importedIds.has(table.id) && !importedNames.has(table.name)),
+          ...imported.tables,
+        ],
+      }))
+      setSqlTransferStatus(`✓ ${imported.tables.length} ${imported.tables.length === 1 ? 'colección importada' : 'colecciones importadas'}`)
+    } catch (error) {
+      setSqlTransferStatus(error instanceof Error ? error.message : 'No pudimos importar el archivo SQL.')
+    }
+  }
+
+  function exportSqlFile() {
+    if (!config.tables.length) {
+      setSqlTransferStatus('Crea o importa una colección antes de exportar.')
+      return
+    }
+    const url = URL.createObjectURL(new Blob([createSupabaseSetupSql(config)], { type: 'application/sql;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'supabase-schema.sql'
+    link.click()
+    URL.revokeObjectURL(url)
+    setSqlTransferStatus('✓ SQL exportado')
+  }
+
   return (
     <>
       <div className="gjs-supabase-panel">
-        <PanelSection
-          onToggle={() => toggleSection('connection')}
-          open={openSections.connection}
-          title="Conexión con Supabase"
-        >
-          <div className="gjs-data-panel-heading">
-            <div><strong>Proyecto de Supabase</strong><span className={connected ? 'connected' : ''}>{connected ? '● URL y clave configuradas' : '○ Falta configurar'}</span></div>
-            <button aria-label="Configuración de Supabase" onClick={() => setSettingsOpen(true)} title="Configuración de Supabase" type="button">⚙</button>
+        {showsProjectData && <section className="gjs-data-project-section">
+          <header className="gjs-data-project-heading">
+            <strong>Mis datos</strong>
+            <button aria-label="Configuración de datos" onClick={() => setSettingsOpen(true)} title="Configuración de datos" type="button">⚙</button>
+          </header>
+          <div className="gjs-data-project-content">
+            <div className="gjs-data-project-actions">
+              <button onClick={() => {
+                setPendingDataTemplate(undefined)
+                setWizardOpen(true)
+              }} type="button">+ Crear</button>
+              <button className="secondary" onClick={() => sqlFileInputRef.current?.click()} title="Importar esquema SQL" type="button">↑ Importar</button>
+              <button className="secondary" onClick={exportSqlFile} title="Exportar esquema SQL" type="button">↓ Exportar</button>
+              <input
+                accept=".sql,application/sql,text/plain"
+                aria-label="Archivo SQL para importar"
+                className="gjs-data-sql-file-input"
+                onChange={(event) => {
+                  void importSqlFile(event.target.files?.[0])
+                  event.target.value = ''
+                }}
+                ref={sqlFileInputRef}
+                type="file"
+              />
+            </div>
+            {sqlTransferStatus && <p aria-live="polite" className="gjs-data-transfer-status">{sqlTransferStatus}</p>}
+            <div className="gjs-data-table-list">
+              {config.tables.map((table) => (
+                <button className="gjs-data-table-card" key={table.id} onClick={() => setOpenTableId(table.id)} type="button">
+                  <span className="gjs-data-table-icon">▦</span>
+                  <span><strong>{collectionDisplayName(table)}</strong><small>{table.fields.length} campos · {accessModeLabels[table.access]}</small><small className={table.setupStatus === 'verified' ? 'connected' : 'pending'}>{table.access === 'private'
+                    ? table.setupStatus === 'verified' ? '✓ Interna registrada' : '🔒 Interna · confirma el SQL'
+                    : table.setupStatus === 'verified' ? '✓ Conectada' : table.setupStatus === 'needs_installation' ? '● Cambios pendientes' : '○ Falta conectar'}</small></span>
+                  <span>›</span>
+                </button>
+              ))}
+              {!config.tables.length && <div className="gjs-data-placeholder">Aún no hay datos</div>}
+            </div>
           </div>
-          <p className="gjs-supabase-help">Conecta una vez este proyecto. Usa solamente la publishable key; nunca una secret key.</p>
-          {!connected && <button className="gjs-flow-primary" onClick={() => setSettingsOpen(true)} type="button">Conectar Supabase</button>}
-        </PanelSection>
+        </section>}
 
-        <PanelSection
-          onToggle={() => toggleSection('tables')}
-          open={openSections.tables}
-          title="Mis datos"
-        >
-          <div className="gjs-data-section-heading">
-            <div><strong>Colecciones</strong><span>Organiza la información que mostrará tu sitio.</span></div>
-            <button onClick={() => {
-              setPendingDataTemplate(undefined)
-              setWizardOpen(true)
-            }} type="button">+ Crear</button>
-          </div>
-          <div className="gjs-data-table-list">
-            {config.tables.map((table) => (
-              <button className="gjs-data-table-card" key={table.id} onClick={() => setOpenTableId(table.id)} type="button">
-                <span className="gjs-data-table-icon">▦</span>
-                <span><strong>{collectionDisplayName(table)}</strong><small>{table.fields.length} campos · {accessModeLabels[table.access]}</small><small className={table.setupStatus === 'verified' ? 'connected' : 'pending'}>{table.access === 'private'
-                  ? table.setupStatus === 'verified' ? '✓ Interna registrada' : '🔒 Interna · confirma el SQL'
-                  : table.setupStatus === 'verified' ? '✓ Conectada' : table.setupStatus === 'needs_installation' ? '● Cambios pendientes' : '○ Falta conectar'}</small></span>
-                <span>›</span>
-              </button>
-            ))}
-            {!config.tables.length && <div className="gjs-data-placeholder">Crea tu primera colección para comenzar.</div>}
-          </div>
-        </PanelSection>
-
-        <PanelSection
-          onToggle={() => toggleSection('element')}
-          open={openSections.element}
+        {showsElementData && <PanelSection
+          onToggle={() => setElementSectionOpen((open) => !open)}
+          open={elementSectionOpen}
           title="Elemento seleccionado"
         >
           {!selectedElement ? <div className="gjs-flow-empty gjs-data-empty"><strong>Selecciona un elemento</strong><p>Después elige qué información debe mostrar.</p></div> : <ElementDataControls {...props} element={selectedElement} />}
-        </PanelSection>
+        </PanelSection>}
       </div>
-      {settingsOpen && <SettingsModal config={config} editorProjectId={props.editorProjectId} isGuest={Boolean(props.isGuest)} onChange={onChange} onClose={() => setSettingsOpen(false)} />}
-      {wizardOpen && <CollectionWizard config={config} onClose={() => {
+      {showsProjectData && settingsOpen && <SettingsModal config={config} editorProjectId={props.editorProjectId} isGuest={Boolean(props.isGuest)} onChange={onChange} onClose={() => setSettingsOpen(false)} />}
+      {showsProjectData && wizardOpen && <CollectionWizard config={config} onClose={() => {
         setWizardOpen(false)
         setPendingDataTemplate(undefined)
       }} onCreate={addCollections} />}
-      {dataComponentOpen && <DataComponentWizard
+      {showsProjectData && dataComponentOpen && <DataComponentWizard
         config={config}
         editMode={dataComponentDefaults.editMode}
         initialMapping={dataComponentDefaults.mapping}
@@ -1226,7 +1261,7 @@ export function SupabaseDataPanel(props: SupabaseDataPanelProps) {
           setDataComponentDefaults({})
         }}
       />}
-      {openTableId && <TableModal config={config} editorProjectId={props.editorProjectId} isGuest={Boolean(props.isGuest)} onChange={(next) => onChange(normalizedSupabaseConfig(next))} onClose={() => setOpenTableId(null)} tableId={openTableId} />}
+      {showsProjectData && openTableId && <TableModal config={config} editorProjectId={props.editorProjectId} isGuest={Boolean(props.isGuest)} onChange={(next) => onChange(normalizedSupabaseConfig(next))} onClose={() => setOpenTableId(null)} tableId={openTableId} />}
     </>
   )
 }

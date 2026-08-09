@@ -54,7 +54,23 @@ export const starterLayoutBlocks = {
 
 const imagePlaceholder = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#126f69"/><stop offset="1" stop-color="#7456df"/></linearGradient></defs><rect width="1200" height="675" rx="28" fill="url(#g)"/><circle cx="600" cy="285" r="72" fill="none" stroke="#fff" stroke-width="18" opacity=".85"/><path d="M310 520 485 355l110 103 96-83 199 145H310Z" fill="#fff" opacity=".82"/><text x="600" y="600" fill="#fff" font-family="Arial,sans-serif" font-size="34" text-anchor="middle">Haz doble clic para reemplazar esta imagen</text></svg>`)}`
 
+const fieldShellStyle = 'display:grid;gap:7px;max-width:440px;color:#243d39;font-family:Inter,ui-sans-serif,system-ui,sans-serif'
+const fieldLabelStyle = 'font-size:14px;font-weight:750;line-height:1.35'
+const fieldControlStyle = 'width:100%;min-height:44px;box-sizing:border-box;padding:0 12px;color:#243d39;background:#fff;border:1px solid #b9cbc7;border-radius:8px;font:inherit'
+
+const starterFormBlocks = {
+  input: `<label style="${fieldShellStyle}"><span style="${fieldLabelStyle}">Nombre</span><input type="text" name="nombre" placeholder="Escribe tu nombre" style="${fieldControlStyle}"></label>`,
+  textarea: `<label style="${fieldShellStyle}"><span style="${fieldLabelStyle}">Mensaje</span><textarea name="mensaje" placeholder="Escribe tu mensaje" style="${fieldControlStyle};min-height:120px;padding:12px;resize:vertical"></textarea></label>`,
+  select: `<label style="${fieldShellStyle}"><span style="${fieldLabelStyle}">Elige una opción</span><select name="opcion" style="${fieldControlStyle}"><option value="">Selecciona…</option><option value="opcion-1">Opción 1</option><option value="opcion-2">Opción 2</option><option value="opcion-3">Opción 3</option></select></label>`,
+  label: `<label style="${fieldShellStyle}"><span style="${fieldLabelStyle}">Correo electrónico</span><input type="email" name="correo" placeholder="nombre@ejemplo.com" style="${fieldControlStyle}"></label>`,
+  checkbox: `<label style="display:flex;align-items:flex-start;gap:10px;max-width:440px;color:#243d39;font:500 15px/1.45 Inter,ui-sans-serif,system-ui,sans-serif"><input type="checkbox" name="aceptar" value="si" style="width:18px;height:18px;margin:2px 0 0;accent-color:#6f52dc"><span>Acepto los términos y condiciones.</span></label>`,
+  radio: `<fieldset style="display:grid;gap:10px;max-width:440px;margin:0;padding:18px;color:#243d39;border:1px solid #d8e3e1;border-radius:12px;font:500 15px/1.4 Inter,ui-sans-serif,system-ui,sans-serif"><legend style="padding:0 6px;font-weight:800">Elige una opción</legend><label style="display:flex;align-items:center;gap:9px"><input type="radio" name="opcion-ejemplo" value="opcion-1" checked style="width:18px;height:18px;accent-color:#6f52dc">Opción 1</label><label style="display:flex;align-items:center;gap:9px"><input type="radio" name="opcion-ejemplo" value="opcion-2" style="width:18px;height:18px;accent-color:#6f52dc">Opción 2</label><label style="display:flex;align-items:center;gap:9px"><input type="radio" name="opcion-ejemplo" value="opcion-3" style="width:18px;height:18px;accent-color:#6f52dc">Opción 3</label></fieldset>`,
+} as const
+
 export function configureStarterBlocks(editor: Editor) {
+  editor.BlockManager.getCategories().forEach((category: { getLabel: () => string; set: (key: string, value: string) => void }) => {
+    if (category.getLabel().toLowerCase() === 'basic') category.set('label', 'Básico')
+  })
   Object.entries(starterLayoutBlocks).forEach(([id, content]) => {
     const block = editor.BlockManager.get(id)
     if (!block) return
@@ -107,7 +123,28 @@ export function configureStarterBlocks(editor: Editor) {
       <button type="submit" style="min-height:44px;color:#fff;background:#6f52dc;border:0;border-radius:8px;font-weight:800">Enviar mensaje</button>
     </form>`,
   })
-  ;['input', 'textarea', 'select', 'button', 'label', 'checkbox', 'radio'].forEach((id) => {
-    editor.BlockManager.get(id)?.set('category', 'Formularios')
+  editor.BlockManager.get('input')?.set({ category: 'Formularios', label: 'Campo de texto', content: starterFormBlocks.input })
+  editor.BlockManager.get('textarea')?.set({ category: 'Formularios', label: 'Área de texto', content: starterFormBlocks.textarea })
+  editor.BlockManager.get('select')?.set({ category: 'Formularios', label: 'Lista de opciones', content: starterFormBlocks.select })
+  editor.BlockManager.get('button')?.set({
+    category: 'Formularios',
+    label: 'Botón',
+    content: {
+      type: 'button',
+      text: 'Continuar',
+      style: {
+        'min-height': '44px',
+        padding: '0 18px',
+        color: '#fff',
+        background: '#6f52dc',
+        border: '0',
+        'border-radius': '8px',
+        'font-weight': '800',
+        cursor: 'pointer',
+      },
+    },
   })
+  editor.BlockManager.get('label')?.set({ category: 'Formularios', label: 'Etiqueta y campo', content: starterFormBlocks.label })
+  editor.BlockManager.get('checkbox')?.set({ category: 'Formularios', label: 'Casilla', content: starterFormBlocks.checkbox })
+  editor.BlockManager.get('radio')?.set({ category: 'Formularios', label: 'Grupo de opciones', content: starterFormBlocks.radio })
 }

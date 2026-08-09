@@ -9,7 +9,7 @@ import {
   MOTION_VIEW_REFERENCE_BLOCK_ID,
   motionComponentStyles,
   readMotionActivities,
-  upgradeMotionActivity,
+  normalizeMotionActivity,
 } from './motion-analysis'
 
 function documentWith(markup: string) {
@@ -101,11 +101,11 @@ describe('motion editor contract', () => {
     })
   })
 
-  it('repairs malformed legacy compositions without leaving duplicate parts', () => {
+  it('normalizes malformed compositions without leaving duplicate parts', () => {
     const container = document.createElement('div')
     document.body.append(container)
     const editor = grapesjs.init({ container, headless: true })
-    editor.setComponents(`<section data-motion-activity="true" data-motion-layout-version="2">
+    editor.setComponents(`<section data-motion-activity="true" data-motion-layout-version="3">
       <header data-motion-part="heading"></header>
       <div data-motion-part="input"><video></video><div data-motion-part="input"></div><div data-motion-part="results"></div></div>
       <div data-motion-part="controls"></div>
@@ -113,7 +113,7 @@ describe('motion editor contract', () => {
     </section>`)
     const component = editor.getWrapper()!.components().at(0)!
 
-    expect(upgradeMotionActivity(component)).toBe(true)
+    expect(normalizeMotionActivity(component)).toBe(true)
     expect(component.components().models.map((child) => child.getAttributes()['data-motion-part']))
       .toEqual(['heading', 'input', 'controls', 'results'])
     const allParts: unknown[] = []
@@ -130,28 +130,6 @@ describe('motion editor contract', () => {
     container.remove()
   })
 
-  it('migrates version 2 reference viewers away from the generic analyze controls', () => {
-    const container = document.createElement('div')
-    document.body.append(container)
-    const editor = grapesjs.init({ container, headless: true })
-    editor.setComponents(`<section data-motion-activity="true" data-motion-component-type="reference-view" data-motion-mode="analyze" data-motion-layout-version="2">
-      <header data-motion-part="heading"></header>
-      <div data-motion-part="input"></div>
-      <div data-motion-part="controls"><button data-motion-start>Analizar movimiento</button></div>
-      <div data-motion-part="results"></div>
-    </section>`)
-    const component = editor.getWrapper()!.components().at(0)!
-
-    expect(upgradeMotionActivity(component)).toBe(true)
-    expect(component.getAttributes()['data-motion-layout-version']).toBe('3')
-    expect(component.toHTML()).toContain('data-motion-reference-replay')
-    expect(component.toHTML()).toContain('data-motion-start')
-    expect(component.toHTML()).toContain('hidden')
-
-    editor.destroy()
-    container.remove()
-  })
-
   it('removes a fixed height from existing reference viewers while retaining other styles', () => {
     const container = document.createElement('div')
     document.body.append(container)
@@ -160,7 +138,7 @@ describe('motion editor contract', () => {
     const component = editor.getWrapper()!.components().at(0)!
     component.setStyle({ height: '1100px', width: '90%', 'margin-left': '5vw' })
 
-    expect(upgradeMotionActivity(component)).toBe(true)
+    expect(normalizeMotionActivity(component)).toBe(true)
     expect(component.getStyle()).toMatchObject({ height: 'auto', width: '90%', 'margin-left': '5vw' })
 
     editor.destroy()

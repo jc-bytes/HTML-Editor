@@ -503,22 +503,13 @@ function validateReferences(
   })
 }
 
-const LegacyProjectSchema = z.object({
-  version: z.literal(1),
-  ...projectFields,
-}).superRefine(validateReferences)
-
 export const ProjectV2Schema = z.object({
   version: z.literal(2),
   ...projectFields,
   elementOverrides: z.array(ElementOverrideSchema),
 }).superRefine(validateReferences)
 
-export const ProjectSchema = z.union([LegacyProjectSchema, ProjectV2Schema])
-  .transform((project): z.infer<typeof ProjectV2Schema> => {
-    if (project.version === 2) return project
-    return { ...project, version: 2, elementOverrides: [] }
-  })
+export const ProjectSchema = ProjectV2Schema
 
 export type StyleDeclaration = z.infer<typeof StyleDeclarationSchema>
 export type StyleStates = z.infer<typeof StyleStatesSchema>

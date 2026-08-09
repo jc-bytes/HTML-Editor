@@ -15,17 +15,6 @@ const validProject: VisualBuilderProject = {
 }
 
 describe('ProjectSchema', () => {
-  it('migrates version 1 manifests to version 2', () => {
-    const migrated = ProjectSchema.parse({
-      ...validProject,
-      version: 1,
-      elementOverrides: undefined,
-    })
-
-    expect(migrated.version).toBe(2)
-    expect(migrated.elementOverrides).toEqual([])
-  })
-
   it('accepts the milestone zero demo project', () => {
     expect(ProjectSchema.parse(validProject)).toEqual(validProject)
   })

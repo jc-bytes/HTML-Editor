@@ -7,15 +7,6 @@ export const LAYOUT_PRESET_ATTRIBUTE = 'data-psl-layout-preset'
 export const LAYOUT_GAP_ATTRIBUTE = 'data-psl-layout-gap'
 export const LAYOUT_MIN_HEIGHT_ATTRIBUTE = 'data-psl-layout-min-height'
 
-// Kept only so projects created by the experimental grid can be migrated safely.
-export const PAGE_GRID_ATTRIBUTE = 'data-psl-page-grid'
-export const GRID_SECTION_ATTRIBUTE = 'data-psl-grid-section'
-export const GRID_CONTENT_ATTRIBUTE = 'data-psl-grid-content'
-export const GRID_ITEM_ATTRIBUTE = 'data-psl-grid-item'
-export const GRID_SPAN_ATTRIBUTE = 'data-psl-grid-span'
-export const GRID_START_ATTRIBUTE = 'data-psl-grid-start'
-export const GRID_ROW_ATTRIBUTE = 'data-psl-grid-row'
-
 export const DEFAULT_SITE_MARGIN = 32
 export const DEFAULT_LAYOUT_GAP = 20
 export const DEFAULT_LAYOUT_MIN_HEIGHT = 120
@@ -35,35 +26,45 @@ export const LAYOUT_PRESETS: Array<{
   { id: 'sidebar-right', label: '70 / 30', columns: 2, template: 'minmax(0, 7fr) minmax(0, 3fr)' },
 ]
 
-export const GRID_LAYOUT_STYLES = `
-:root {
-  --psl-site-margin-desktop: 32px;
-  --psl-site-margin-tablet: 24px;
-  --psl-site-margin-mobile: 16px;
+function layoutPresetIcon(preset: LayoutPreset) {
+  const columns = preset === 'single'
+    ? [[5, 38]]
+    : preset === 'equal-3'
+      ? [[4, 11], [18.5, 11], [33, 11]]
+      : preset === 'sidebar-left'
+        ? [[4, 13], [20, 24]]
+        : preset === 'sidebar-right'
+          ? [[4, 24], [31, 13]]
+          : [[4, 19], [25, 19]]
+  return `<svg aria-hidden="true" viewBox="0 0 48 36">${columns
+    .map(([x, width]) => `<rect x="${x}" y="5" width="${width}" height="26" rx="2" fill="none" stroke="currentColor" stroke-width="2.5"/>`)
+    .join('')}</svg>`
 }
+
+export const GRID_LAYOUT_STYLES = `
 .psl-page-layout {
   display: flex;
   flex-direction: column;
   gap: 20px;
   width: 100%;
   min-height: 100vh;
-  padding: var(--psl-site-margin-desktop);
+  padding: 32px;
   box-sizing: border-box;
 }
 .psl-layout-row {
-  display: grid;
+  display: grid !important;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--psl-layout-gap, 20px);
+  gap: 20px;
   align-items: start;
   width: 100%;
   min-width: 0;
-  min-height: var(--psl-layout-min-height, 120px);
+  min-height: 0;
   box-sizing: border-box;
 }
-.psl-layout-row[data-psl-layout-preset="equal-2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.psl-layout-row[data-psl-layout-preset="equal-3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.psl-layout-row[data-psl-layout-preset="sidebar-left"] { grid-template-columns: minmax(0, 3fr) minmax(0, 7fr); }
-.psl-layout-row[data-psl-layout-preset="sidebar-right"] { grid-template-columns: minmax(0, 7fr) minmax(0, 3fr); }
+.psl-layout-row[data-psl-layout-preset="equal-2"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+.psl-layout-row[data-psl-layout-preset="equal-3"] { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+.psl-layout-row[data-psl-layout-preset="sidebar-left"] { grid-template-columns: minmax(0, 3fr) minmax(0, 7fr) !important; }
+.psl-layout-row[data-psl-layout-preset="sidebar-right"] { grid-template-columns: minmax(0, 7fr) minmax(0, 3fr) !important; }
 .psl-layout-column {
   min-width: 0;
   min-height: 0;
@@ -71,12 +72,12 @@ export const GRID_LAYOUT_STYLES = `
 }
 .psl-layout-column > * { max-width: 100%; box-sizing: border-box; }
 @media (max-width: 991px) {
-  .psl-page-layout { padding: var(--psl-site-margin-tablet); }
+  .psl-page-layout { padding: 24px; }
 }
 @media (max-width: 767px) {
-  .psl-page-layout { padding: var(--psl-site-margin-mobile); gap: 16px; }
+  .psl-page-layout { padding: 16px; gap: 16px; }
   .psl-layout-row,
-  .psl-layout-row[data-psl-layout-preset] { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .psl-layout-row[data-psl-layout-preset] { grid-template-columns: minmax(0, 1fr) !important; gap: 16px !important; }
 }
 `
 
@@ -129,10 +130,7 @@ function clampedInteger(value: number, minimum: number, maximum: number) {
 }
 
 export function isPageGrid(component?: Component | null) {
-  return Boolean(component && (
-    hasAttribute(component, PAGE_LAYOUT_ATTRIBUTE)
-    || hasAttribute(component, PAGE_GRID_ATTRIBUTE)
-  ))
+  return Boolean(component && hasAttribute(component, PAGE_LAYOUT_ATTRIBUTE))
 }
 
 export function isLayoutRow(component?: Component | null) {
@@ -140,18 +138,15 @@ export function isLayoutRow(component?: Component | null) {
 }
 
 export function isGridSection(component?: Component | null) {
-  return Boolean(component && (isLayoutRow(component) || hasAttribute(component, GRID_SECTION_ATTRIBUTE)))
+  return Boolean(component && isLayoutRow(component))
 }
 
 export function isGridContent(component?: Component | null) {
-  return Boolean(component && (isPageGrid(component) || hasAttribute(component, GRID_CONTENT_ATTRIBUTE)))
+  return Boolean(component && isPageGrid(component))
 }
 
 export function isGridItem(component?: Component | null) {
-  return Boolean(component && (
-    hasAttribute(component, LAYOUT_COLUMN_ATTRIBUTE)
-    || hasAttribute(component, GRID_ITEM_ATTRIBUTE)
-  ))
+  return Boolean(component && hasAttribute(component, LAYOUT_COLUMN_ATTRIBUTE))
 }
 
 export function gridItemFor(component?: Component | null) {
@@ -208,7 +203,7 @@ export function layoutRowDefinition(
       class: 'psl-layout-row',
     },
     style: {
-      '--psl-layout-gap': `${gap}px`,
+      gap: `${gap}px`,
       '--psl-layout-min-height': `${minHeight}px`,
     },
     draggable: `[${PAGE_LAYOUT_ATTRIBUTE}]`,
@@ -265,9 +260,19 @@ function setColumnCount(row: Component, count: number) {
   }
 }
 
+function normalizeLayoutRow(row: Component) {
+  // Layout rows are structural; presets own their grid tracks.
+  ;['grid-template-columns', 'grid-template-rows', 'grid-auto-flow'].forEach((property) => {
+    row.removeStyle(property)
+  })
+  row.addStyle({ display: 'grid', width: '100%' })
+  row.set('resizable', false)
+}
+
 export function updateLayoutPreset(row: Component, preset: LayoutPreset) {
   const definition = LAYOUT_PRESETS.find((candidate) => candidate.id === preset) ?? LAYOUT_PRESETS[0]
   setColumnCount(row, definition.columns)
+  normalizeLayoutRow(row)
   row.addAttributes({ [LAYOUT_PRESET_ATTRIBUTE]: definition.id })
   row.set('name', definition.label)
   return definition.id
@@ -276,7 +281,7 @@ export function updateLayoutPreset(row: Component, preset: LayoutPreset) {
 export function updateLayoutGap(row: Component, gap: number) {
   const next = clampedInteger(gap, 0, 64)
   row.addAttributes({ [LAYOUT_GAP_ATTRIBUTE]: String(next) })
-  row.addStyle({ '--psl-layout-gap': `${next}px` })
+  row.addStyle({ gap: `${next}px` })
   return next
 }
 
@@ -287,66 +292,6 @@ export function updateLayoutMinHeight(row: Component, minHeight: number) {
   return next
 }
 
-function legacyPlacement(item: Component) {
-  const attributes = item.getAttributes()
-  return {
-    row: Math.max(1, Math.round(Number(attributes[GRID_ROW_ATTRIBUTE]) || 1)),
-    start: clampedInteger(Number(attributes[GRID_START_ATTRIBUTE]) || 1, 1, 12),
-    span: clampedInteger(Number(attributes[GRID_SPAN_ATTRIBUTE]) || 12, 1, 12),
-  }
-}
-
-function presetForLegacyItems(items: Component[]): LayoutPreset {
-  if (items.length >= 3) return 'equal-3'
-  if (items.length <= 1) return 'single'
-  const firstSpan = legacyPlacement(items[0]).span
-  if (firstSpan <= 4) return 'sidebar-left'
-  if (firstSpan >= 8) return 'sidebar-right'
-  return 'equal-2'
-}
-
-function moveLegacyItemsIntoRows(layout: Component, items: Component[]) {
-  const grouped = new Map<number, Component[]>()
-  items.forEach((item) => {
-    const row = legacyPlacement(item).row
-    grouped.set(row, [...(grouped.get(row) ?? []), item])
-  })
-  ;[...grouped.entries()].sort(([first], [second]) => first - second).forEach(([, rowItems]) => {
-    const ordered = [...rowItems].sort((first, second) => legacyPlacement(first).start - legacyPlacement(second).start)
-    for (let offset = 0; offset < ordered.length; offset += 3) {
-      const chunk = ordered.slice(offset, offset + 3)
-      const row = layout.append(layoutRowDefinition(presetForLegacyItems(chunk)))[0]
-      const columns = row ? directChildren(row).filter(isGridItem) : []
-      chunk.forEach((legacyItem, index) => {
-        const destination = columns[index] ?? columns[0]
-        if (destination) [...directChildren(legacyItem)].forEach((content) => content.move(destination))
-        legacyItem.remove()
-      })
-    }
-  })
-}
-
-function migrateLegacyLayout(layout: Component) {
-  const legacyItems = directChildren(layout).filter((component) => (
-    hasAttribute(component, GRID_ITEM_ATTRIBUTE) && !hasAttribute(component, LAYOUT_COLUMN_ATTRIBUTE)
-  ))
-  if (legacyItems.length) moveLegacyItemsIntoRows(layout, legacyItems)
-  layout.removeAttributes([PAGE_GRID_ATTRIBUTE, GRID_CONTENT_ATTRIBUTE])
-  layout.addAttributes({ [PAGE_LAYOUT_ATTRIBUTE]: '' })
-  layout.setClass('psl-page-layout')
-  layout.set({
-    name: 'Contenido de página · fijo',
-    draggable: false,
-    droppable: `[${LAYOUT_ROW_ATTRIBUTE}]`,
-    removable: false,
-    copyable: false,
-    selectable: false,
-    hoverable: false,
-    resizable: false,
-  })
-  return legacyItems.length
-}
-
 function appendSingleRowForComponent(layout: Component, component: Component) {
   const row = layout.append(layoutRowDefinition('single'))[0]
   const column = row && directChildren(row).find(isGridItem)
@@ -354,15 +299,17 @@ function appendSingleRowForComponent(layout: Component, component: Component) {
   return column
 }
 
-function repairPageLayout(layout: Component) {
-  let repaired = 0
+function normalizeLayoutChildren(layout: Component) {
+  let placed = 0
   ;[...directChildren(layout)].forEach((component) => {
-    if (isLayoutRow(component)) return
-    if (hasAttribute(component, GRID_ITEM_ATTRIBUTE)) return
+    if (isLayoutRow(component)) {
+      normalizeLayoutRow(component)
+      return
+    }
     appendSingleRowForComponent(layout, component)
-    repaired += 1
+    placed += 1
   })
-  return repaired
+  return placed
 }
 
 function removeRedundantEmptyRows(layout: Component) {
@@ -375,21 +322,14 @@ function removeRedundantEmptyRows(layout: Component) {
   return emptyRows.length
 }
 
-function migrateLegacyRootChildren(root: Component, layout: Component) {
-  let migrated = 0
+function placeRootChildrenInLayout(root: Component, layout: Component) {
+  let placed = 0
   ;[...directChildren(root)].forEach((component) => {
     if (component === layout) return
-    if (hasAttribute(component, GRID_SECTION_ATTRIBUTE) || hasAttribute(component, GRID_CONTENT_ATTRIBUTE)) {
-      const nestedItems = component.find(`[${GRID_ITEM_ATTRIBUTE}]`)
-      nestedItems.forEach((item) => appendSingleRowForComponent(layout, item))
-      component.remove()
-      migrated += nestedItems.length
-      return
-    }
     appendSingleRowForComponent(layout, component)
-    migrated += 1
+    placed += 1
   })
-  return migrated
+  return placed
 }
 
 export function ensurePageGrid(editor: Editor) {
@@ -398,10 +338,9 @@ export function ensurePageGrid(editor: Editor) {
   let layout = directChildren(root).find(isPageGrid)
   if (!layout) layout = root.append(pageGridDefinition())[0]
   if (!layout) return undefined
-  const legacyCount = migrateLegacyLayout(layout)
-  const repairedCount = repairPageLayout(layout)
-  const migratedRootCount = migrateLegacyRootChildren(root, layout)
-  if (legacyCount + repairedCount + migratedRootCount > 0) removeRedundantEmptyRows(layout)
+  const placedLayoutCount = normalizeLayoutChildren(layout)
+  const placedRootCount = placeRootChildrenInLayout(root, layout)
+  if (placedLayoutCount + placedRootCount > 0) removeRedundantEmptyRows(layout)
   if (!directChildren(layout).some(isLayoutRow)) layout.append(layoutRowDefinition())
   return layout
 }
@@ -489,18 +428,34 @@ export function layoutRowOrder(row?: Component | null) {
 
 export function readSiteMargin(editor: Editor) {
   const value = editor.Css.getRule('.psl-page-layout')?.getStyle()['padding-left']
-    ?? editor.Css.getRule('.psl-page-grid')?.getStyle()['padding-left']
-    ?? editor.Css.getRule(':root')?.getStyle()['--psl-site-margin-desktop']
+    ?? editor.Css.getRule('.psl-page-layout')?.getStyle().padding
   return clampedInteger(Number.parseFloat(String(value ?? DEFAULT_SITE_MARGIN)), 0, 96)
 }
 
 export function updateSiteMargin(editor: Editor, margin: number) {
   const desktop = clampedInteger(margin, 0, 96)
-  editor.Css.setRule(':root', {
-    '--psl-site-margin-desktop': `${desktop}px`,
-    '--psl-site-margin-tablet': `${Math.round(desktop * .75)}px`,
-    '--psl-site-margin-mobile': `${Math.round(desktop * .5)}px`,
-  }, { addStyles: true })
+  const tabletRule = {
+    atRuleParams: '(max-width: 991px)',
+    atRuleType: 'media',
+  } as const
+  const mobileRule = {
+    atRuleParams: '(max-width: 767px)',
+    atRuleType: 'media',
+  } as const
+  const updatePaddingRule = (padding: number, ruleOptions = {}) => {
+    const rule = editor.Css.getRule('.psl-page-layout', ruleOptions)
+    const style = {
+      'padding-bottom': `${padding}px`,
+      'padding-left': `${padding}px`,
+      'padding-right': `${padding}px`,
+      'padding-top': `${padding}px`,
+    }
+    if (rule) rule.addStyle(style)
+    else editor.Css.setRule('.psl-page-layout', style, ruleOptions)
+  }
+  updatePaddingRule(desktop)
+  updatePaddingRule(Math.round(desktop * .75), tabletRule)
+  updatePaddingRule(Math.round(desktop * .5), mobileRule)
   return desktop
 }
 
@@ -526,15 +481,11 @@ export function createGridLayoutPlugin(editor: Editor) {
     isComponent: (element) => element.hasAttribute?.(LAYOUT_COLUMN_ATTRIBUTE),
     model: { defaults: layoutColumnDefinition() },
   })
-  // Legacy types remain readable until ensurePageGrid migrates the page.
-  editor.DomComponents.addType('psl-page-grid', {
-    isComponent: (element) => element.hasAttribute?.(PAGE_GRID_ATTRIBUTE),
-    model: { defaults: pageGridDefinition() },
-  })
   LAYOUT_PRESETS.forEach((preset) => {
     editor.BlockManager.add(`psl-layout-${preset.id}`, {
       category: 'Diseño de página',
       label: preset.label,
+      media: layoutPresetIcon(preset.id),
       attributes: { title: preset.label },
       content: layoutRowDefinition(preset.id),
     })

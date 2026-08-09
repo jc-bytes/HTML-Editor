@@ -694,27 +694,11 @@ export function readSupabaseAccessToken(projectUrl: string) {
   }
 }
 
-type LegacyConfig = Partial<SupabaseEditorConfig> & {
-  table?: string
-  fields?: SupabaseField[]
-}
-
 export function loadSupabaseConfig(): SupabaseEditorConfig {
   if (typeof localStorage === 'undefined') return defaultSupabaseConfig
   try {
-    const saved = JSON.parse(localStorage.getItem(SUPABASE_STORAGE_KEY) ?? 'null') as LegacyConfig | null
+    const saved = JSON.parse(localStorage.getItem(SUPABASE_STORAGE_KEY) ?? 'null') as Partial<SupabaseEditorConfig> | null
     if (!saved) return defaultSupabaseConfig
-    if (!Array.isArray(saved.tables) && saved.table) {
-      return normalizedSupabaseConfig({
-        projectUrl: saved.projectUrl ?? '',
-        publishableKey: saved.publishableKey ?? '',
-        tables: [{
-          ...defaultPracticeTable,
-          name: saved.table,
-          fields: Array.isArray(saved.fields) ? saved.fields : defaultPracticeTable.fields,
-        }],
-      })
-    }
     return normalizedSupabaseConfig({
       projectUrl: saved.projectUrl ?? '',
       publishableKey: saved.publishableKey ?? '',

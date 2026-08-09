@@ -163,8 +163,11 @@ export function createSectionLayoutPlugin(editor: Editor) {
       || element.hasAttribute?.(SECTION_GRID_ATTRIBUTE),
     model: {
       defaults: {
-        name: 'Columnas de sección',
+        name: 'Tarjetas',
         resizable: false,
+      },
+      init() {
+        this.set('name', 'Tarjetas')
       },
     },
     view: {

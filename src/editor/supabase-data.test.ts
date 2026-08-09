@@ -7,9 +7,7 @@ import {
   describeSupabaseSchemaChanges,
   isSafePublishableKey,
   importSupabaseSchemaSql,
-  loadSupabaseConfig,
   normalizedSupabaseConfig,
-  SUPABASE_STORAGE_KEY,
   verifySupabaseTable,
 } from './supabase-data'
 import type { SupabaseEditorConfig } from './supabase-data'
@@ -71,15 +69,15 @@ describe('Supabase editor data helpers', () => {
     const normalized = normalizedSupabaseConfig({
       projectUrl: undefined,
       publishableKey: undefined,
-      tables: [{ id: 'legacy', name: 'Legacy Items', access: 'public_read' }],
+      tables: [{ id: 'existing', name: 'Existing Items', access: 'public_read' }],
     } as unknown as SupabaseEditorConfig)
 
     expect(normalized).toEqual(expect.objectContaining({
       projectUrl: '',
       publishableKey: '',
       tables: [expect.objectContaining({
-        id: 'legacy',
-        name: 'legacy_items',
+        id: 'existing',
+        name: 'existing_items',
         fields: [],
         relations: [],
       })],
@@ -89,9 +87,9 @@ describe('Supabase editor data helpers', () => {
   it('rejects secret keys and accepts current publishable keys', () => {
     expect(isSafePublishableKey('sb_publishable_1234567890')).toBe(true)
     expect(isSafePublishableKey('sb_secret_1234567890')).toBe(false)
-    const legacyKey = (role: string) => `header.${btoa(JSON.stringify({ role }))}.signature-padding-1234567890`
-    expect(isSafePublishableKey(legacyKey('anon'))).toBe(true)
-    expect(isSafePublishableKey(legacyKey('service_role'))).toBe(false)
+    const jwtKey = (role: string) => `header.${btoa(JSON.stringify({ role }))}.signature-padding-1234567890`
+    expect(isSafePublishableKey(jwtKey('anon'))).toBe(true)
+    expect(isSafePublishableKey(jwtKey('service_role'))).toBe(false)
   })
 
   it('verifies one public table and all declared columns through the Data API', async () => {
@@ -117,29 +115,6 @@ describe('Supabase editor data helpers', () => {
     expect(request).toHaveBeenCalledWith(expect.stringContaining('/rest/v1/progress?'), {
       headers: { apikey: config.publishableKey, Authorization: 'Bearer student-token' },
     })
-  })
-
-  it('migrates the previous single-table editor configuration', () => {
-    const storage = new Map<string, string>()
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => storage.get(key) ?? null,
-      removeItem: (key: string) => storage.delete(key),
-      setItem: (key: string, value: string) => storage.set(key, value),
-    })
-    localStorage.setItem(SUPABASE_STORAGE_KEY, JSON.stringify({
-      projectUrl: 'https://legacy.supabase.co',
-      publishableKey: 'sb_publishable_legacy_key',
-      table: 'old_practices',
-      fields: [{ id: 'name', name: 'name', type: 'text' }],
-    }))
-
-    const migrated = loadSupabaseConfig()
-    expect(migrated.tables).toEqual([expect.objectContaining({
-      name: 'old_practices',
-      fields: [{ id: 'name', name: 'name', type: 'text' }],
-    })])
-    localStorage.removeItem(SUPABASE_STORAGE_KEY)
-    vi.unstubAllGlobals()
   })
 
   it('generates ALTER TABLE changes from the last verified schema', () => {

@@ -148,29 +148,17 @@ export function dataComponentDesignPreviewCount(
   return Math.min(resolvedOptions.pageSize, largestColumnCount * rowCount)
 }
 
-const legacyDataComponentRootSelector = [
-  '.psl-data-grid',
-  '.psl-data-carousel',
-  '.psl-data-list',
-  '.psl-data-featured',
-].join(',')
-
 export function findDataComponentRoot(element: Element) {
   return element.closest<HTMLElement>(`[${DATA_COMPONENT_ATTRIBUTE}]`)
-    ?? element.closest<HTMLElement>(legacyDataComponentRootSelector)
 }
 
 export function readDataComponentSettings(root: HTMLElement): DataComponentSettings | null {
   const requestedTemplateId = root.getAttribute(DATA_COMPONENT_ATTRIBUTE)
-  const templateId: DataComponentTemplateId = requestedTemplateId === 'carousel'
-    || requestedTemplateId === 'simple_list'
-    || requestedTemplateId === 'featured_detail'
-    || requestedTemplateId === 'card_grid'
-    ? requestedTemplateId
-    : root.classList.contains('psl-data-carousel') ? 'carousel'
-      : root.classList.contains('psl-data-list') ? 'simple_list'
-        : root.classList.contains('psl-data-featured') ? 'featured_detail'
-          : root.classList.contains('psl-data-grid') ? 'card_grid' : 'card_grid'
+  if (requestedTemplateId !== 'carousel'
+    && requestedTemplateId !== 'simple_list'
+    && requestedTemplateId !== 'featured_detail'
+    && requestedTemplateId !== 'card_grid') return null
+  const templateId: DataComponentTemplateId = requestedTemplateId
   const repeater = root.matches(`[${DATA_REPEATER_ATTRIBUTE}]`)
     ? root
     : root.querySelector<HTMLElement>(`[${DATA_REPEATER_ATTRIBUTE}]`)

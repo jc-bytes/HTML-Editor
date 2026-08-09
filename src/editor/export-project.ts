@@ -65,6 +65,11 @@ function escapeScriptContent(value: string) {
 function pageDocument(page: EditorExportPage) {
   const parsed = new DOMParser().parseFromString(page.html, 'text/html')
   const bodyMarkup = parsed.body.innerHTML || page.html
+  const bodyAttributes = Array.from(parsed.body.attributes)
+    .map((attribute) => ` ${attribute.name}="${attribute.value
+      .replaceAll('&', '&amp;')
+      .replaceAll('"', '&quot;')}"`)
+    .join('')
   const usesDataComponents = Boolean(parsed.querySelector([
     `[${DATA_COMPONENT_ATTRIBUTE}]`,
     '.psl-data-grid',
@@ -86,7 +91,7 @@ function pageDocument(page: EditorExportPage) {
     <title>${title.innerHTML}</title>
     <style>${escapeStyleContent(pageStyles)}</style>
   </head>
-  <body>
+  <body${bodyAttributes}>
     ${bodyMarkup}
     ${page.js ? `<script>${escapeScriptContent(page.js)}</script>` : ''}
   </body>
@@ -312,10 +317,18 @@ export function buildEditorProjectBundle(
 export function editorProjectBundle(editor: Editor, supabaseConfig?: SupabaseEditorConfig) {
   const pages = editor.Pages.getAll().map((page) => {
     const component = page.getMainComponent()
+    const body = document.createElement('body')
+    Object.entries(component.getAttributes()).forEach(([name, value]) => {
+      if (value !== false && value != null) body.setAttribute(name, String(value))
+    })
+    Object.entries(component.getStyle()).forEach(([property, value]) => {
+      if (value != null) body.style.setProperty(property, String(value))
+    })
+    body.innerHTML = editor.getHtml({ component })
     return {
       id: page.getId(),
       name: page.getName() || 'Sin título',
-      html: editor.getHtml({ component }),
+      html: body.outerHTML,
       css: editor.getCss({ component, keepUnusedStyles: true }),
       js: editor.getJs({ component }),
     }

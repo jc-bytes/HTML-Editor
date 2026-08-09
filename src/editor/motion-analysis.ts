@@ -246,9 +246,8 @@ function hasValidMotionComposition(component: Component) {
     && directParts[3] === 'results'
 }
 
-export function upgradeMotionActivity(component: Component) {
+export function normalizeMotionActivity(component: Component) {
   if (!component.getAttributes()[MOTION_ACTIVITY_ATTRIBUTE]) return false
-  const layoutVersion = component.getAttributes()['data-motion-layout-version']
   const rawType = component.getAttributes()['data-motion-component-type']
   const componentType = motionComponentTypes.some((item) => item.id === rawType)
     ? rawType as MotionComponentType
@@ -270,9 +269,7 @@ export function upgradeMotionActivity(component: Component) {
     component.setStyle({ ...currentStyle, height: 'auto' })
     repairedResponsiveHeight = true
   }
-  if (hasValidMotionComposition(component) && (
-    layoutVersion === '3' || (layoutVersion === '2' && componentType !== 'reference-view')
-  )) return repairedResponsiveHeight
+  if (hasValidMotionComposition(component)) return repairedResponsiveHeight
   component.components(motionActivityContents(componentType))
   component.setStyle({})
   return true
@@ -302,7 +299,7 @@ export function createMotionAnalysisPlugin(): Plugin {
         media: motionBlockIcons[type],
       })
     })
-    const upgradeAll = () => editor.Pages.getAll().forEach((page) => {
+    const normalizeAll = () => editor.Pages.getAll().forEach((page) => {
       const visit = (component: Component, insideActivity = false) => {
         const attributes = component.getAttributes()
         const isActivity = Boolean(attributes[MOTION_ACTIVITY_ATTRIBUTE])
@@ -311,20 +308,20 @@ export function createMotionAnalysisPlugin(): Plugin {
           component.remove()
           return
         }
-        if (isActivity) upgradeMotionActivity(component)
+        if (isActivity) normalizeMotionActivity(component)
         component.components().models.slice().forEach((child) => visit(child, insideActivity || isActivity))
       }
       visit(page.getMainComponent())
     })
-    const repairLoadedProject = () => {
-      // Storage autoload replaces both components and CSS. Repair the fully
+    const normalizeLoadedProject = () => {
+      // Storage autoload replaces both components and CSS. Normalize the fully
       // loaded project, not the temporary canvas created during editor setup.
       editor.Css.addRules(motionComponentStyles)
-      upgradeAll()
+      normalizeAll()
     }
-    editor.on('load', () => requestAnimationFrame(repairLoadedProject))
-    editor.on('project:loaded', repairLoadedProject)
-    editor.on('storage:end:load', () => requestAnimationFrame(repairLoadedProject))
+    editor.on('load', () => requestAnimationFrame(normalizeLoadedProject))
+    editor.on('project:loaded', normalizeLoadedProject)
+    editor.on('storage:end:load', () => requestAnimationFrame(normalizeLoadedProject))
   }
 }
 

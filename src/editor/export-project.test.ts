@@ -6,6 +6,18 @@ import { buildEditorProjectBundle } from './export-project'
 import { defaultSupabaseConfig } from './supabase-data'
 
 describe('new editor project export', () => {
+  it('preserves body classes and background styles', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'home',
+      name: 'Inicio',
+      html: '<body class="site-page" style="background-color: rgb(185, 123, 123);"><main>Contenido</main></body>',
+    }], 'home')
+    const page = bundle.files.find((file) => file.path === 'pages/home.html')!
+    const markup = new TextDecoder().decode(page.bytes)
+
+    expect(markup).toContain('<body class="site-page" style="background-color: rgb(185, 123, 123);">')
+  })
+
   it('exports every page and preserves button navigation', async () => {
     const bundle = buildEditorProjectBundle([
       {

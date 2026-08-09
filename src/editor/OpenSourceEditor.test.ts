@@ -1,18 +1,35 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  applyComponentResizePolicy,
+  addComponentColorToolbar,
+  addComponentPositionToolbar,
+  applyContainerHorizontalAlignment,
+  applyContainerVerticalAlignment,
+  applyDirectComponentColor,
   applyComponentLineHeight,
   applyInlineTextStyle,
   cssColorToHex,
-  detachSharedResizeDimensions,
-  directResizeOptions,
+  disableCanvasResizing,
   installEditorCanvasLayoutGuards,
-  resizeOptionsForComponent,
+  keepToolbarInsideBounds,
 } from './OpenSourceEditor'
-import { appendGridItem, createGridLayoutPlugin, ensurePageGrid } from './grid-layout'
 import grapesjs from 'grapesjs'
 
 describe('inline typography controls', () => {
+  it('keeps a scaled toolbar clear of the canvas edges', () => {
+    const toolbar = document.createElement('div')
+    toolbar.style.left = '-40px'
+    toolbar.style.top = '-20px'
+    Object.defineProperties(toolbar, {
+      offsetWidth: { configurable: true, value: 560 },
+      offsetHeight: { configurable: true, value: 80 },
+    })
+    toolbar.getBoundingClientRect = () => new DOMRect(460, 70, 280, 40)
+
+    expect(keepToolbarInsideBounds(toolbar, new DOMRect(500, 80, 600, 500))).toBe(true)
+    expect(toolbar.style.left).toBe('64px')
+    expect(toolbar.style.top).toBe('24px')
+  })
+
   it('wraps only the highlighted text with the selected font size', () => {
     document.body.innerHTML = '<p id="text">Edit this phrase</p>'
     const text = document.querySelector('#text')!
@@ -76,47 +93,7 @@ describe('inline typography controls', () => {
 })
 
 describe('direct canvas resizing', () => {
-  it('keeps text height automatic and exposes horizontal handles only', () => {
-    expect(directResizeOptions('p', 'text')).toMatchObject({
-      bc: false,
-      bl: false,
-      br: false,
-      keepAutoHeight: true,
-      tc: false,
-      tl: false,
-      tr: false,
-    })
-  })
-
-  it('allows ordinary containers to resize horizontally and vertically', () => {
-    expect(directResizeOptions('div')).toMatchObject({ ratioDefault: false })
-    expect(directResizeOptions('section')).toMatchObject({ ratioDefault: false })
-  })
-
-  it('allows full resizing for media while Shift controls aspect ratio', () => {
-    expect(directResizeOptions('img', 'image')).toMatchObject({ ratioDefault: false })
-  })
-
-  it('does not resize the document wrapper', () => {
-    expect(directResizeOptions('body', 'wrapper')).toBe(false)
-  })
-
-  it('protects layout columns while allowing their content to resize independently', () => {
-    const editor = grapesjs.init({ headless: true, storageManager: false, plugins: [createGridLayoutPlugin] })
-    ensurePageGrid(editor)
-    const section = appendGridItem(editor, '<section><div><p>Contenido</p></div></section>')!
-    const item = section.parent()!
-
-    applyComponentResizePolicy(item)
-
-    expect(item.get('resizable')).toBe(false)
-    expect(section.get('resizable')).toMatchObject({ ratioDefault: false })
-    expect(section.components().at(0)?.get('resizable')).toMatchObject({ ratioDefault: false })
-    expect(section.components().at(0)?.components().at(0)?.get('resizable')).toMatchObject({ keepAutoHeight: true })
-    editor.destroy()
-  })
-
-  it('protects starter layout wrappers while keeping each card fully resizable', () => {
+  it('disables handles for an entire component tree', () => {
     const editor = grapesjs.init({ headless: true, storageManager: false })
     const section = editor.getWrapper()!.append(`
       <section class="psl-starter-section">
@@ -128,9 +105,14 @@ describe('direct canvas resizing', () => {
     const grid = section.components().at(0)!
     const card = grid.components().at(0)!
 
-    expect(resizeOptionsForComponent(section)).toBe(false)
-    expect(resizeOptionsForComponent(grid)).toBe(false)
-    expect(resizeOptionsForComponent(card)).toMatchObject({ ratioDefault: false })
+    section.set('resizable', true)
+    grid.set('resizable', true)
+    card.set('resizable', true)
+
+    expect(disableCanvasResizing(section)).toBe(4)
+    expect(section.get('resizable')).toBe(false)
+    expect(grid.get('resizable')).toBe(false)
+    expect(card.get('resizable')).toBe(false)
     editor.destroy()
   })
 
@@ -154,34 +136,79 @@ describe('direct canvas resizing', () => {
     expect(editor.Css.getRule('.shared-card')?.getStyle()?.width).toBeUndefined()
     editor.destroy()
   })
+})
 
-  it('removes legacy dimensions from a class shared by components on different pages', () => {
-    const editor = grapesjs.init({
-      headless: true,
-      selectorManager: { componentFirst: true },
-      storageManager: false,
-    })
-    const first = editor.getWrapper()!.append('<div class="shared-card">Uno</div>')[0]
-    const secondPage = editor.Pages.add({ id: 'second', component: '' })!
-    const second = secondPage.getMainComponent().append('<div class="shared-card">Dos</div>')[0]
-    editor.Css.setRule('.shared-card', { width: '420px', height: '260px', color: 'red' })
+describe('direct component colors', () => {
+  it('adds background and border actions only to container toolbars', () => {
+    const editor = grapesjs.init({ headless: true, storageManager: false })
+    const [section, text] = editor.getWrapper()!.append('<section><p>Contenido</p></section><p>Texto</p>')
 
-    expect(secondPage.getMainComponent().components().at(0)?.getClasses()).toContain('shared-card')
-    expect(detachSharedResizeDimensions(editor, first)).toBe(2)
-    expect(editor.Css.getRule('.shared-card')?.getStyle()).toEqual({ color: 'red' })
-    expect(first.getStyle()).toMatchObject({ width: '420px', height: '260px' })
-    expect(second.getStyle()).toMatchObject({ width: '420px', height: '260px' })
+    expect(addComponentColorToolbar(section)).toBe(true)
+    expect((section.get('toolbar') ?? []).filter((item) => String(item.id).startsWith('psl:set-'))).toHaveLength(2)
+    expect(addComponentColorToolbar(section)).toBe(false)
+    expect(addComponentColorToolbar(text)).toBe(false)
     editor.destroy()
   })
 
-  it('allows images and embeds directly inside a layout column to resize', () => {
-    const editor = grapesjs.init({ headless: true, storageManager: false, plugins: [createGridLayoutPlugin] })
-    ensurePageGrid(editor)
-    const image = appendGridItem(editor, { type: 'image', attributes: { src: 'example.png' } })!
+  it('applies colors only to the targeted component', () => {
+    const editor = grapesjs.init({ headless: true, storageManager: false })
+    const [first, second] = editor.getWrapper()!.append('<section>Uno</section><section>Dos</section>')
 
-    expect(resizeOptionsForComponent(image)).toMatchObject({ ratioDefault: false })
-    applyComponentResizePolicy(image)
-    expect(image.get('resizable')).toMatchObject({ ratioDefault: false })
+    applyDirectComponentColor(first, 'background-color', '#123456')
+    applyDirectComponentColor(first, 'border-color', '#abcdef')
+
+    expect(first.getStyle()).toMatchObject({
+      'background-color': '#123456',
+      'border-color': '#abcdef',
+      'border-style': 'solid',
+      'border-width': '1px',
+    })
+    expect(second.getStyle()).not.toHaveProperty('background-color')
+    editor.destroy()
+  })
+})
+
+describe('container positioning', () => {
+  it('adds a positioning action to elements inside a container', () => {
+    const editor = grapesjs.init({ headless: true, storageManager: false })
+    const section = editor.getWrapper()!.append('<section><img src="example.png"></section>')[0]
+    const image = section.components().at(0)!
+
+    expect(addComponentPositionToolbar(image)).toBe(true)
+    expect((image.get('toolbar') ?? []).some((item) => item.id === 'psl:set-container-position')).toBe(true)
+    expect((image.get('toolbar') ?? []).some((item) => item.id === 'psl:set-container-horizontal-position')).toBe(true)
+    expect(addComponentPositionToolbar(image)).toBe(false)
+    editor.destroy()
+  })
+
+  it('aligns the immediate container without styling the selected child', () => {
+    const editor = grapesjs.init({ headless: true, storageManager: false })
+    const section = editor.getWrapper()!.append('<section data-psl-layout-row><div data-psl-layout-column><img src="example.png"></div></section>')[0]
+    const column = section.components().at(0)!
+    const image = column.components().at(0)!
+
+    expect(applyContainerVerticalAlignment(image, 'center')).toBe(true)
+    expect(column.getStyle()).toMatchObject({
+      display: 'flex',
+      'flex-direction': 'column',
+      'justify-content': 'center',
+      'align-self': 'stretch',
+      height: '100%',
+    })
+    expect(image.getStyle()).not.toHaveProperty('justify-content')
+    editor.destroy()
+  })
+
+  it('aligns only the selected element horizontally', () => {
+    const editor = grapesjs.init({ headless: true, storageManager: false })
+    const section = editor.getWrapper()!.append('<section><img src="one.png" style="width:100%"><img src="two.png"></section>')[0]
+    const first = section.components().at(0)!
+    const second = section.components().at(1)!
+
+    expect(applyContainerHorizontalAlignment(first, 'right')).toBe(true)
+    expect(section.getStyle()).toMatchObject({ display: 'flex', 'flex-direction': 'column' })
+    expect(first.getStyle()).toMatchObject({ 'align-self': 'flex-end', width: '90%' })
+    expect(second.getStyle()).not.toHaveProperty('align-self')
     editor.destroy()
   })
 })

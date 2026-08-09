@@ -7,8 +7,8 @@ import type {
   Device,
   Editor,
   ProjectData,
-  ResizerOptions,
   RichTextEditorAction,
+  ToolbarButtonProps,
 } from 'grapesjs'
 import blocksBasic from 'grapesjs-blocks-basic'
 import pluginForms from 'grapesjs-plugin-forms'
@@ -108,9 +108,6 @@ import {
   gridItemFor,
   GRID_LAYOUT_STYLES,
   installGridEditorStyles,
-  isGridContent,
-  isGridItem,
-  isGridSection,
   isLayoutRow,
   isPageGrid,
   placeComponentInGrid,
@@ -172,15 +169,6 @@ const SUPABASE_BLOCK_ICONS = {
   data: '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="5" y="8" width="38" height="32" rx="4" fill="none" stroke="currentColor" stroke-width="3"/><path d="M5 18h38M16 18v22M29 18v22" fill="none" stroke="currentColor" stroke-width="3"/></svg>',
 } as const
 
-const NON_RESIZABLE_TAGS = new Set(['body', 'html', 'head', 'script', 'style', 'meta', 'link'])
-const WIDTH_ONLY_RESIZE_TAGS = new Set([
-  'a', 'blockquote', 'button', 'figcaption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'label', 'li', 'p', 'small', 'span', 'strong',
-])
-const FIXED_LAYOUT_COMPONENT_CLASSES = new Set([
-  'psl-starter-section',
-  'psl-starter-grid',
-])
 const INLINE_FONT_FAMILIES = [
   ['inherit', 'Predeterminada'],
   ['Arial, sans-serif', 'Arial'],
@@ -216,85 +204,12 @@ const INTERACTION_STYLES = `
   }
 `
 
-export const STARTER_LAYOUT_RESIZE_STYLES = `
-  .psl-starter-grid { align-items: start; }
-  .psl-starter-card { align-self: start; }
-`
-
-export function directResizeOptions(tagName: string, componentType = ''): ResizerOptions | false {
-  const tag = tagName.toLowerCase()
-  const type = componentType.toLowerCase()
-  if (type === 'wrapper' || NON_RESIZABLE_TAGS.has(tag)) return false
-
-  const widthOnly = type === 'text' || WIDTH_ONLY_RESIZE_TAGS.has(tag)
-  return {
-    minDim: 10,
-    ratioDefault: false,
-    updateOnMove: true,
-    ...(widthOnly ? {
-      bl: false,
-      br: false,
-      keepAutoHeight: true,
-      tc: false,
-      tl: false,
-      tr: false,
-      bc: false,
-    } : {}),
-  }
-}
-
-export function resizeOptionsForComponent(component: Component): ResizerOptions | false {
-  if (isGridSection(component) || isGridContent(component) || isGridItem(component)) return false
-  if (component.getClasses().some((className) => FIXED_LAYOUT_COMPONENT_CLASSES.has(className))) return false
-  const tagName = String(component.get('tagName') ?? '').toLowerCase()
-  return directResizeOptions(
-    tagName,
-    String(component.get('type') ?? ''),
-  )
-}
-
-export function detachSharedResizeDimensions(editor: Editor, component: Component) {
-  const classes = component.getClasses()
-  if (!classes.length) return 0
-  const descendants = (parent: Component): Component[] => parent.components().models.flatMap(
-    (child) => [child, ...descendants(child)],
-  )
-  const allComponents = editor.Pages.getAll().flatMap((page) => {
-    const root = page.getMainComponent()
-    return [root, ...descendants(root)]
-  })
-  const sharedClasses = classes.filter((className) => allComponents.filter(
-    (candidate) => candidate.getClasses().includes(className),
-  ).length > 1)
-  if (!sharedClasses.length) return 0
-
-  const styleManager = editor.StyleManager as typeof editor.StyleManager & {
-    getModelToStyle: (
-      target: Component,
-      options: { skipAdd: boolean; useClasses: boolean },
-    ) => { getStyle?: () => Record<string, string>; setStyle?: (style: Record<string, string>) => void }
-  }
-  const classRule = styleManager.getModelToStyle(component, { skipAdd: true, useClasses: true })
-  const style = classRule?.getStyle?.()
-  if (!style || (!style.width && !style.height)) return 0
-  const legacyDimensions = {
-    ...(style.width ? { width: style.width } : {}),
-    ...(style.height ? { height: style.height } : {}),
-  }
-  allComponents
-    .filter((candidate) => classes.every((className) => candidate.getClasses().includes(className)))
-    .forEach((candidate) => candidate.addStyle(legacyDimensions))
-  const { width: _width, height: _height, ...preservedStyle } = style
-  classRule.setStyle?.(preservedStyle)
-  return Number(Boolean(style.width)) + Number(Boolean(style.height))
-}
-
-export function applyComponentResizePolicy(component: Component) {
+export function disableCanvasResizing(component: Component) {
   const descendants = (parent: Component): Component[] => parent.components().models.flatMap(
     (child) => [child, ...descendants(child)],
   )
   const components = [component, ...descendants(component)]
-  components.forEach((candidate) => candidate.set('resizable', resizeOptionsForComponent(candidate)))
+  components.forEach((candidate) => candidate.set('resizable', false))
   return components.length
 }
 
@@ -385,6 +300,269 @@ export function cssColorToHex(value: string) {
   return channels?.length === 3
     ? `#${channels.map((channel) => Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, '0')).join('')}`
     : '#000000'
+}
+
+export function keepToolbarInsideBounds(toolbar: HTMLElement, bounds: DOMRect, padding = 12) {
+  const rect = toolbar.getBoundingClientRect()
+  if (!rect.width || !rect.height) return false
+  const scaleX = toolbar.offsetWidth ? rect.width / toolbar.offsetWidth : 1
+  const scaleY = toolbar.offsetHeight ? rect.height / toolbar.offsetHeight : scaleX
+  const usableLeft = bounds.left + padding
+  const usableRight = bounds.right - padding
+  const usableTop = bounds.top + padding
+  const usableBottom = bounds.bottom - padding
+  const horizontalShift = rect.width >= usableRight - usableLeft
+    ? usableLeft - rect.left
+    : rect.left < usableLeft
+      ? usableLeft - rect.left
+      : rect.right > usableRight ? usableRight - rect.right : 0
+  const verticalShift = rect.height >= usableBottom - usableTop
+    ? usableTop - rect.top
+    : rect.top < usableTop
+      ? usableTop - rect.top
+      : rect.bottom > usableBottom ? usableBottom - rect.bottom : 0
+  const currentLeft = Number.parseFloat(toolbar.style.left)
+  const currentTop = Number.parseFloat(toolbar.style.top)
+  if (horizontalShift && Number.isFinite(currentLeft)) {
+    toolbar.style.left = `${Math.round(currentLeft + horizontalShift / Math.max(scaleX, 0.01))}px`
+  }
+  if (verticalShift && Number.isFinite(currentTop)) {
+    toolbar.style.top = `${Math.round(currentTop + verticalShift / Math.max(scaleY, 0.01))}px`
+  }
+  return Boolean(horizontalShift || verticalShift)
+}
+
+const DIRECT_COLOR_TAGS = new Set(['article', 'aside', 'div', 'footer', 'header', 'main', 'nav', 'section'])
+const BACKGROUND_COLOR_COMMAND = 'psl:set-background-color'
+const BORDER_COLOR_COMMAND = 'psl:set-border-color'
+const CONTAINER_POSITION_COMMAND = 'psl:set-container-position'
+const CONTAINER_HORIZONTAL_POSITION_COMMAND = 'psl:set-container-horizontal-position'
+const BACKGROUND_COLOR_ICON = '<svg aria-hidden="true" viewBox="0 0 20 20"><path d="m5.2 9.1 5.3-5.3 5.7 5.7-5.3 5.3a2 2 0 0 1-2.8 0l-2.9-2.9a2 2 0 0 1 0-2.8Z" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/><path d="m8 6.3 5.7 5.7M4 16.2h12" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"/></svg>'
+const BORDER_COLOR_ICON = '<svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3.5" y="3.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6.7 6.7h6.6v6.6H6.7z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="1.4 1.4"/></svg>'
+const CONTAINER_POSITION_ICON = '<svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3.5" y="3.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 10h8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="m10 6-1.8 2h3.6L10 6Zm0 8 1.8-2H8.2l1.8 2Z" fill="currentColor"/></svg>'
+const CONTAINER_HORIZONTAL_POSITION_ICON = '<svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3.5" y="3.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 6v8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="m6 10 2-1.8v3.6L6 10Zm8 0-2 1.8V8.2L14 10Z" fill="currentColor"/></svg>'
+let directColorPickerAnchor: DOMRect | null = null
+
+export function applyContainerVerticalAlignment(component: Component, alignment: 'top' | 'center' | 'bottom') {
+  const parent = component.parent()
+  if (!parent || parent.get('type') === 'wrapper') return false
+  const isLayoutColumn = Object.prototype.hasOwnProperty.call(parent.getAttributes(), 'data-psl-layout-column')
+  parent.addStyle({
+    display: 'flex',
+    'flex-direction': 'column',
+    'justify-content': alignment === 'top' ? 'flex-start' : alignment === 'bottom' ? 'flex-end' : 'center',
+    ...(isLayoutColumn ? { 'align-self': 'stretch', height: '100%' } : {}),
+  })
+  return true
+}
+
+export function applyContainerHorizontalAlignment(component: Component, alignment: 'left' | 'center' | 'right') {
+  const parent = component.parent()
+  if (!parent || parent.get('type') === 'wrapper') return false
+  parent.addStyle({ display: 'flex', 'flex-direction': 'column' })
+  const currentWidth = String(component.getStyle().width ?? '').trim()
+  const fillsContainer = currentWidth === '100%' || currentWidth === '100vw'
+  component.addStyle({
+    'align-self': alignment === 'left' ? 'flex-start' : alignment === 'right' ? 'flex-end' : 'center',
+    // A full-width child has nowhere to move. Preserve custom widths, but give
+    // default 100%-wide elements enough room for alignment to be visible.
+    ...(fillsContainer ? { width: '90%' } : {}),
+  })
+  return true
+}
+
+export function addComponentPositionToolbar(component: Component) {
+  const parent = component.parent()
+  if (!parent || parent.get('type') === 'wrapper') return false
+  component.initToolbar()
+  const toolbar = [...(component.get('toolbar') ?? [])] as ToolbarButtonProps[]
+  const positionItems: ToolbarButtonProps[] = []
+  if (!toolbar.some((item) => item.id === CONTAINER_POSITION_COMMAND)) positionItems.push({
+    id: CONTAINER_POSITION_COMMAND,
+    command: CONTAINER_POSITION_COMMAND,
+    label: CONTAINER_POSITION_ICON,
+    attributes: {
+      'aria-label': 'Posición vertical en el contenedor',
+      class: 'psl-position-toolbar-button',
+      title: 'Posición vertical en el contenedor',
+    },
+  })
+  if (!toolbar.some((item) => item.id === CONTAINER_HORIZONTAL_POSITION_COMMAND)) positionItems.push({
+    id: CONTAINER_HORIZONTAL_POSITION_COMMAND,
+    command: CONTAINER_HORIZONTAL_POSITION_COMMAND,
+    label: CONTAINER_HORIZONTAL_POSITION_ICON,
+    attributes: {
+      'aria-label': 'Posición horizontal en el contenedor',
+      class: 'psl-position-toolbar-button',
+      title: 'Posición horizontal en el contenedor',
+    },
+  })
+  if (!positionItems.length) return false
+  const deleteIndex = toolbar.findIndex((item) => item.command === 'tlb-delete')
+  toolbar.splice(deleteIndex < 0 ? toolbar.length : deleteIndex, 0, ...positionItems)
+  component.set('toolbar', toolbar)
+  return true
+}
+
+export function addComponentColorToolbar(component: Component) {
+  const tagName = String(component.get('tagName') ?? '').toLowerCase()
+  if (!DIRECT_COLOR_TAGS.has(tagName) || component.get('type') === 'wrapper') return false
+  component.initToolbar()
+  const toolbar = [...(component.get('toolbar') ?? [])] as ToolbarButtonProps[]
+  if (toolbar.some((item) => item.id === BACKGROUND_COLOR_COMMAND)) return false
+  const colorItems: ToolbarButtonProps[] = [
+    {
+      id: BACKGROUND_COLOR_COMMAND,
+      command: BACKGROUND_COLOR_COMMAND,
+      label: BACKGROUND_COLOR_ICON,
+      attributes: { 'aria-label': 'Color de fondo', class: 'psl-color-toolbar-button', title: 'Color de fondo' },
+    },
+    {
+      id: BORDER_COLOR_COMMAND,
+      command: BORDER_COLOR_COMMAND,
+      label: BORDER_COLOR_ICON,
+      attributes: { 'aria-label': 'Color del borde', class: 'psl-color-toolbar-button', title: 'Color del borde' },
+    },
+  ]
+  const deleteIndex = toolbar.findIndex((item) => item.command === 'tlb-delete')
+  toolbar.splice(deleteIndex < 0 ? toolbar.length : deleteIndex, 0, ...colorItems)
+  component.set('toolbar', toolbar)
+  return true
+}
+
+export function applyDirectComponentColor(
+  component: Component,
+  property: 'background-color' | 'border-color',
+  color: string,
+) {
+  const style: Record<string, string> = { [property]: color }
+  if (property === 'border-color') {
+    const element = component.getEl()
+    const view = element?.ownerDocument.defaultView
+    const computed = element && view ? view.getComputedStyle(element) : null
+    const hasVisibleBorder = computed
+      ? ['Top', 'Right', 'Bottom', 'Left'].some((side) => Number.parseFloat(computed.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0)
+      : false
+    if (!hasVisibleBorder) {
+      style['border-style'] = 'solid'
+      style['border-width'] = '1px'
+    }
+  }
+  component.addStyle(style)
+  return style
+}
+
+function openDirectComponentColorPicker(editor: Editor, property: 'background-color' | 'border-color') {
+  const component = editor.getSelected()
+  const element = component?.getEl()
+  if (!component || !element) return
+  const view = element.ownerDocument.defaultView
+  const computedColor = view?.getComputedStyle(element).getPropertyValue(property) ?? ''
+  const transparent = computedColor === 'transparent' || /rgba\([^)]*,\s*0\s*\)$/.test(computedColor)
+  document.querySelector('.gjs-direct-color-picker-host')?.remove()
+  const toolbar = document.querySelector<HTMLElement>('.gjs-toolbar')
+  directColorPickerAnchor = toolbar?.getBoundingClientRect() ?? null
+  const host = document.createElement('span')
+  host.className = 'gjs-direct-color-picker-host'
+  const input = document.createElement('input')
+  host.append(input)
+  document.body.append(host)
+
+  const initialColor = transparent
+    ? property === 'background-color' ? '#ffffff' : '#000000'
+    : cssColorToHex(computedColor)
+  const cleanup = () => {
+    directColorPickerAnchor = null
+    host.remove()
+  }
+  const applyColor = (color: { toHexString?: () => string } | string) => {
+    const value = typeof color === 'string' ? color : color?.toHexString?.()
+    if (value) applyDirectComponentColor(component, property, value)
+  }
+  const model = editor.getModel() as unknown as {
+    initBaseColorPicker: (element: HTMLInputElement, options: Record<string, unknown>) => {
+      spectrum: (action: string) => void
+    }
+  }
+  const picker = model.initBaseColorPicker(input, {
+    color: initialColor,
+    showAlpha: false,
+    showInput: true,
+    preferredFormat: 'hex',
+    move: applyColor,
+    change: applyColor,
+    hide: cleanup,
+  })
+  const showPicker = () => window.setTimeout(() => {
+    if (host.isConnected) picker.spectrum('show')
+  }, 0)
+  // GrapesJS starts toolbar commands on pointer-down. Spectrum treats the
+  // matching pointer-up as an outside interaction, so opening before release
+  // makes the picker disappear unless the button stays held. Wait until that
+  // initiating pointer has fully finished, then show the picker.
+  const pressedToolbarButton = document.querySelector('.gjs-toolbar-item:active')
+  if (pressedToolbarButton) {
+    const pointerFinished = () => {
+      document.removeEventListener('pointercancel', pointerCancelled, true)
+      showPicker()
+    }
+    const pointerCancelled = () => {
+      document.removeEventListener('pointerup', pointerFinished, true)
+      cleanup()
+    }
+    document.addEventListener('pointerup', pointerFinished, { capture: true, once: true })
+    document.addEventListener('pointercancel', pointerCancelled, { capture: true, once: true })
+  } else {
+    showPicker()
+  }
+}
+
+function openContainerPositionMenu(editor: Editor, axis: 'vertical' | 'horizontal' = 'vertical') {
+  const component = editor.getSelected()
+  if (!component?.parent()) return
+  document.querySelector('.gjs-container-position-menu')?.remove()
+  const toolbar = document.querySelector<HTMLElement>('.gjs-toolbar')
+  const anchor = toolbar?.getBoundingClientRect()
+  if (!anchor) return
+
+  const menu = document.createElement('div')
+  menu.className = 'gjs-container-position-menu'
+  menu.setAttribute('role', 'menu')
+  const positions = axis === 'vertical' ? [
+    ['top', 'Arriba', 'M4 5h12M10 7v8m-3-3 3 3 3-3'],
+    ['center', 'Centro', 'M4 10h12M10 5v10m-3-8 3-2 3 2m-6 6 3 2 3-2'],
+    ['bottom', 'Abajo', 'M4 15h12M10 5v8m-3-3 3 3 3-3'],
+  ] as const : [
+    ['left', 'Izquierda', 'M5 4v12m2-6h8m-3-3 3 3-3 3'],
+    ['center', 'Centro', 'M10 4v12M5 10h10M7 7l-2 3 2 3m6-6 2 3-2 3'],
+    ['right', 'Derecha', 'M15 4v12m-2-6H5m3-3-3 3 3 3'],
+  ] as const
+  positions.forEach(([value, label, path]) => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.setAttribute('role', 'menuitem')
+    button.innerHTML = `<svg aria-hidden="true" viewBox="0 0 20 20"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>${label}</span>`
+    button.addEventListener('click', () => {
+      if (axis === 'vertical') applyContainerVerticalAlignment(component, value as 'top' | 'center' | 'bottom')
+      else applyContainerHorizontalAlignment(component, value as 'left' | 'center' | 'right')
+      menu.remove()
+    })
+    menu.append(button)
+  })
+  document.body.append(menu)
+  const menuRect = menu.getBoundingClientRect()
+  const left = Math.min(Math.max(12, anchor.right - menuRect.width), window.innerWidth - menuRect.width - 12)
+  const below = anchor.bottom + 8
+  const top = below + menuRect.height <= window.innerHeight - 12 ? below : anchor.top - menuRect.height - 8
+  menu.style.left = `${Math.round(left)}px`
+  menu.style.top = `${Math.max(12, Math.round(top))}px`
+
+  window.setTimeout(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (!menu.contains(event.target as Node)) menu.remove()
+    }
+    document.addEventListener('pointerdown', dismiss, { once: true })
+  }, 0)
 }
 
 function alignmentIcon(alignment: 'left' | 'center' | 'right' | 'justify') {
@@ -585,11 +763,17 @@ function positionColorPicker() {
     const trigger = document.querySelector<HTMLElement>('.sp-replacer.sp-active')
     if (!picker) return
 
-    const triggerRect = trigger?.getBoundingClientRect()
-    const pickerHeight = picker.getBoundingClientRect().height
-    const idealTop = triggerRect ? triggerRect.bottom - pickerHeight : 96
-    const top = Math.min(Math.max(56, idealTop), window.innerHeight - pickerHeight - 12)
+    const triggerRect = directColorPickerAnchor ?? trigger?.getBoundingClientRect()
+    const pickerRect = picker.getBoundingClientRect()
+    const idealTop = directColorPickerAnchor && triggerRect
+      ? triggerRect.bottom + 8
+      : triggerRect ? triggerRect.bottom - pickerRect.height : 96
+    const top = Math.min(Math.max(56, idealTop), window.innerHeight - pickerRect.height - 12)
+    const right = directColorPickerAnchor && triggerRect
+      ? Math.max(12, window.innerWidth - Math.min(window.innerWidth - 12, triggerRect.right))
+      : 12
     picker.style.setProperty('--picker-top', `${top}px`)
+    picker.style.setProperty('--picker-right', `${right}px`)
   })
 }
 
@@ -866,7 +1050,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const authSettingsComponentRef = useRef<Component | null>(null)
   const draggedBlockRef = useRef<Block | null>(null)
   const panToolLockedRef = useRef(false)
-  const resizeNoticeTimerRef = useRef<number | undefined>(undefined)
   const initialSupabaseConfigRef = useRef(EMPTY_SUPABASE_CONFIG)
   const supabaseConfigRef = useRef(initialSupabaseConfigRef.current)
   const [error, setError] = useState<string | null>(null)
@@ -874,7 +1057,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     { id: BLANK_PAGE.id, name: BLANK_PAGE.name },
   ])
   const [activePageId, setActivePageId] = useState<string>(BLANK_PAGE.id)
-  const [rightPanel, setRightPanel] = useState<'styles' | 'properties' | 'motion' | 'flow' | 'data'>('styles')
+  const [rightPanel, setRightPanel] = useState<'styles' | 'properties' | 'motion' | 'flow'>('styles')
+  const [leftPanel, setLeftPanel] = useState<'layers' | 'data'>('layers')
   const [blocksOpen, setBlocksOpen] = useState(false)
   const [blockDropActive, setBlockDropActive] = useState(false)
   const [dataComponentEditRequest, setDataComponentEditRequest] = useState<DataComponentEditRequest | null>(null)
@@ -900,7 +1084,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const [canvasZoom, setCanvasZoom] = useState(100)
   const [canvasZoomMode, setCanvasZoomMode] = useState<CanvasZoomMode>('fit')
   const [panToolActive, setPanToolActive] = useState(false)
-  const [resizeDimensions, setResizeDimensions] = useState('')
   const [previewSession, setPreviewSession] = useState<EditorPreviewSession | null>(null)
   const [previewViewport, setPreviewViewport] = useState<EditorPreviewViewport>({
     label: 'Escritorio',
@@ -1076,6 +1259,18 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       // belong to the selected component instead of a reusable CSS class.
       editor.SelectorManager.setComponentFirst(true)
       editorRef.current = editor
+      editor.Commands.add(BACKGROUND_COLOR_COMMAND, {
+        run: (currentEditor) => openDirectComponentColorPicker(currentEditor, 'background-color'),
+      })
+      editor.Commands.add(BORDER_COLOR_COMMAND, {
+        run: (currentEditor) => openDirectComponentColorPicker(currentEditor, 'border-color'),
+      })
+      editor.Commands.add(CONTAINER_POSITION_COMMAND, {
+        run: (currentEditor) => openContainerPositionMenu(currentEditor),
+      })
+      editor.Commands.add(CONTAINER_HORIZONTAL_POSITION_COMMAND, {
+        run: (currentEditor) => openContainerPositionMenu(currentEditor, 'horizontal'),
+      })
       editor.Pages.select(BLANK_PAGE.id)
       installInlineTypographyControls(editor)
       editor.BlockManager.get('tabs')?.set('category', 'Extra')
@@ -1129,6 +1324,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         media: SUPABASE_BLOCK_ICONS.data,
         onClick: () => {
           setBlocksOpen(false)
+          setLeftPanel('data')
           setDataComponentRequest((current) => current + 1)
         },
       })
@@ -1294,7 +1490,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           editingDataComponentRef.current = component
           editor.select(component)
           syncSelectedElement(component)
-          setRightPanel('data')
+          setBlocksOpen(false)
+          setLeftPanel('data')
           setDataComponentEditRequest((current) => ({
             ...settings,
             requestId: (current?.requestId ?? 0) + 1,
@@ -1412,13 +1609,12 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         syncPreviewViewport()
         const initialPageGrid = ensurePageGrid(editor)
         const selectedRoot = editor.Pages.getSelected()?.getMainComponent()
-        if (selectedRoot) applyComponentResizePolicy(selectedRoot)
+        if (selectedRoot) disableCanvasResizing(selectedRoot)
         const savedSiteMargin = readSiteMargin(editor)
         editor.Css.addRules(GRID_LAYOUT_STYLES)
         setSiteMargin(updateSiteMargin(editor, savedSiteMargin))
         editor.Css.addRules(dataComponentStyles)
         editor.Css.addRules(INTERACTION_STYLES)
-        editor.Css.addRules(STARTER_LAYOUT_RESIZE_STYLES)
         editor.Css.addRules(SECTION_LAYOUT_STYLES)
         installGridEditorStyles(editor)
         installEditorViewport()
@@ -1475,7 +1671,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         syncPages()
         const pageGrid = ensurePageGrid(editor)
         const selectedRoot = editor.Pages.getSelected()?.getMainComponent()
-        if (selectedRoot) applyComponentResizePolicy(selectedRoot)
+        if (selectedRoot) disableCanvasResizing(selectedRoot)
         if (pageGrid) {
           void editor.store().catch((cause: unknown) => {
             setError(cause instanceof Error ? cause.message : 'No se pudo guardar la cuadrícula de la página.')
@@ -1503,16 +1699,37 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         }
       })
       editor.on('component:selected', (component: Component) => {
-        component.set('resizable', resizeOptionsForComponent(component))
+        component.set('resizable', false)
+        addComponentPositionToolbar(component)
+        addComponentColorToolbar(component)
         syncSelectedElement(component)
+        requestAnimationFrame(() => {
+          const toolbar = editor.Canvas.getToolsEl()?.querySelector('.gjs-toolbar') as HTMLElement | null
+          const bounds = canvasColumnRef.current?.getBoundingClientRect()
+          if (toolbar && bounds) keepToolbarInsideBounds(toolbar, bounds)
+        })
       })
       editor.on('component:deselected', () => {
         syncSelectedElement(editor.getSelected())
       })
       editor.on('component:add', (component: Component) => requestAnimationFrame(() => {
-        applyComponentResizePolicy(component)
+        disableCanvasResizing(component)
         installDataComponentDoubleClick()
       }))
+      const keepCanvasToolbarsVisible = () => requestAnimationFrame(() => {
+        const bounds = canvasColumnRef.current?.getBoundingClientRect()
+        if (!bounds) return
+        const componentToolbar = editor.Canvas.getToolsEl()?.querySelector('.gjs-toolbar') as HTMLElement | null
+        const textToolbar = editor.RichTextEditor.getToolbarEl()
+        if (componentToolbar) keepToolbarInsideBounds(componentToolbar, bounds)
+        if (textToolbar) keepToolbarInsideBounds(textToolbar, bounds)
+      })
+      editor.on('rte:enable', () => requestAnimationFrame(() => {
+        const toolbar = editor.RichTextEditor.getToolbarEl()
+        const canvasBounds = canvasColumnRef.current?.getBoundingClientRect()
+        if (canvasBounds) keepToolbarInsideBounds(toolbar, canvasBounds)
+      }))
+      editor.on('canvas:scroll', keepCanvasToolbarsVisible)
       editor.on('component:remove', (removedComponent: Component, options?: { action?: string }) => requestAnimationFrame(() => {
         if (editorRef.current !== editor) return
         if (options?.action === 'move-component') return
@@ -1526,29 +1743,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           })
         }
       }))
-      editor.on('component:resize:init', (options: {
-        component: Component
-        resizable: boolean | ResizerOptions
-      }) => {
-        options.resizable = resizeOptionsForComponent(options.component)
-      })
-      const showResizeDimensions = ({ el }: { el: HTMLElement }) => {
-        window.clearTimeout(resizeNoticeTimerRef.current)
-        const rect = el.getBoundingClientRect()
-        setResizeDimensions(`${Math.round(rect.width)} × ${Math.round(rect.height)} px`)
-      }
-      editor.on('component:resize:start', (event: { component: Component; el: HTMLElement }) => {
-        detachSharedResizeDimensions(editor, event.component)
-        if (event.el.ownerDocument.defaultView?.getComputedStyle(event.el).display === 'inline') {
-          event.component.addStyle({ display: 'inline-block' })
-        }
-        showResizeDimensions(event)
-      })
-      editor.on('component:resize:move', showResizeDimensions)
-      editor.on('component:resize:end', (event: { el: HTMLElement }) => {
-        showResizeDimensions(event)
-        resizeNoticeTimerRef.current = window.setTimeout(() => setResizeDimensions(''), 900)
-      })
       const completeBlockInsertion = (component: Component, block: Block) => {
         setBlocksOpen(false)
         if ([
@@ -1563,6 +1757,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         }
         if (block.getId() === DATA_COMPONENT_BLOCK_ID) {
           component.remove()
+          setLeftPanel('data')
           setDataComponentRequest((current) => current + 1)
           return
         }
@@ -1635,7 +1830,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     }
 
     return () => {
-      window.clearTimeout(resizeNoticeTimerRef.current)
       canvasResizeObserver?.disconnect()
       canvasDoubleClickCleanups.forEach((cleanup) => cleanup())
       ;(editorRef.current as (Editor & { __removePanShortcuts?: () => void }) | null)?.__removePanShortcuts?.()
@@ -1712,6 +1906,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     }
     if (block.getId() === DATA_COMPONENT_BLOCK_ID) {
       component.remove()
+      setLeftPanel('data')
       setDataComponentRequest((current) => current + 1)
     }
   }
@@ -2233,14 +2428,49 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
             </nav>
           </section>
 
-          <section className="gjs-sidebar-section gjs-layers-section">
-            <div className="gjs-sidebar-heading"><strong>Capas</strong></div>
+          <div className="gjs-left-content-tabs" role="tablist" aria-label="Organizador">
+            <button
+              aria-selected={leftPanel === 'layers'}
+              className={leftPanel === 'layers' ? 'active' : ''}
+              onClick={() => setLeftPanel('layers')}
+              role="tab"
+              type="button"
+            >Capas</button>
+            <button
+              aria-selected={leftPanel === 'data'}
+              className={leftPanel === 'data' ? 'active' : ''}
+              onClick={() => setLeftPanel('data')}
+              role="tab"
+              type="button"
+            >Datos</button>
+          </div>
+
+          <section className={`gjs-sidebar-section gjs-layers-section ${leftPanel === 'layers' ? '' : 'hidden'}`}>
             <div className="gjs-manager-container gjs-layers-container" ref={layersRef} />
           </section>
+
+          <div className={`gjs-left-data-container ${leftPanel === 'data' ? '' : 'hidden'}`}>
+            <SupabaseDataPanel
+              config={supabaseConfig}
+              dataComponentEditRequest={dataComponentEditRequest}
+              dataComponentRequest={dataComponentRequest}
+              editorProjectId={editorProjectId}
+              isGuest={isGuest}
+              onChange={saveSupabaseConfig}
+              onInsertDataComponent={insertDataComponent}
+              onRemoveBinding={removeDataBinding}
+              onSaveBinding={saveDataBinding}
+              onToggleRepeater={toggleDataRepeater}
+              onUpdateDataComponent={updateDataComponent}
+              scope="project"
+              selectedElement={null}
+            />
+          </div>
 
           <button
             aria-expanded={blocksOpen}
             className="gjs-add-blocks"
+            hidden={leftPanel !== 'layers'}
             onClick={() => setBlocksOpen(true)}
             type="button"
           >
@@ -2259,7 +2489,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
               </button>
               <div>
                 <strong>Añadir</strong>
-                <span>Selecciona o arrastra un elemento.</span>
               </div>
               <button aria-label="Cerrar Añadir" onClick={() => setBlocksOpen(false)} type="button">×</button>
             </div>
@@ -2297,7 +2526,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           )}
           {!previewActive && (
             <>
-            {resizeDimensions && <output aria-live="polite" className="gjs-resize-dimensions">{resizeDimensions}</output>}
             <div className="gjs-canvas-viewport-controls" aria-label="Zoom y movimiento del lienzo">
               <button
                 aria-label="Mover lienzo"
@@ -2356,14 +2584,15 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
               role="tab"
               type="button"
             >Propiedades</button>
-            <button
-              aria-selected={rightPanel === 'motion'}
-              className={rightPanel === 'motion' ? 'active' : ''}
-              disabled={!selectedMotionComponent}
-              onClick={() => setRightPanel('motion')}
-              role="tab"
-              type="button"
-            >Movimiento</button>
+            {selectedMotionComponent && (
+              <button
+                aria-selected={rightPanel === 'motion'}
+                className={rightPanel === 'motion' ? 'active' : ''}
+                onClick={() => setRightPanel('motion')}
+                role="tab"
+                type="button"
+              >Movimiento</button>
+            )}
             <button
               aria-selected={rightPanel === 'flow'}
               className={rightPanel === 'flow' ? 'active' : ''}
@@ -2371,13 +2600,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
               role="tab"
               type="button"
             >Flujo</button>
-            <button
-              aria-selected={rightPanel === 'data'}
-              className={rightPanel === 'data' ? 'active' : ''}
-              onClick={() => setRightPanel('data')}
-              role="tab"
-              type="button"
-            >Datos</button>
           </div>
           <div
             className={`gjs-manager-container gjs-styles-container ${rightPanel === 'styles' ? '' : 'hidden'}`}
@@ -2391,13 +2613,37 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
               onChange={handleGridLayoutChange}
             />
             <div className="gjs-manager-container gjs-traits-container" ref={traitsRef} />
+            <SupabaseDataPanel
+              config={supabaseConfig}
+              editorProjectId={editorProjectId}
+              isGuest={isGuest}
+              onChange={saveSupabaseConfig}
+              onInsertDataComponent={insertDataComponent}
+              onRemoveBinding={removeDataBinding}
+              onSaveBinding={saveDataBinding}
+              onToggleRepeater={toggleDataRepeater}
+              onUpdateDataComponent={updateDataComponent}
+              scope="element"
+              selectedElement={selectedElement ? {
+                bindingField: selectedElement.bindingField,
+                bindingTarget: selectedElement.bindingTarget ?? defaultBindingTarget(),
+                bindingScope: selectedElement.bindingScope,
+                dataSourceTableId: selectedElement.dataSourceTableId,
+                inheritedRepeaterTableId: selectedElement.inheritedRepeaterTableId,
+                isRepeater: selectedElement.isRepeater,
+                repeaterTableId: selectedElement.repeaterTableId,
+              } : null}
+            />
           </div>
           <div className={`gjs-motion-container ${rightPanel === 'motion' ? '' : 'hidden'}`}>
             <MotionPanel
               component={selectedMotionComponent}
               config={supabaseConfig}
               notice={motionNotice}
-              onOpenData={() => setRightPanel('data')}
+              onOpenData={() => {
+                setBlocksOpen(false)
+                setLeftPanel('data')
+              }}
               tables={supabaseConfig.tables}
             />
           </div>
@@ -2499,30 +2745,6 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
               </div>
             )}
           </div>
-          <div className={`gjs-data-container ${rightPanel === 'data' ? '' : 'hidden'}`}>
-            <SupabaseDataPanel
-              config={supabaseConfig}
-              dataComponentEditRequest={dataComponentEditRequest}
-              dataComponentRequest={dataComponentRequest}
-              editorProjectId={editorProjectId}
-              isGuest={isGuest}
-              onChange={saveSupabaseConfig}
-              onInsertDataComponent={insertDataComponent}
-              onRemoveBinding={removeDataBinding}
-              onSaveBinding={saveDataBinding}
-              onToggleRepeater={toggleDataRepeater}
-              onUpdateDataComponent={updateDataComponent}
-              selectedElement={selectedElement ? {
-                bindingField: selectedElement.bindingField,
-                bindingTarget: selectedElement.bindingTarget ?? defaultBindingTarget(),
-                bindingScope: selectedElement.bindingScope,
-                dataSourceTableId: selectedElement.dataSourceTableId,
-                inheritedRepeaterTableId: selectedElement.inheritedRepeaterTableId,
-                isRepeater: selectedElement.isRepeater,
-                repeaterTableId: selectedElement.repeaterTableId,
-              } : null}
-            />
-          </div>
         </aside>
       </div>
       {pageImportOpen && (
@@ -2564,7 +2786,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           onClose={() => setMotionDialogOpen(false)}
           onOpenData={() => {
             setMotionDialogOpen(false)
-            setRightPanel('data')
+            setBlocksOpen(false)
+            setLeftPanel('data')
           }}
           onSave={() => {
             setMotionDialogOpen(false)

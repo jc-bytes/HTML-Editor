@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SupabaseDataPanel } from './SupabaseDataPanel'
 import type { SupabaseEditorConfig } from './supabase-data'
@@ -32,12 +32,69 @@ describe('SupabaseDataPanel user data controls', () => {
     vi.unstubAllGlobals()
   })
 
-  it('organizes Supabase into collapsible inspector sections', () => {
+  it('keeps project data compact and element controls collapsible', () => {
     render(<SupabaseDataPanel {...baseProps} selectedElement={null} />)
 
-    expect(screen.getByRole('button', { name: /Conexión/ })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByRole('button', { name: /Mis datos/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('Mis datos')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Configuración de datos/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Crear/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Importar/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Exportar/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Autenticación/ })).not.toBeInTheDocument()
+  })
+
+  it('imports a SQL file into visual collections without removing unrelated collections', async () => {
+    const onChange = vi.fn()
+    render(<SupabaseDataPanel {...baseProps} onChange={onChange} selectedElement={null} />)
+    const sql = `
+      -- @psl-access public_read
+      create table public.lessons (
+        id uuid primary key,
+        published boolean default false,
+        title text
+      );
+    `
+
+    fireEvent.change(screen.getByLabelText('Archivo SQL para importar'), {
+      target: { files: [new File([sql], 'schema.sql', { type: 'application/sql' })] },
+    })
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      tables: expect.arrayContaining([
+        expect.objectContaining({ name: 'profiles' }),
+        expect.objectContaining({ name: 'lessons', access: 'public_read' }),
+      ]),
+    })))
+    expect(screen.getByText('✓ 1 colección importada')).toBeInTheDocument()
+  })
+
+  it('downloads the editor-managed Supabase schema as SQL', () => {
+    const createObjectUrl = vi.fn(() => 'blob:supabase-schema')
+    const revokeObjectUrl = vi.fn()
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createObjectUrl, revokeObjectURL: revokeObjectUrl })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<SupabaseDataPanel {...baseProps} selectedElement={null} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Exportar/ }))
+
+    expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob))
+    expect(click).toHaveBeenCalledOnce()
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:supabase-schema')
+    expect(screen.getByText('✓ SQL exportado')).toBeInTheDocument()
+  })
+
+  it('separates project data from selected-element controls', () => {
+    const { rerender } = render(<SupabaseDataPanel {...baseProps} scope="project" selectedElement={null} />)
+
+    expect(screen.getByText('Mis datos')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Configuración de datos/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Elemento seleccionado/ })).not.toBeInTheDocument()
+
+    rerender(<SupabaseDataPanel {...baseProps} scope="element" selectedElement={null} />)
+
+    expect(screen.queryByText('Mis datos')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Configuración de datos/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Elemento seleccionado/ })).toBeInTheDocument()
   })
 
   it('separates current-user scope from repeating rows', () => {
