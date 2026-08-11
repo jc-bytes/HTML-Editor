@@ -63,6 +63,18 @@ export const DataSourceSchema = z.discriminatedUnion('type', [
     requiresAuth: z.boolean().optional(),
     orderColumn: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
     orderDirection: z.enum(['asc', 'desc']).optional(),
+    storageBuckets: z.array(z.object({
+      name: z.string().regex(/^[a-z][a-z0-9_]*$/),
+      public: z.boolean(),
+    })).max(50).optional(),
+    relations: z.array(z.object({
+      alias: z.string().regex(/^[a-z][a-z0-9_]*$/),
+      column: z.string().regex(/^[a-z][a-z0-9_]*$/),
+      dataSourceId: z.string().min(1),
+      displayField: z.string().regex(/^[a-z][a-z0-9_]*$/),
+      table: z.string().regex(/^[a-z][a-z0-9_]*$/),
+      targetColumn: z.string().regex(/^[a-z][a-z0-9_]*$/),
+    })).max(50).optional(),
   }),
 ])
 
@@ -95,19 +107,19 @@ export const DataRepeaterSchema = z.object({
   errorMessage: z.string().max(300).optional(),
   userFilterColumn: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
   includeUnpublished: z.boolean().optional(),
-  orderColumn: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
+  orderColumn: z.string().regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?$/).optional(),
   orderDirection: z.enum(['asc', 'desc']).optional(),
   fixedFilters: z.array(z.object({
-    field: z.string().regex(/^[a-z][a-z0-9_]*$/),
+    field: z.string().regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?$/),
     operator: z.enum(['eq', 'contains', 'gte', 'lte']),
     value: z.string().min(1).max(500),
   })).max(20).optional(),
-  searchField: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
+  searchField: z.string().regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?$/).optional(),
   filterControls: z.array(z.object({
-    field: z.string().regex(/^[a-z][a-z0-9_]*$/),
+    field: z.string().regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?$/),
     kind: z.enum(['text', 'number', 'boolean', 'date']),
   })).max(20).optional(),
-  visitorSortFields: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)).max(50).optional(),
+  visitorSortFields: z.array(z.string().regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?$/)).max(50).optional(),
 })
 
 export const ConnectionSchema = z.object({
@@ -141,13 +153,19 @@ export const DataActionSchema = z.object({
   pageId: z.string().min(1),
   elementId: z.string().min(1),
   dataSourceId: z.string().min(1),
-  action: z.enum(['create', 'update', 'delete']),
+  action: z.enum(['create', 'update', 'delete', 'upsert', 'set']),
   contextKey: z.string().min(1).max(100).default('record'),
   fieldMappings: z.array(z.object({
     field: z.string().regex(/^[a-z][a-z0-9_]*$/),
     inputName: z.string().regex(/^[a-z][a-z0-9_-]*$/),
   })).max(50).default([]),
   ownerField: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
+  fixedField: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
+  fixedValue: z.string().max(10_000).optional(),
+  recordMode: z.enum(['context', 'current_user']).optional(),
+  valueSource: z.enum(['fixed', 'form', 'current_user', 'now', 'toggle', 'increment']).optional(),
+  valueInputName: z.string().regex(/^[a-z][a-z0-9_-]*$/).optional(),
+  valueAmount: z.number().finite().min(-1_000_000).max(1_000_000).optional(),
   successMessage: z.string().min(1).max(300),
   confirmMessage: z.string().min(1).max(300).optional(),
 })
@@ -327,6 +345,7 @@ const MotionInputSchema = z.discriminatedUnion('type', [
     type: z.literal('url'),
     url: z.string().url().refine((value) => ['http:', 'https:'].includes(new URL(value).protocol)),
   }),
+  z.object({ type: z.literal('upload') }),
 ])
 
 const MotionPersistenceSchema = z.object({
@@ -357,6 +376,7 @@ const MotionReferenceOutputSchema = z.discriminatedUnion('type', [
 
 export const MotionActivitySchema = z.object({
   id: z.string().min(1),
+  runtimeSourceId: z.string().min(1).optional(),
   pageId: z.string().min(1),
   elementId: z.string().min(1),
   mode: z.enum(['analyze', 'reference', 'compare']).default('compare'),
@@ -465,15 +485,25 @@ function validateReferences(
     })
   }
   project.dataSources?.forEach((source, index) => {
-    if (source.type !== 'static') return
-    const recordIds = source.records.map((record) => record.id)
-    if (new Set(recordIds).size !== recordIds.length) {
-      context.addIssue({
-        code: 'custom',
-        path: ['dataSources', index, 'records'],
-        message: 'Record IDs must be unique within a data source.',
-      })
+    if (source.type === 'static') {
+      const recordIds = source.records.map((record) => record.id)
+      if (new Set(recordIds).size !== recordIds.length) {
+        context.addIssue({
+          code: 'custom',
+          path: ['dataSources', index, 'records'],
+          message: 'Record IDs must be unique within a data source.',
+        })
+      }
     }
+    if (source.type === 'supabase') source.relations?.forEach((relation, relationIndex) => {
+      if (!dataSourceIds.includes(relation.dataSourceId)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['dataSources', index, 'relations', relationIndex, 'dataSourceId'],
+          message: 'Related collections must reference an existing data source.',
+        })
+      }
+    })
   })
 
   project.connections.forEach((connection, index) => {

@@ -49,7 +49,8 @@ export function AuthSettingsDialog({
   const [openFieldIndex, setOpenFieldIndex] = useState<number | null>(initialMetadataFields.length ? 0 : null)
   const [error, setError] = useState('')
   const [presentation, setPresentation] = useState<AuthLogoutPresentation>(initialPresentation)
-  const profileTables = tables.filter((table) => table.access === 'user_owned')
+  const profileTables = tables.filter((table) => table.access === 'user_owned'
+    && !/(^|_)roles?($|_)/i.test(table.name))
   const collectionLabel = (table: SupabaseTableConfig) => {
     const displayName = collectionDisplayName(table)
     return displayName === table.name ? table.name : `${displayName} · ${table.name}`

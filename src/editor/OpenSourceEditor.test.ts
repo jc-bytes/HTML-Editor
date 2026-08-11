@@ -8,6 +8,7 @@ import {
   applyComponentLineHeight,
   applyInlineTextStyle,
   cssColorToHex,
+  enhanceColorPicker,
   disableCanvasResizing,
   installEditorCanvasLayoutGuards,
   isEditableCanvasTarget,
@@ -192,6 +193,37 @@ describe('direct canvas resizing', () => {
 })
 
 describe('direct component colors', () => {
+  it('adds an eyedropper that commits the sampled color through Spectrum input', async () => {
+    document.body.innerHTML = `
+      <div class="visual-editor-color-picker">
+        <div class="sp-input-container"><input class="sp-input"></div>
+      </div>
+    `
+    const picker = document.querySelector<HTMLElement>('.visual-editor-color-picker')!
+    const input = picker.querySelector<HTMLInputElement>('.sp-input')!
+    const onChange = vi.fn()
+    input.addEventListener('change', onChange)
+    class MockEyeDropper {
+      open = vi.fn(async () => ({ sRGBHex: '#12abef' }))
+    }
+
+    expect(enhanceColorPicker(picker, MockEyeDropper)).toBe(true)
+    expect(enhanceColorPicker(picker, MockEyeDropper)).toBe(false)
+    picker.querySelector<HTMLButtonElement>('.visual-editor-eyedropper')!.click()
+    await vi.waitFor(() => expect(input.value).toBe('#12abef'))
+
+    expect(input.placeholder).toContain('#RRGGBB')
+    expect(onChange).toHaveBeenCalledOnce()
+  })
+
+  it('leaves a disabled sampling control when the browser lacks EyeDropper', () => {
+    document.body.innerHTML = '<div class="visual-editor-color-picker"><div class="sp-input-container"><input class="sp-input"></div></div>'
+    const picker = document.querySelector<HTMLElement>('.visual-editor-color-picker')!
+
+    expect(enhanceColorPicker(picker, undefined)).toBe(true)
+    expect(picker.querySelector<HTMLButtonElement>('.visual-editor-eyedropper')).toBeDisabled()
+  })
+
   it('adds background and border actions only to container toolbars', () => {
     const editor = grapesjs.init({ headless: true, storageManager: false })
     const [section, text] = editor.getWrapper()!.append('<section><p>Contenido</p></section><p>Texto</p>')

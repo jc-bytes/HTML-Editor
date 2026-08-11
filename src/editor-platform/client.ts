@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { PersistedImportedLibrary } from '../external-libraries/imported-library'
 
 const editorSupabaseUrl = import.meta.env.VITE_EDITOR_SUPABASE_URL?.trim() ?? ''
 const editorSupabasePublishableKey = import.meta.env.VITE_EDITOR_SUPABASE_PUBLISHABLE_KEY?.trim() ?? ''
@@ -34,6 +35,7 @@ export interface EditorConnectionRecord {
 }
 
 export interface EditorProjectData {
+  externalLibraries?: PersistedImportedLibrary[]
   grapesjs?: Record<string, unknown>
   supabaseConfig?: Record<string, unknown>
 }

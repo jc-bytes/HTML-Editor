@@ -2,11 +2,72 @@ import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { ZipProjectExporter } from '../modules/exporter'
 import { validateStaticArchive } from '../modules/exporter/validation/validateStaticArchive'
-import { buildEditorProjectBundle, editorProjectBundle } from './export-project'
+import { addProjectFunctionRuntime, buildEditorProjectBundle, editorProjectBundle } from './export-project'
+import type { ExternalFunctionRegistration } from '../runtime/functions/external-function-registry'
 import grapesjs from 'grapesjs'
 import { defaultSupabaseConfig } from './supabase-data'
 
 describe('new editor project export', () => {
+  it('builds a project runtime containing only functions referenced by placed blocks', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'home', name: 'Home',
+      html: '<form data-builder-function-id="multiply"></form>',
+    }], 'home')
+    const registrations: ExternalFunctionRegistration[] = [{
+      metadata: {
+        id: 'multiply', name: 'Multiply', description: 'Multiplies.',
+        inputs: [{ name: 'left', type: 'number' }, { name: 'right', type: 'number' }],
+        output: { type: 'number' },
+      },
+      implementation: function multiply(left: number, right: number) { return left * right },
+    }, {
+      metadata: {
+        id: 'unused-number', name: 'Unused Number', description: 'Unused.',
+        inputs: [{ name: 'value', type: 'number' }], output: { type: 'number' },
+      },
+      implementation: function unusedNumber(value: number) { return value },
+    }]
+
+    const withRuntime = addProjectFunctionRuntime(bundle, registrations)
+    const runtime = new TextDecoder().decode(
+      withRuntime.files.find((file) => file.path === 'builder-runtime/functions.js')!.bytes,
+    )
+    expect(runtime).toContain('multiply')
+    expect(runtime).not.toContain('unused-number')
+    expect(runtime).not.toContain('double-number')
+  })
+
+  it('includes registered library functions for an editable JS Lab without graphical function forms', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'home', name: 'Home',
+      html: `<section data-builder-js-lab
+        data-builder-js-lab-code="let x = doubleNumber(5);"
+        data-builder-js-lab-output-expression="x"
+        data-builder-js-lab-output-type="number"></section>`,
+    }], 'home')
+    const registrations: ExternalFunctionRegistration[] = [{
+      metadata: {
+        id: 'double-number', name: 'Double Number', description: 'Doubles.',
+        inputs: [{ name: 'value', type: 'number' }], output: { type: 'number' },
+      },
+      implementation: function doubleNumber(value: number) { return value * 2 },
+    }]
+
+    const withRuntime = addProjectFunctionRuntime(bundle, registrations)
+    const runtime = new TextDecoder().decode(
+      withRuntime.files.find((file) => file.path === 'builder-runtime/functions.js')!.bytes,
+    )
+    expect(runtime).toContain('double-number')
+    expect(runtime).toContain('data-builder-js-lab-run')
+  })
+
+  it('fails project runtime generation when a placed function is unavailable', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'home', name: 'Home', html: '<form data-builder-function-id="missing"></form>',
+    }], 'home')
+    expect(() => addProjectFunctionRuntime(bundle, [])).toThrow('missing')
+  })
+
   it('keeps the explicit homepage when pages are reordered', () => {
     const editor = grapesjs.init({ headless: true, storageManager: false })
     const home = editor.Pages.getAll()[0]
@@ -32,6 +93,22 @@ describe('new editor project export', () => {
     const markup = new TextDecoder().decode(page.bytes)
 
     expect(markup).toContain('<body class="site-page" style="background-color: rgb(185, 123, 123);">')
+  })
+
+  it('hides editor-only JS Labs in preview/export while preserving visible labs', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'home',
+      name: 'Inicio',
+      html: `<main>
+        <section data-builder-js-lab data-builder-js-lab-public="false">Editor lab</section>
+        <section data-builder-js-lab data-builder-js-lab-public="true">Visible lab</section>
+      </main>`,
+    }], 'home')
+    const page = bundle.files.find((file) => file.path === 'pages/home.html')!
+    const markup = new TextDecoder().decode(page.bytes)
+
+    expect(markup).toContain('[data-builder-js-lab][data-builder-js-lab-public="false"] { display: none !important; }')
+    expect(markup).toContain('data-builder-js-lab-public="true"')
   })
 
   it('exports every page and preserves button navigation', async () => {
@@ -146,6 +223,111 @@ describe('new editor project export', () => {
       ownerField: 'user_id',
       fieldMappings: [{ field: 'title', inputName: 'project_title' }],
       successMessage: 'Proyecto creado.',
+    })])
+  })
+
+  it('exports a current-user form as an upsert action', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'profile', name: 'Profile', html: `<form data-builder-flow-action="save-current-user-record"
+        data-builder-flow-data-source="profiles-table" data-builder-flow-owner-field="user_id"
+        data-builder-flow-field-map='[{"field":"display_name","inputName":"display_name"}]'
+        data-builder-flow-success-message="Cambios guardados."><input name="display_name"></form>`,
+    }], 'profile', 'Profile', {
+      projectUrl: 'https://school.supabase.co',
+      publishableKey: 'sb_publishable_test_key_123456789',
+      tables: [{
+        id: 'profiles-table', name: 'profiles', access: 'user_owned', recordMode: 'single_per_user',
+        fields: [{ id: 'name', name: 'display_name', type: 'text' }], relations: [],
+      }],
+    })
+
+    expect(bundle.manifest.dataActions).toEqual([expect.objectContaining({
+      action: 'upsert', ownerField: 'user_id',
+      fieldMappings: [{ field: 'display_name', inputName: 'display_name' }],
+    })])
+  })
+
+  it('preserves Storage bucket settings in the exported site', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'profile', name: 'Profile', html: '<main>Profile</main>',
+    }], 'profile', 'Profile', {
+      projectUrl: 'https://school.supabase.co',
+      publishableKey: 'sb_publishable_test_key_123456789',
+      tables: [{
+        id: 'profiles', name: 'profiles', access: 'user_owned', relations: [],
+        fields: [{
+          id: 'avatar', name: 'avatar', type: 'media',
+          upload: { bucket: 'profile_images', kind: 'image', maxSizeMb: 5, visibility: 'public' },
+        }],
+      }],
+    })
+
+    expect(bundle.manifest.dataSources).toEqual([expect.objectContaining({
+      storageBuckets: [{ name: 'profile_images', public: true }],
+    })])
+    const setupSql = new TextDecoder().decode(
+      bundle.files.find((file) => file.path === 'database/setup.sql')?.bytes,
+    )
+    expect(setupSql).toContain("values ('profile_images', 'profile_images', true, 5242880")
+  })
+
+  it('exports related fields, relation filters, and dropdown metadata', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'articles', name: 'Articles', html: `<main data-builder-data-component="simple_list">
+        <input data-builder-search-field="related_author_id.display_name">
+        <section data-builder-repeater="articles" data-builder-sort-field="related_author_id.display_name" data-builder-sort-direction="desc">
+          <h2 data-builder-bind-field="related_author_id.display_name" data-builder-bind-target="text" data-builder-data-source="articles"></h2>
+        </section>
+      </main>`,
+    }], 'articles', 'Articles', {
+      projectUrl: 'https://school.supabase.co', publishableKey: 'sb_publishable_test_key_123456789',
+      tables: [{
+        id: 'authors', name: 'authors', access: 'public_read', relations: [],
+        fields: [{ id: 'name', name: 'display_name', type: 'text' }],
+      }, {
+        id: 'articles', name: 'articles', access: 'public_read',
+        fields: [{ id: 'author', name: 'author_id', type: 'uuid' }],
+        relations: [{
+          id: 'article-author', column: 'author_id', targetTableId: 'authors', targetColumn: 'id',
+          displayField: 'display_name', onDelete: 'restrict',
+        }],
+      }],
+    })
+
+    expect(bundle.manifest.dataSources?.find((source) => source.id === 'supabase-articles'))
+      .toEqual(expect.objectContaining({ relations: [expect.objectContaining({
+        alias: 'related_author_id', table: 'authors', displayField: 'display_name',
+        dataSourceId: 'supabase-authors',
+      })] }))
+    expect(bundle.manifest.bindings).toEqual([expect.objectContaining({
+      field: 'related_author_id.display_name',
+    })])
+    expect(bundle.manifest.repeaters).toEqual([expect.objectContaining({
+      searchField: 'related_author_id.display_name',
+      orderColumn: 'related_author_id.display_name',
+    })])
+  })
+
+  it('exports a manager button as a fixed field update', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'manage', name: 'Manage', html: `<button data-builder-flow-action="set-record-field"
+        data-builder-flow-data-source="articles" data-builder-flow-fixed-field="published"
+        data-builder-flow-fixed-value="true" data-builder-flow-record-mode="current_user"
+        data-builder-flow-value-source="current_user" data-builder-flow-owner-field="user_id"
+        data-builder-flow-success-message="Publicado.">Publicar</button>`,
+    }], 'manage', 'Manage', {
+      projectUrl: 'https://school.supabase.co', publishableKey: 'sb_publishable_test_key_123456789',
+      tables: [{
+        id: 'articles', name: 'articles', access: 'public_read', fields: [], relations: [],
+        management: { roles: ['admin'], actions: ['select', 'update'] },
+      }, {
+        id: 'roles', name: 'user_roles', access: 'user_owned', fields: [{ id: 'role', name: 'role', type: 'text' }], relations: [],
+      }],
+    })
+
+    expect(bundle.manifest.dataActions).toEqual([expect.objectContaining({
+      action: 'set', fixedField: 'published', fixedValue: 'true', recordMode: 'current_user',
+      valueSource: 'current_user', ownerField: 'user_id',
     })])
   })
 
@@ -313,6 +495,54 @@ describe('new editor project export', () => {
     expect(new TextDecoder().decode(
       bundle.files.find((file) => file.path === 'database/setup.sql')?.bytes,
     )).toContain('enable row level security')
+  })
+
+  it('exports navigation using a related record from the repeated row', () => {
+    const bundle = buildEditorProjectBundle([
+      {
+        id: 'home',
+        name: 'Home',
+        html: `<article data-builder-repeater="table-attempts">
+          <button
+            data-builder-flow-action="navigate"
+            data-builder-flow-target="practice"
+            data-builder-flow-data-source="table-practices"
+            data-builder-flow-record-field="practice_id"
+          >Open practice</button>
+        </article>`,
+      },
+      { id: 'practice', name: 'Practice', html: '<h1>Practice</h1>' },
+    ], 'home', 'Related navigation', {
+      projectUrl: 'https://school.supabase.co',
+      publishableKey: 'sb_publishable_test_key_123456789',
+      tables: [{
+        id: 'table-attempts',
+        name: 'practice_attempts',
+        access: 'user_owned',
+        fields: [
+          { id: 'score', name: 'score', type: 'number' },
+          { id: 'practice-id', name: 'practice_id', type: 'uuid' },
+        ],
+        relations: [{
+          id: 'attempt-practice',
+          column: 'practice_id',
+          targetTableId: 'table-practices',
+          targetColumn: 'id',
+          onDelete: 'cascade',
+        }],
+      }, {
+        id: 'table-practices',
+        name: 'practices',
+        access: 'public_read',
+        fields: [{ id: 'title', name: 'title', type: 'text' }],
+        relations: [],
+      }],
+    })
+
+    expect(bundle.manifest.connections[0].context?.record).toEqual({
+      dataSourceId: 'supabase-table_practices',
+      recordId: '$record.practice_id',
+    })
   })
 
   it('exports a current-user single-row binding independently from repeat mode', () => {

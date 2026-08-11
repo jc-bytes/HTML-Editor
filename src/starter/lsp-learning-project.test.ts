@@ -64,6 +64,9 @@ describe('native LSP learning starter', () => {
     expect(editor.getHtml({ component: progress })).not.toContain('92%')
     expect(editor.getHtml({ component: progress })).not.toContain('table-like')
     expect(editor.getHtml({ component: practice })).toContain('data-motion-activity="true"')
+    expect(editor.getHtml({ component: practice })).toContain('data-motion-show-results="true"')
+    expect(editor.getHtml({ component: practice })).toContain('Consejo de cámara')
+    expect(editor.getHtml({ component: practice })).not.toContain('Antes de comenzar')
     expect(editor.getHtml({ component: practice })).toContain('Vista espejo')
     expect(editor.getHtml({ component: practice })).toContain('data-builder-flow-action="toggle-record"')
     expect(editor.getHtml({ component: practice })).toContain('data-builder-flow-data-source="table-favorite-practices"')
@@ -224,7 +227,11 @@ describe('native LSP learning starter', () => {
     })])
     expect(bundle.manifest.motionActivities).toHaveLength(2)
     expect(bundle.manifest.motionActivities?.find((activity) => activity.pageId === 'detalle'))
-      .toEqual(expect.objectContaining({ mode: 'compare', persistence: expect.any(Object) }))
+      .toEqual(expect.objectContaining({
+        mode: 'compare',
+        persistence: expect.any(Object),
+        presentation: expect.objectContaining({ showResults: true }),
+      }))
     expect(bundle.manifest.pages.some((page) => page.id === 'preparacion')).toBe(false)
     expect(bundle.manifest.pages.some((page) => page.id === 'practica')).toBe(false)
 

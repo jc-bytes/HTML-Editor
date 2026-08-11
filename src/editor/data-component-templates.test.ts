@@ -35,6 +35,22 @@ describe('responsive data component templates', () => {
     })
   })
 
+  it('does not mistake a JSON mediapipe result for image or video media', () => {
+    const attempts: SupabaseTableConfig = {
+      ...table,
+      fields: [
+        { id: 'score', name: 'score', type: 'number' },
+        { id: 'feedback', name: 'feedback', type: 'long_text' },
+        { id: 'result', name: 'mediapipe_result', type: 'json' },
+      ],
+    }
+
+    expect(suggestDataComponentMapping('featured_detail', attempts)).toEqual({
+      description: 'feedback',
+      badge: 'score',
+    })
+  })
+
   it('creates a repeated card with safe data bindings', () => {
     const html = createDataComponentMarkup('card_grid', table.id, {
       media: 'media_url',
@@ -119,6 +135,31 @@ describe('responsive data component templates', () => {
       },
       tableId: table.id,
       templateId: 'simple_list',
+    })
+  })
+
+  it('recovers an older featured card even when its outer component marker is missing', () => {
+    const html = createDataComponentMarkup('featured_detail', table.id, {
+      title: 'practice_title',
+      description: 'description',
+      badge: 'difficulty',
+    })
+    const document = new DOMParser().parseFromString(html, 'text/html')
+    const wrapper = document.querySelector<HTMLElement>('[data-builder-data-component]')!
+    const featured = wrapper.querySelector<HTMLElement>('.builder-data-featured')!
+    wrapper.replaceWith(featured)
+    const nestedTitle = featured.querySelector('h2')!
+    const root = findDataComponentRoot(nestedTitle)!
+
+    expect(root).toBe(featured)
+    expect(readDataComponentSettings(root)).toMatchObject({
+      templateId: 'featured_detail',
+      tableId: table.id,
+      mapping: {
+        title: 'practice_title',
+        description: 'description',
+        badge: 'difficulty',
+      },
     })
   })
 

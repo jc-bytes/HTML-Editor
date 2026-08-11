@@ -98,9 +98,9 @@ export const dataComponentTemplates: DataComponentTemplate[] = [{
   responsiveSummary: '4 × 3 escritorio/tableta · 2 × 6 móvil',
   slots: [
     { id: 'media', label: 'Imagen o video', target: 'src', accepts: ['media', 'url'] },
-    { id: 'title', label: 'Título', target: 'text', accepts: ['text', 'long_text'] },
-    { id: 'description', label: 'Descripción', target: 'text', accepts: ['long_text', 'text'] },
-    { id: 'badge', label: 'Indicador', target: 'text', accepts: ['number', 'text', 'boolean'] },
+    { id: 'title', label: 'Título', target: 'text', accepts: ['text', 'long_text', 'number', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
+    { id: 'description', label: 'Texto descriptivo', target: 'text', accepts: ['long_text', 'text', 'number', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
+    { id: 'badge', label: 'Indicador', target: 'text', accepts: ['number', 'text', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
   ],
 }, {
   id: 'carousel',
@@ -110,9 +110,9 @@ export const dataComponentTemplates: DataComponentTemplate[] = [{
   responsiveSummary: '4 visibles · 3 en tableta · 1 en móvil',
   slots: [
     { id: 'media', label: 'Imagen o video', target: 'src', accepts: ['media', 'url'] },
-    { id: 'title', label: 'Título', target: 'text', accepts: ['text', 'long_text'] },
-    { id: 'description', label: 'Descripción', target: 'text', accepts: ['long_text', 'text'] },
-    { id: 'badge', label: 'Indicador', target: 'text', accepts: ['number', 'text', 'boolean'] },
+    { id: 'title', label: 'Título', target: 'text', accepts: ['text', 'long_text', 'number', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
+    { id: 'description', label: 'Texto descriptivo', target: 'text', accepts: ['long_text', 'text', 'number', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
+    { id: 'badge', label: 'Indicador', target: 'text', accepts: ['number', 'text', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
   ],
 }, {
   id: 'simple_list',
@@ -122,9 +122,9 @@ export const dataComponentTemplates: DataComponentTemplate[] = [{
   responsiveSummary: 'Horizontal · se apila en móvil',
   slots: [
     { id: 'media', label: 'Miniatura', target: 'src', accepts: ['media', 'url'] },
-    { id: 'title', label: 'Título', target: 'text', accepts: ['text', 'long_text'] },
-    { id: 'description', label: 'Descripción', target: 'text', accepts: ['long_text', 'text'] },
-    { id: 'badge', label: 'Indicador', target: 'text', accepts: ['number', 'text', 'boolean'] },
+    { id: 'title', label: 'Título', target: 'text', accepts: ['text', 'long_text', 'number', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
+    { id: 'description', label: 'Texto descriptivo', target: 'text', accepts: ['long_text', 'text', 'number', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
+    { id: 'badge', label: 'Indicador', target: 'text', accepts: ['number', 'text', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
   ],
 }, {
   id: 'featured_detail',
@@ -134,17 +134,17 @@ export const dataComponentTemplates: DataComponentTemplate[] = [{
   responsiveSummary: '2 columnas · vertical en móvil',
   slots: [
     { id: 'media', label: 'Imagen o video', target: 'src', accepts: ['media', 'url'] },
-    { id: 'title', label: 'Título', target: 'text', accepts: ['text', 'long_text'] },
-    { id: 'description', label: 'Descripción', target: 'text', accepts: ['long_text', 'text'] },
-    { id: 'badge', label: 'Indicador', target: 'text', accepts: ['number', 'text', 'boolean'] },
+    { id: 'title', label: 'Título', target: 'text', accepts: ['text', 'long_text', 'number', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
+    { id: 'description', label: 'Texto descriptivo', target: 'text', accepts: ['long_text', 'text', 'number', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
+    { id: 'badge', label: 'Indicador', target: 'text', accepts: ['number', 'text', 'boolean', 'date', 'datetime', 'url', 'uuid'] },
   ],
 }]
 
 const slotPatterns: Record<DataComponentSlotId, RegExp[]> = {
   media: [/media/, /image|imagen/, /photo|foto/, /video/, /cover|portada/],
   title: [/title|titulo/, /name|nombre/, /heading|encabezado/, /label|etiqueta/],
-  description: [/description|descripcion/, /summary|resumen/, /instructions|instrucciones/, /details|detalles/],
-  badge: [/difficulty|dificultad/, /category|categoria/, /status|estado/, /price|precio/, /level|nivel/],
+  description: [/description|descripcion/, /summary|resumen/, /feedback|comentario/, /instructions|instrucciones/, /details|detalles/],
+  badge: [/score|puntaje|puntuacion/, /difficulty|dificultad/, /category|categoria/, /status|estado/, /price|precio/, /level|nivel/],
 }
 
 export function effectiveDataFields(table: SupabaseTableConfig): SupabaseField[] {
@@ -163,12 +163,13 @@ export function compatibleFieldsForSlot(
   slotId: DataComponentSlotId,
   table: SupabaseTableConfig,
   mapping: DataComponentMapping = {},
+  additionalFields: SupabaseField[] = [],
 ) {
   const slot = dataComponentTemplateById(templateId).slots.find((candidate) => candidate.id === slotId)
   if (!slot) return []
   const usedElsewhere = new Set(Object.entries(mapping).flatMap(([candidateSlot, field]) =>
     candidateSlot !== slotId && field ? [field] : []))
-  return effectiveDataFields(table).filter((field) =>
+  return [...effectiveDataFields(table), ...additionalFields].filter((field) =>
     slot.accepts.includes(field.type) && !usedElsewhere.has(field.name))
 }
 
@@ -248,10 +249,21 @@ export function dataComponentDesignPreviewCount(
 
 export function findDataComponentRoot(element: Element) {
   return element.closest<HTMLElement>(`[${DATA_COMPONENT_ATTRIBUTE}]`)
+    ?? element.closest<HTMLElement>([
+    '.builder-data-grid',
+    '.builder-data-carousel',
+    '.builder-data-list',
+    '.builder-data-featured',
+  ].join(','))
 }
 
 export function readDataComponentSettings(root: HTMLElement): DataComponentSettings | null {
   const requestedTemplateId = root.getAttribute(DATA_COMPONENT_ATTRIBUTE)
+    || (root.classList.contains('builder-data-carousel') ? 'carousel'
+      : root.classList.contains('builder-data-list') ? 'simple_list'
+        : root.classList.contains('builder-data-featured') ? 'featured_detail'
+          : root.classList.contains('builder-data-grid') ? 'card_grid'
+            : '')
   if (requestedTemplateId !== 'carousel'
     && requestedTemplateId !== 'simple_list'
     && requestedTemplateId !== 'featured_detail'
@@ -338,9 +350,8 @@ export function suggestDataComponentMapping(
   const fields = effectiveDataFields(table)
   template.slots.forEach((slot) => {
     const candidates = fields.filter((field) => !used.has(field.name))
-    const named = candidates.find((field) => slotPatterns[slot.id].some((pattern) => pattern.test(field.name)))
-    const typed = candidates.find((field) => slot.accepts.includes(field.type))
-    const match = named ?? typed
+    const match = candidates.find((field) =>
+      slot.accepts.includes(field.type) && slotPatterns[slot.id].some((pattern) => pattern.test(field.name)))
     if (match) {
       mapping[slot.id] = match.name
       used.add(match.name)
@@ -369,7 +380,7 @@ export function createDataComponentMarkup(
   const sourceMode = 'context'
   const escapeText = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const escapeAttribute = (value: string) => escapeText(value).replace(/"/g, '&quot;')
-  const readableField = (value: string) => value.replace(/_/g, ' ')
+  const readableField = (value: string) => value.replace('.', ' → ').replace(/_/g, ' ')
   const fieldLabel = (field: string | undefined, fallback: string) => field
     ? `${fallback}: ${field.replace(/_/g, ' ')}`
     : fallback

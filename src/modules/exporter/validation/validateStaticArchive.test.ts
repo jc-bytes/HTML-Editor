@@ -31,4 +31,24 @@ describe('validateStaticArchive', () => {
       'index.html referencia un archivo inexistente: assets/Hero.svg.',
     )
   })
+
+  it('requires the external function runtime when a page contains a function block', async () => {
+    const manifest = {
+      version: 2,
+      elementOverrides: [],
+      name: 'Missing function runtime',
+      startPage: 'index',
+      pages: [{ id: 'index', name: 'Home', file: 'index.html' }],
+      connections: [],
+    }
+    const result = await validateStaticArchive(await archiveBlob({
+      'index.html': '<html><body><form data-builder-function-id="double-number"></form><script data-builder-config></script><script data-builder-runtime src="builder-runtime/navigation.js"></script></body></html>',
+      'project.json': JSON.stringify(manifest),
+      'builder-runtime/navigation.js': '/* runtime */',
+    }))
+
+    expect(result.valid).toBe(false)
+    expect(result.errors).toContain('Falta el runtime de funciones externas.')
+    expect(result.errors).toContain('index.html no carga el runtime de funciones externas.')
+  })
 })

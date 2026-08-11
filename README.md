@@ -22,6 +22,11 @@ responsive**. Incluye:
 - Acciones para navegar, regresar y abrir una URL.
 - Conexiones editables almacenadas en `project.json`.
 - Fuentes de datos estáticas o REST con referencias de registro genéricas.
+- Colecciones Supabase de uno o varios registros por persona, con RLS generado.
+- Formularios que cargan y guardan el registro del usuario actual mediante una acción visual.
+- Gestión segura por roles para ver, crear, aprobar, publicar, editar o eliminar registros.
+- Campos de archivo conectados a Supabase Storage, con imágenes, video, audio, documentos y límites configurables.
+- Relaciones visuales entre colecciones para mostrar campos conectados y crear selectores de opciones en formularios.
 - Página de acceso con registro, inicio y cierre de sesión mediante Supabase.
 - Protección automática de las demás páginas y retorno después de iniciar sesión.
 - Listas repetidas que reutilizan una plantilla HTML por cada registro.

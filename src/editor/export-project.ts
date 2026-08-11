@@ -12,6 +12,13 @@ import type {
 import { zipProjectExporter } from '../modules/exporter'
 import { createStableElementId } from '../modules/preview'
 import { validateStaticArchive } from '../modules/exporter/validation/validateStaticArchive'
+import { externalFunctionRegistrations } from '../external-functions/catalog'
+import {
+  createFunctionBlockRuntimeSource,
+  EXTERNAL_FUNCTION_ATTRIBUTE,
+} from '../runtime/functions/function-block-runtime'
+import type { ExternalFunctionRegistration } from '../runtime/functions/external-function-registry'
+import { JS_LAB_ATTRIBUTE, JS_LAB_PUBLIC_ATTRIBUTE } from './external-function-blocks'
 import {
   FLOW_ACTION_ATTRIBUTE,
   FLOW_ACTIVE_LABEL_ATTRIBUTE,
@@ -32,6 +39,8 @@ import {
   DATA_SCOPE_ATTRIBUTE,
   isSafePublishableKey,
   normalizedSupabaseConfig,
+  relationAlias,
+  relationDisplayField,
   supabaseDataSourceId,
 } from './supabase-data'
 import type { SupabaseEditorConfig } from './supabase-data'
@@ -105,7 +114,11 @@ function pageDocument(page: EditorExportPage) {
     '.builder-data-list',
     '.builder-data-featured',
   ].join(',')))
-  const pageStyles = [page.css ?? '', usesDataComponents ? dataComponentStyles : '']
+  const usesJsLab = Boolean(parsed.querySelector(`[${JS_LAB_ATTRIBUTE}]`))
+  const jsLabVisibilityStyles = usesJsLab
+    ? `[${JS_LAB_ATTRIBUTE}][${JS_LAB_PUBLIC_ATTRIBUTE}="false"] { display: none !important; }`
+    : ''
+  const pageStyles = [page.css ?? '', usesDataComponents ? dataComponentStyles : '', jsLabVisibilityStyles]
     .filter(Boolean)
     .join('\n')
   const title = document.createElement('div')
@@ -182,6 +195,12 @@ export function buildEditorProjectBundle(
     && !normalizedData?.tables.some((table) => /(^|_)roles?($|_)/i.test(table.name))) {
     throw new Error('Configura una tabla de roles antes de restringir páginas por rol.')
   }
+  if (normalizedData?.tables.some((table) => table.management)
+    && !normalizedData.tables.some((table) => table.access === 'user_owned'
+      && /(^|_)roles?($|_)/i.test(table.name)
+      && table.fields.some((field) => field.name === 'role'))) {
+    throw new Error('Crea una colección segura de roles antes de exportar controles de gestión.')
+  }
 
   if (authPage && !hasSupabaseCredentials) {
     throw new Error('Conecta Supabase con una URL y publishable key antes de probar la página de acceso.')
@@ -208,11 +227,24 @@ export function buildEditorProjectBundle(
           if (!repeater) return {}
           const tableId = repeater?.getAttribute(DATA_REPEATER_ATTRIBUTE)
           const resolvedTableId = tableId && tableId !== 'true' ? tableId : fallbackTableId
-          return resolvedTableId ? {
+          if (!resolvedTableId) return {}
+          const requestedTargetTableId = element.getAttribute(FLOW_DATA_SOURCE_ATTRIBUTE)?.trim()
+          const requestedRecordField = element.getAttribute(FLOW_RECORD_FIELD_ATTRIBUTE)?.trim()
+          const sourceTable = normalizedData?.tables.find((table) => table.id === resolvedTableId)
+          const relatedRecord = sourceTable?.relations.find((relation) =>
+            relation.targetTableId === requestedTargetTableId
+              && relation.column === requestedRecordField)
+          return {
           context: {
-              record: { dataSourceId: supabaseDataSourceId(resolvedTableId), recordId: '$record.id' },
+              record: relatedRecord ? {
+                dataSourceId: supabaseDataSourceId(relatedRecord.targetTableId),
+                recordId: `$record.${relatedRecord.column}`,
+              } : {
+                dataSourceId: supabaseDataSourceId(resolvedTableId),
+                recordId: '$record.id',
+              },
           },
-          } : {}
+          }
         })(),
       })
     })
@@ -239,6 +271,8 @@ export function buildEditorProjectBundle(
       `[${FLOW_ACTION_ATTRIBUTE}="create-record"]`,
       `[${FLOW_ACTION_ATTRIBUTE}="update-record"]`,
       `[${FLOW_ACTION_ATTRIBUTE}="delete-record"]`,
+      `[${FLOW_ACTION_ATTRIBUTE}="save-current-user-record"]`,
+      `[${FLOW_ACTION_ATTRIBUTE}="set-record-field"]`,
     ].join(',')).forEach((element, index) => {
       const connection = readDataActionConnection(Object.fromEntries(
         [...element.attributes].map((attribute) => [attribute.name, attribute.value]),
@@ -253,12 +287,23 @@ export function buildEditorProjectBundle(
         elementId: createStableElementId(element, page.id),
         dataSourceId: supabaseDataSourceId(connection.dataSourceTableId),
         action: connection.action === 'create-record' ? 'create'
-          : connection.action === 'update-record' ? 'update' : 'delete',
+          : connection.action === 'update-record' ? 'update'
+            : connection.action === 'save-current-user-record' ? 'upsert'
+              : connection.action === 'set-record-field' ? 'set' : 'delete',
         contextKey: connection.contextKey,
+        recordMode: connection.recordMode ?? 'context',
+        valueSource: connection.valueSource ?? (connection.fixedValue === '$now' ? 'now' : 'fixed'),
         fieldMappings,
         ...(connection.ownerField && safeField(connection.ownerField)
           ? { ownerField: connection.ownerField }
           : {}),
+        ...(connection.fixedField && safeField(connection.fixedField)
+          ? { fixedField: connection.fixedField, fixedValue: connection.fixedValue ?? '' }
+          : {}),
+        ...(connection.valueInputName && /^[a-z][a-z0-9_-]*$/.test(connection.valueInputName)
+          ? { valueInputName: connection.valueInputName }
+          : {}),
+        ...(Number.isFinite(connection.valueAmount) ? { valueAmount: connection.valueAmount } : {}),
         successMessage: connection.successMessage.slice(0, 300),
         ...(connection.confirmMessage ? { confirmMessage: connection.confirmMessage.slice(0, 300) } : {}),
       })
@@ -299,7 +344,7 @@ export function buildEditorProjectBundle(
         const componentRoot = element.closest<HTMLElement>(`[${DATA_COMPONENT_ATTRIBUTE}]`)
         const safeField = (value: string | null | undefined) => {
           const field = value?.trim()
-          return field && /^[a-z][a-z0-9_]*$/.test(field) ? field : undefined
+          return field && /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?$/.test(field) ? field : undefined
         }
         const orderColumn = safeField(element.getAttribute(DATA_SORT_FIELD_ATTRIBUTE))
         const fixedFilters = [...(componentRoot?.querySelectorAll<HTMLElement>(`[${DATA_FIXED_FILTER_ATTRIBUTE}]`) ?? [])]
@@ -428,6 +473,22 @@ export function buildEditorProjectBundle(
       } : {}),
       ...(normalizedData?.projectUrl && normalizedData.publishableKey ? {
         dataSources: normalizedData.tables.map((table) => {
+          const storageBuckets = [...new Map(normalizedData.tables.flatMap((candidate) =>
+            candidate.fields.flatMap((field) => field.upload
+              ? [[field.upload.bucket, { name: field.upload.bucket, public: field.upload.visibility === 'public' }] as const]
+              : []))).values()]
+          const relations = table.relations.flatMap((relation) => {
+            const target = normalizedData.tables.find((candidate) => candidate.id === relation.targetTableId)
+            if (!target || target.access === 'private') return []
+            return [{
+              alias: relationAlias(relation),
+              column: relation.column,
+              dataSourceId: supabaseDataSourceId(target.id),
+              displayField: relationDisplayField(normalizedData, relation),
+              table: target.name,
+              targetColumn: relation.targetColumn,
+            }]
+          })
           const recentColumn = table.name === 'practice_attempts'
             ? 'created_at'
             : table.name === 'practice_progress'
@@ -442,6 +503,8 @@ export function buildEditorProjectBundle(
             table: table.name,
             publishedOnly: table.access === 'public_read',
             requiresAuth: table.access !== 'public_read',
+            ...(storageBuckets.length ? { storageBuckets } : {}),
+            ...(relations.length ? { relations } : {}),
             ...(table.access === 'public_read' ? { orderColumn: 'sort_order', orderDirection: 'asc' as const } : {}),
             ...(recentColumn ? { orderColumn: recentColumn, orderDirection: 'desc' as const } : {}),
           }
@@ -457,7 +520,51 @@ export function buildEditorProjectBundle(
   }
 }
 
-export function editorProjectBundle(editor: Editor, supabaseConfig?: SupabaseEditorConfig) {
+export function addProjectFunctionRuntime(
+  bundle: ProjectBundle,
+  registrations: ExternalFunctionRegistration[],
+) {
+  const filesByPath = new Map(bundle.files.map((file) => [file.path, file]))
+  const decoder = new TextDecoder()
+  const usedFunctionIds = new Set<string>()
+  let usesJsLab = false
+  bundle.manifest.pages.forEach((page) => {
+    const file = filesByPath.get(page.file)
+    if (!file) return
+    const document = new DOMParser().parseFromString(decoder.decode(file.bytes), 'text/html')
+    if (document.querySelector(`[${JS_LAB_ATTRIBUTE}]`)) usesJsLab = true
+    document.querySelectorAll<HTMLElement>(`[${EXTERNAL_FUNCTION_ATTRIBUTE}]`).forEach((element) => {
+      const id = element.getAttribute(EXTERNAL_FUNCTION_ATTRIBUTE)?.trim()
+      if (id) usedFunctionIds.add(id)
+    })
+  })
+  if (!usedFunctionIds.size && !usesJsLab) return bundle
+
+  const registrationsById = new Map(registrations.map((registration) => [
+    registration.metadata.id,
+    registration,
+  ]))
+  const usedRegistrations = (usesJsLab ? registrations : [...usedFunctionIds].map((id) => {
+    const registration = registrationsById.get(id)
+    if (!registration) throw new Error(`No se encontró la función “${id}” usada por el proyecto.`)
+    return registration
+  }))
+  const runtimeFile: ProjectFile = {
+    bytes: new TextEncoder().encode(createFunctionBlockRuntimeSource(usedRegistrations)),
+    mediaType: 'text/javascript',
+    path: 'builder-runtime/functions.js',
+  }
+  return {
+    ...bundle,
+    files: [...bundle.files.filter((file) => file.path !== runtimeFile.path), runtimeFile],
+  }
+}
+
+export function editorProjectBundle(
+  editor: Editor,
+  supabaseConfig?: SupabaseEditorConfig,
+  functionRegistrations: ExternalFunctionRegistration[] = externalFunctionRegistrations,
+) {
   const pages = editor.Pages.getAll().map((page) => {
     const component = page.getMainComponent()
     const body = document.createElement('body')
@@ -482,17 +589,21 @@ export function editorProjectBundle(editor: Editor, supabaseConfig?: SupabaseEdi
     }
   })
 
-  return buildEditorProjectBundle(
+  return addProjectFunctionRuntime(buildEditorProjectBundle(
     pages,
     pages.find((page) => page.isStartPage)?.id ?? pages[0]?.id ?? '',
     'Sitio creado con Visual Builder',
     supabaseConfig,
-  )
+  ), functionRegistrations)
 }
 
-export async function exportEditorProject(editor: Editor, supabaseConfig?: SupabaseEditorConfig) {
+export async function exportEditorProject(
+  editor: Editor,
+  supabaseConfig?: SupabaseEditorConfig,
+  functionRegistrations: ExternalFunctionRegistration[] = externalFunctionRegistrations,
+) {
   await editor.store()
-  const bundle = editorProjectBundle(editor, supabaseConfig)
+  const bundle = editorProjectBundle(editor, supabaseConfig, functionRegistrations)
   const blob = await zipProjectExporter.export(bundle)
   const validation = await validateStaticArchive(blob)
   if (!validation.valid) {

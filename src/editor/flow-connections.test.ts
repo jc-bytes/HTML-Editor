@@ -28,6 +28,20 @@ describe('screen flow connections', () => {
     })
   })
 
+  it('serializes a related record to open on the destination screen', () => {
+    const attributes = screenFlowAttributes('practice', {
+      dataSourceTableId: 'table-practices',
+      recordField: 'practice_id',
+    })
+
+    expect(readScreenFlowConnection(attributes)).toEqual({
+      action: 'navigate',
+      targetPageId: 'practice',
+      dataSourceTableId: 'table-practices',
+      recordField: 'practice_id',
+    })
+  })
+
   it('ignores incomplete connection attributes', () => {
     expect(readScreenFlowConnection({ [FLOW_ACTION_ATTRIBUTE]: 'navigate' })).toBeNull()
     expect(readScreenFlowConnection({ [FLOW_TARGET_ATTRIBUTE]: 'catalog' })).toBeNull()
@@ -72,6 +86,48 @@ describe('screen flow connections', () => {
       ownerField: 'user_id',
       fieldMappings: [{ field: 'title', inputName: 'project_title' }],
       successMessage: 'Proyecto creado.',
+    })
+  })
+
+  it('serializes the current-user save action', () => {
+    const attributes = dataActionAttributes({
+      action: 'save-current-user-record',
+      dataSourceTableId: 'profiles',
+      contextKey: 'record',
+      ownerField: 'user_id',
+      fieldMappings: [{ field: 'display_name', inputName: 'display_name' }],
+      successMessage: 'Cambios guardados.',
+    })
+
+    expect(readDataActionConnection(attributes)).toMatchObject({
+      action: 'save-current-user-record',
+      ownerField: 'user_id',
+      fieldMappings: [{ field: 'display_name', inputName: 'display_name' }],
+    })
+  })
+
+  it('serializes a manager field change', () => {
+    const attributes = dataActionAttributes({
+      action: 'set-record-field',
+      dataSourceTableId: 'articles',
+      contextKey: 'record',
+      fieldMappings: [],
+      fixedField: 'published',
+      fixedValue: 'true',
+      recordMode: 'current_user',
+      valueSource: 'increment',
+      valueAmount: 2,
+      successMessage: 'Publicado.',
+    })
+
+    expect(readDataActionConnection(attributes)).toMatchObject({
+      action: 'set-record-field',
+      fixedField: 'published',
+      fixedValue: 'true',
+      recordMode: 'current_user',
+      valueSource: 'increment',
+      valueAmount: 2,
+      successMessage: 'Publicado.',
     })
   })
 

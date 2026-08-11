@@ -16,6 +16,8 @@ import {
   createMotionConfigSource,
   createMotionRuntimeSource,
 } from '../../runtime/motion-runtime'
+import { createFunctionBlockRuntimeSource } from '../../runtime/functions/function-block-runtime'
+import { createRuntimeValueStoreSource } from '../../runtime/values/runtime-value-store'
 
 const textDecoder = new TextDecoder()
 
@@ -234,6 +236,23 @@ export function buildPreviewDocument(
     runtimeScript.dataset.builderRuntime = 'true'
     runtimeScript.textContent = createNavigationRuntimeSource()
     document.body.append(configScript, runtimeScript)
+
+    if (document.querySelector('[data-builder-runtime-source-id],[data-builder-function-id],[data-builder-js-lab]')) {
+      const valueRuntime = document.createElement('script')
+      valueRuntime.dataset.builderRuntimeValues = 'true'
+      valueRuntime.textContent = createRuntimeValueStoreSource()
+      document.body.append(valueRuntime)
+    }
+
+    if (document.querySelector('[data-builder-function-id],[data-builder-js-lab]')) {
+      const functionRuntime = document.createElement('script')
+      functionRuntime.dataset.builderFunctionRuntime = 'true'
+      const bundledFunctionRuntime = filesByPath.get('builder-runtime/functions.js')
+      functionRuntime.textContent = bundledFunctionRuntime
+        ? textDecoder.decode(bundledFunctionRuntime.bytes)
+        : createFunctionBlockRuntimeSource()
+      document.body.append(functionRuntime)
+    }
 
     if (bundle.manifest.motionActivities?.some((activity) => activity.pageId === page.id)) {
       const motionConfig = document.createElement('script')

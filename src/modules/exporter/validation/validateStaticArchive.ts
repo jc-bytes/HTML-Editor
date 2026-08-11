@@ -121,6 +121,14 @@ export async function validateStaticArchive(source: Blob): Promise<StaticArchive
     if (!document.querySelector('[data-builder-runtime]')) {
       errors.push(`${page.file} no carga el runtime de navegación.`)
     }
+    if (document.querySelector('[data-builder-function-id],[data-builder-js-lab]')) {
+      if (!filePaths.has('builder-runtime/functions.js')) {
+        errors.push('Falta el runtime de funciones externas.')
+      }
+      if (!document.querySelector('[data-builder-function-runtime]')) {
+        errors.push(`${page.file} no carga el runtime de funciones externas.`)
+      }
+    }
     if (manifest.motionActivities?.some((activity) => activity.pageId === page.id)) {
       if (!filePaths.has('motion-runtime/analysis.js')) {
         errors.push('Falta el runtime de análisis de movimiento.')

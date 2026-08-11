@@ -34,9 +34,11 @@ en el editor GrapesJS predeterminado.
 
 La página Bienvenida combina portada, inicio de sesión y registro porque el
 exportador actual convierte la página con formulario de acceso en `guestOnly` y
-protege todas las demás. Recuperar contraseña, filtros dinámicos, controles
-avanzados de video, preferencias persistentes y mutaciones docentes son
-prototipos visuales claramente rotulados. Las referencias
+protege todas las demás. Recuperar contraseña y los controles avanzados de
+video siguen siendo prototipos visuales claramente rotulados. Los filtros,
+las mutaciones de registros y las preferencias por usuario ya cuentan con
+acciones genéricas en el editor, aunque este starter todavía debe conectarlas
+a sus formularios concretos. Las referencias
 `pending_capture`, los medios y las puntuaciones de muestra requieren revisión
 por personas conocedoras de Lengua de Señas Panameña antes de un uso educativo
 real.

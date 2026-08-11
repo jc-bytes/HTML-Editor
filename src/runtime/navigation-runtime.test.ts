@@ -59,6 +59,8 @@ describe('navigation runtime', () => {
 
     expect(createNavigationRuntimeSource()).toContain('data-builder-element-id')
     expect(createNavigationRuntimeSource()).toContain('const contextParameterPrefix = "context-"')
+    expect(createNavigationRuntimeSource()).toContain('const authDestinationAttribute = "data-builder-auth-destination"')
+    expect(createNavigationRuntimeSource()).not.toContain('__vite_ssr_import_')
     expect(createNavigationRuntimeSource()).not.toContain('builder-context-')
     expect(configSource).not.toContain('</script>')
     expect(configSource).toContain('\\u003c/script>')
@@ -360,10 +362,62 @@ describe('navigation runtime', () => {
     document.body.innerHTML = ''
   })
 
+  it('opens a related record using a field from the clicked collection row', async () => {
+    document.body.innerHTML = '<article><button>Open practice</button></article>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'home',
+      pageUrls: {},
+      transport: 'message',
+      dataSources: [{
+        id: 'attempts',
+        name: 'Attempts',
+        type: 'static',
+        records: [{ id: 'attempt-1', practice_id: 'practice-42' }],
+      }],
+      repeaters: [{
+        id: 'recent-attempt',
+        pageId: 'home',
+        elementId: 'home::article:1',
+        dataSourceId: 'attempts',
+        itemContext: 'record',
+      }],
+      connections: [{
+        action: 'navigate',
+        elementId: 'home::article:1/button:1',
+        event: 'click',
+        sourcePage: 'home',
+        targetPage: 'practice',
+        context: {
+          record: { dataSourceId: 'practices', recordId: '$record.practice_id' },
+        },
+      }],
+    }
+    const postMessage = vi.spyOn(window, 'postMessage').mockImplementation(() => undefined)
+    const dispose = installNavigationRuntime(window, document)
+
+    await vi.waitFor(() => expect(document.querySelector('[data-builder-repeater-instance] button')).toBeTruthy())
+    document.querySelector<HTMLElement>('[data-builder-repeater-instance] button')?.click()
+
+    expect(postMessage).toHaveBeenCalledWith({
+      action: 'navigate',
+      context: { record: { dataSourceId: 'practices', recordId: 'practice-42' } },
+      source: 'builder-navigation-runtime',
+      targetPage: 'practice',
+    }, '*')
+
+    dispose()
+    postMessage.mockRestore()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
   it('repeats one template for each record and sends the clicked record id', async () => {
     document.body.innerHTML = '<section><article><h2>Template</h2></article></section>'
     window.__BUILDER_NAVIGATION__ = {
       currentPage: 'list',
+      currentContext: {
+        item: { dataSourceId: 'items', recordId: 'two' },
+      },
       pageUrls: {},
       transport: 'message',
       dataSources: [{
@@ -407,6 +461,7 @@ describe('navigation runtime', () => {
     document.querySelectorAll('article')[1].click()
     expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
       context: {
+        item: { dataSourceId: 'items', recordId: 'two' },
         selectedRecord: { dataSourceId: 'items', recordId: 'two' },
       },
     }), '*')
@@ -512,6 +567,130 @@ describe('navigation runtime', () => {
     document.body.innerHTML = ''
   })
 
+  it('uploads a mapped file before saving its Storage address in the record', async () => {
+    document.body.innerHTML = `<form>
+      <input name="avatar" type="file" accept="image/*"
+        data-builder-upload-bucket="profile_images"
+        data-builder-upload-kind="image"
+        data-builder-upload-max-bytes="4194304">
+      <button type="submit">Create</button>
+    </form>`
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'create', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'profiles', name: 'profiles', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'profiles', publishedOnly: false, requiresAuth: true,
+        storageBuckets: [{ name: 'profile_images', public: false }],
+      }],
+      dataActions: [{
+        id: 'create-profile', pageId: 'create', elementId: 'create::form:1', dataSourceId: 'profiles',
+        action: 'create', contextKey: 'record', ownerField: 'user_id',
+        fieldMappings: [{ field: 'avatar', inputName: 'avatar' }], successMessage: 'Created.',
+      }],
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'user-token', refresh_token: 'refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'user-1' },
+      })), setItem: vi.fn(), removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 201 }))
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+    await vi.waitFor(() => expect(document.querySelector('[data-builder-upload-feedback]')).toBeInTheDocument())
+
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [new File(['avatar'], 'my avatar.png', { type: 'image/png' })],
+    })
+    document.querySelector('form')!.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(
+      /\/storage\/v1\/object\/profile_images\/user-1\/.+-my-avatar\.png$/,
+    )
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'POST',
+      headers: expect.objectContaining({ Authorization: 'Bearer user-token', 'x-upsert': 'false' }),
+    })
+    const savedBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body)) as Record<string, unknown>
+    expect(savedBody).toMatchObject({ user_id: 'user-1' })
+    expect(savedBody.avatar).toMatch(/^storage:\/\/profile_images\/user-1\//)
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('prefills and upserts the signed-in user single record', async () => {
+    document.body.innerHTML = `<form>
+      <input name="display_name">
+      <input name="newsletter" type="checkbox">
+      <input name="role" type="radio" value="learner">
+      <input name="role" type="radio" value="teacher">
+      <button type="submit">Save</button>
+    </form>`
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'profile', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'profiles', name: 'profiles', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'profiles', publishedOnly: false, requiresAuth: true,
+      }],
+      dataActions: [{
+        id: 'save-profile', pageId: 'profile', elementId: 'profile::form:1', dataSourceId: 'profiles',
+        action: 'upsert', contextKey: 'record', ownerField: 'user_id', successMessage: 'Saved.',
+        fieldMappings: [
+          { field: 'display_name', inputName: 'display_name' },
+          { field: 'newsletter', inputName: 'newsletter' },
+          { field: 'role', inputName: 'role' },
+        ],
+      }],
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'user-token', refresh_token: 'refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'user-1' },
+      })), setItem: vi.fn(), removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([{
+        display_name: 'Ana', newsletter: true, role: 'teacher',
+      }]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+
+    await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('[name="display_name"]')).toHaveValue('Ana'))
+    expect(document.querySelector<HTMLInputElement>('[name="newsletter"]')).toBeChecked()
+    expect(document.querySelector<HTMLInputElement>('[value="teacher"]')).toBeChecked()
+    document.querySelector<HTMLInputElement>('[name="display_name"]')!.value = 'Ana María'
+    document.querySelector('form')!.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const [url, options] = fetchMock.mock.calls[1]
+    expect(String(url)).toContain('on_conflict=user_id')
+    expect(options).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ display_name: 'Ana María', newsletter: true, role: 'teacher', user_id: 'user-1' }),
+      headers: expect.objectContaining({
+        Authorization: 'Bearer user-token',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      }),
+    })
+    expect(document.querySelector('[data-builder-data-action-status]')).toHaveTextContent('Saved.')
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
   it('updates the current record from a mapped form', async () => {
     document.body.innerHTML = '<form><input name="project_title" value="Updated"><button type="submit">Save</button></form>'
     window.__BUILDER_NAVIGATION__ = {
@@ -580,6 +759,168 @@ describe('navigation runtime', () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
     expect(String(fetchMock.mock.calls[0][0])).toContain('id=eq.project-8')
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'DELETE' })
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('changes one field on the current record for a manager action', async () => {
+    document.body.innerHTML = '<article data-builder-record-id="article-4"><button>Publish</button></article>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'manage', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'articles', name: 'articles', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'articles', publishedOnly: false, requiresAuth: true,
+      }],
+      dataActions: [{
+        id: 'publish', pageId: 'manage', elementId: 'manage::article:1/button:1', dataSourceId: 'articles',
+        action: 'set', contextKey: 'record', fieldMappings: [], fixedField: 'published', fixedValue: 'true',
+        successMessage: 'Published.',
+      }],
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'manager-token', refresh_token: 'refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'manager-1' },
+      })), setItem: vi.fn(), removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+    document.querySelector('button')!.click()
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    expect(String(fetchMock.mock.calls[0][0])).toContain('id=eq.article-4')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'PATCH', body: JSON.stringify({ published: true }),
+    })
+    expect(document.querySelector('[data-builder-data-action-status]')).toHaveTextContent('Published.')
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('uses a form answer as the new value for the current record', async () => {
+    document.body.innerHTML = `<article data-builder-record-id="article-7" data-builder-data-source-id="articles">
+      <form><input name="status_choice" value="review"><button type="button">Change</button></form>
+    </article>`
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'manage', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'articles', name: 'articles', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'articles', publishedOnly: false, requiresAuth: true,
+      }],
+      dataActions: [{
+        id: 'change-status', pageId: 'manage', elementId: 'manage::article:1/form:1/button:1',
+        dataSourceId: 'articles', action: 'set', contextKey: 'record', fieldMappings: [],
+        fixedField: 'status', fixedValue: '', recordMode: 'context', valueSource: 'form',
+        valueInputName: 'status_choice', successMessage: 'Changed.',
+      }],
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'manager-token', refresh_token: 'refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'manager-1' },
+      })), setItem: vi.fn(), removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+    document.querySelector('button')!.click()
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    expect(String(fetchMock.mock.calls[0][0])).toContain('id=eq.article-7')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'PATCH', body: JSON.stringify({ status: 'review' }),
+    })
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('changes the signed-in persons record without using unrelated page context', async () => {
+    document.body.innerHTML = '<main data-builder-record-id="article-9" data-builder-data-source-id="articles"><button>Assign me</button></main>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'profile', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'profiles', name: 'profiles', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'profiles', publishedOnly: false, requiresAuth: true,
+      }],
+      dataActions: [{
+        id: 'assign', pageId: 'profile', elementId: 'profile::main:1/button:1', dataSourceId: 'profiles',
+        action: 'set', contextKey: 'record', fieldMappings: [], ownerField: 'user_id',
+        fixedField: 'assigned_to', fixedValue: '', recordMode: 'current_user', valueSource: 'current_user',
+        successMessage: 'Assigned.',
+      }],
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'user-token', refresh_token: 'refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'user-42' },
+      })), setItem: vi.fn(), removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+    document.querySelector('button')!.click()
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    expect(String(fetchMock.mock.calls[0][0])).toContain('user_id=eq.user-42')
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain('article-9')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'PATCH', body: JSON.stringify({ assigned_to: 'user-42' }),
+    })
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('reads and toggles the existing boolean before updating it', async () => {
+    document.body.innerHTML = '<article data-builder-record-id="article-5" data-builder-data-source-id="articles"><button>Toggle</button></article>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'manage', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'articles', name: 'articles', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'articles', publishedOnly: false, requiresAuth: true,
+      }],
+      dataActions: [{
+        id: 'toggle', pageId: 'manage', elementId: 'manage::article:1/button:1', dataSourceId: 'articles',
+        action: 'set', contextKey: 'record', fieldMappings: [], fixedField: 'published', fixedValue: '',
+        recordMode: 'context', valueSource: 'toggle', successMessage: 'Toggled.',
+      }],
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'manager-token', refresh_token: 'refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'manager-1' },
+      })), setItem: vi.fn(), removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ published: false }]), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+    document.querySelector('button')!.click()
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(String(fetchMock.mock.calls[0][0])).toContain('select=published')
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: 'PATCH', body: JSON.stringify({ published: true }),
+    })
 
     dispose()
     delete window.__BUILDER_NAVIGATION__
@@ -687,6 +1028,140 @@ describe('navigation runtime', () => {
 
     dispose()
     fetchSpy.mockRestore()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('uses the direct public URL for media in a public Storage bucket', async () => {
+    document.body.innerHTML = '<section><article><img></article></section>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'list', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'items', name: 'items', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'items', publishedOnly: true,
+        storageBuckets: [{ name: 'catalog_images', public: true }],
+      }],
+      repeaters: [{
+        id: 'items', pageId: 'list', elementId: 'list::section:1/article:1',
+        dataSourceId: 'items', itemContext: 'record',
+      }],
+      bindings: [{
+        id: 'image', pageId: 'list', elementId: 'list::section:1/article:1/img:1', target: 'src',
+        contextKey: 'record', field: 'image', dataSourceId: 'items',
+      }],
+    }
+    const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify([{
+      id: 'one', image: 'storage://catalog_images/user-1/photo one.png',
+    }]), { status: 200 }))
+    const dispose = installNavigationRuntime(window, document)
+
+    await vi.waitFor(() => expect(document.querySelector('img')).toHaveAttribute(
+      'src',
+      'https://school.supabase.co/storage/v1/object/public/catalog_images/user-1/photo%20one.png',
+    ))
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    dispose()
+    fetchSpy.mockRestore()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('renders, filters, and sorts by a related collection field', async () => {
+    document.body.innerHTML = '<section><article><h2>Author</h2></article></section>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'list', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'articles', name: 'articles', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'articles', publishedOnly: true,
+        relations: [{
+          alias: 'related_author_id', column: 'author_id', dataSourceId: 'authors',
+          displayField: 'display_name', table: 'authors', targetColumn: 'id',
+        }],
+      }, {
+        id: 'authors', name: 'authors', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'authors', publishedOnly: true,
+      }],
+      repeaters: [{
+        id: 'items', pageId: 'list', elementId: 'list::section:1/article:1',
+        dataSourceId: 'articles', itemContext: 'record',
+        fixedFilters: [{ field: 'related_author_id.display_name', operator: 'contains', value: 'Ana' }],
+        orderColumn: 'related_author_id.display_name', orderDirection: 'desc',
+      }],
+      bindings: [{
+        id: 'author', pageId: 'list', elementId: 'list::section:1/article:1/h2:1', target: 'text',
+        contextKey: 'record', field: 'related_author_id.display_name', dataSourceId: 'articles',
+      }],
+    }
+    const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify([{
+      id: 'article-1', related_author_id: { id: 'author-1', display_name: 'Ana' },
+    }]), { status: 200 }))
+    const dispose = installNavigationRuntime(window, document)
+
+    await vi.waitFor(() => expect(document.querySelector('h2')).toHaveTextContent('Ana'))
+    const request = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(request.searchParams.get('select')).toContain('related_author_id:authors!author_id!inner(*)')
+    expect(request.searchParams.get('related_author_id.display_name')).toBe('ilike.*Ana*')
+    expect(request.searchParams.get('order')).toBe('related_author_id(display_name).desc')
+
+    dispose()
+    fetchSpy.mockRestore()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('populates a relationship dropdown and saves the selected record id', async () => {
+    document.body.innerHTML = `<form>
+      <select name="author_id" data-builder-relation-source="authors"
+        data-builder-relation-label="display_name" data-builder-relation-value="id">
+        <option value="">Select author</option>
+      </select>
+      <button type="submit">Create</button>
+    </form>`
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'create', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'articles', name: 'articles', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'articles', publishedOnly: false, requiresAuth: true,
+      }, {
+        id: 'authors', name: 'authors', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'authors', publishedOnly: true,
+      }],
+      dataActions: [{
+        id: 'create-article', pageId: 'create', elementId: 'create::form:1', dataSourceId: 'articles',
+        action: 'create', contextKey: 'record', ownerField: 'user_id', successMessage: 'Created.',
+        fieldMappings: [{ field: 'author_id', inputName: 'author_id' }],
+      }],
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'user-token', refresh_token: 'refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'user-1' },
+      })), setItem: vi.fn(), removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([
+        { id: 'author-1', display_name: 'Ana' },
+        { id: 'author-2', display_name: 'Luis' },
+      ]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 201 }))
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+    const select = document.querySelector<HTMLSelectElement>('select')!
+
+    await vi.waitFor(() => expect(select.options).toHaveLength(3))
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/rest/v1/authors?')
+    select.value = 'author-2'
+    document.querySelector('form')!.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({
+      author_id: 'author-2', user_id: 'user-1',
+    })
+
+    dispose()
     delete window.__BUILDER_NAVIGATION__
     document.body.innerHTML = ''
   })

@@ -13,6 +13,11 @@ import {
 import type { SupabaseEditorConfig, SupabaseFieldType, SupabaseTableConfig } from './supabase-data'
 import { motionComponentTypes, setMotionResultsDesignPreview } from './motion-analysis'
 import type { MotionComponentType } from './motion-analysis'
+import {
+  RUNTIME_OUTPUT_ID_ATTRIBUTE,
+  RUNTIME_OUTPUT_TYPE_ATTRIBUTE,
+  RUNTIME_SOURCE_NAME_ATTRIBUTE,
+} from '../runtime/values/runtime-value-contract'
 
 interface MotionPanelProps {
   asWizard?: boolean
@@ -111,7 +116,11 @@ export function MotionPanel({ asWizard = false, component, config, notice, onOpe
         { id: 'reference', label: 'Origen' },
         { id: 'review', label: 'Revisar' },
       ]
-    : [
+    : mode === 'analyze' ? [
+        { id: 'input', label: 'Entrada' },
+        { id: 'model', label: 'Modelo' },
+        { id: 'output', label: 'Salida' },
+      ] : [
         { id: 'input', label: 'Entrada' },
         ...mode === 'compare' && evaluator === 'sequence' ? [{ id: 'reference', label: 'Referencia' }] : [],
         { id: 'model', label: 'Modelo' },
@@ -240,16 +249,20 @@ export function MotionPanel({ asWizard = false, component, config, notice, onOpe
     {!isReferenceView && showStep('input') && <Section description="Elige de dónde llega la imagen o el movimiento." open title="Entrada">
       <SelectField label="Fuente" onChange={(value) => write('data-motion-input-source', value)} value={inputSource} options={[
         { value: 'camera', label: 'Cámara en vivo' },
-        { value: 'element', label: 'Video de esta página' },
-        { value: 'url', label: 'Video mediante URL' },
+        ...mode === 'analyze' ? [{ value: 'upload', label: 'Subir video' }] : [
+          { value: 'element', label: 'Video de esta página' },
+          { value: 'url', label: 'Video mediante URL' },
+        ],
       ]} />
       {inputSource === 'camera' && <SelectField label="Cámara" onChange={(value) => write('data-motion-facing-mode', value)} value={attributes['data-motion-facing-mode'] || 'user'} options={[
         { value: 'user', label: 'Frontal' }, { value: 'environment', label: 'Trasera' },
       ]} />}
       {inputSource === 'element' && <label className="gjs-motion-field"><span>Selector del video</span><input placeholder="#video-practica" value={attributes['data-motion-input-selector'] || ''} onChange={(event) => write('data-motion-input-selector', event.target.value)} /><small>Usa el ID o selector CSS de un video en esta página.</small></label>}
       {inputSource === 'url' && <label className="gjs-motion-field"><span>URL del video</span><input type="url" placeholder="https://…/movimiento.mp4" value={attributes['data-motion-input-url'] || ''} onChange={(event) => write('data-motion-input-url', event.target.value)} /></label>}
-      {mode === 'analyze' && inputSource !== 'url'
-        ? <p className="gjs-motion-callout">El modelo se ejecutará continuamente hasta que presiones Detener.</p>
+      {mode === 'analyze' && inputSource === 'camera'
+        ? <><label className="gjs-motion-field"><span>Duración máxima de seguridad</span><div className="gjs-motion-number"><input min="2000" max="10000" step="1000" type="number" value={attributes['data-motion-duration'] || '10000'} onChange={(event) => write('data-motion-duration', event.target.value)} /><em>ms</em></div><small>La persona puede detener la captura antes. Se conservan todos los frames de esta captura.</small></label><p className="gjs-motion-callout">Inicia la captura, realiza el movimiento y presiona Detener y finalizar. Después podrás analizar otra grabación.</p></>
+        : mode === 'analyze' && inputSource === 'upload'
+          ? <p className="gjs-motion-callout">La persona elegirá un archivo de video al ejecutar la página. Se analizan todos los frames presentados por el video; los videos largos tardarán más. El archivo se procesa localmente y no se sube a Storage.</p>
         : inputSource !== 'url' && <label className="gjs-motion-field"><span>Duración máxima</span><div className="gjs-motion-number"><input min="1000" max="10000" step="250" type="number" value={attributes['data-motion-duration'] || '3000'} onChange={(event) => write('data-motion-duration', event.target.value)} /><em>ms</em></div></label>}
     </Section>}
 
@@ -264,30 +277,34 @@ export function MotionPanel({ asWizard = false, component, config, notice, onOpe
       <p className="gjs-motion-callout">{referenceDisplay === 'video' ? 'Reproduce únicamente el video guardado.' : referenceDisplay === 'reference' ? 'Reproduce únicamente los puntos del análisis.' : referenceDisplay === 'frame' ? 'Muestra un frame fijo del video.' : referenceDisplay === 'frame-reference' ? 'Muestra un frame fijo con sus puntos analizados.' : 'Reproduce el video y los puntos analizados al mismo tiempo.'}</p>
     </Section>}
 
-    {((mode === 'compare' && evaluator === 'sequence') || isReferenceView) && showStep('reference') && <Section description={isReferenceView ? 'Selecciona dónde están guardados el video, frame o análisis.' : 'Selecciona la secuencia aprobada que servirá de modelo.'} open title={isReferenceView ? 'Origen' : 'Referencia'}>
-      <SelectField label="Origen" onChange={(value) => write('data-motion-reference-source', value)} value={referenceSource} options={[
-        { value: 'data', label: 'Registro de una colección' },
-        { value: 'url', label: 'Video o plantilla mediante URL' },
-        { value: 'template', label: 'Plantilla JSON incrustada' },
+    {((mode === 'compare' && evaluator === 'sequence') || isReferenceView) && showStep('reference') && <Section description={isReferenceView ? 'Define qué registro contiene el video o el análisis.' : 'Selecciona la secuencia aprobada que servirá de modelo.'} open title={isReferenceView ? 'Referencia visual' : 'Referencia'}>
+      <SelectField label="Dónde está la referencia" onChange={(value) => write('data-motion-reference-source', value)} value={referenceSource} options={[
+        { value: 'data', label: 'En una colección' },
+        { value: 'url', label: 'En una URL' },
+        { value: 'template', label: 'Pegada como JSON' },
       ]} />
       {referenceSource === 'url' && <label className="gjs-motion-field"><span>URL de referencia</span><input type="url" placeholder="https://…/referencia.json" value={attributes['data-motion-reference-url'] || ''} onChange={(event) => write('data-motion-reference-url', event.target.value)} /><small>Una plantilla JSON evita reprocesar el video en cada intento.</small></label>}
       {referenceSource === 'template' && <label className="gjs-motion-field"><span>Plantilla compilada</span><textarea rows={5} placeholder="Pega aquí la plantilla JSON" value={decodedTemplate} onChange={(event) => write('data-motion-reference-template', encodeURIComponent(event.target.value))} /></label>}
       {referenceSource === 'data' && <>
-        <SelectField label="Cómo elegir la referencia" onChange={(value) => {
-          write('data-motion-reference-record-mode', value)
-          if (value !== 'specific') write('data-motion-reference-record-id', '')
-        }} value={referenceRecordMode} options={[
-          { value: 'context', label: 'Recibir por parámetro de navegación' },
-          { value: 'specific', label: 'Elegir un registro ahora' },
-          { value: 'first', label: 'El primero de la colección' },
-          { value: 'last', label: 'El último de la colección' },
-        ]} />
-        {referenceRecordMode === 'context' && <p className="gjs-motion-callout"><strong>Parámetro esperado: context-record.</strong> Debe incluir el origen de datos y el ID del registro. Puede enviarlo cualquier tarjeta, botón o enlace que navegue a esta página.</p>}
-        <SelectField label="Colección de referencias" onChange={(value) => {
+        <SelectField label="Colección esperada" onChange={(value) => {
           write('data-motion-reference-table', value)
           write('data-motion-reference-record-id', '')
         }} value={attributes['data-motion-reference-table'] || ''} options={tableOptions} />
         {referenceTable ? <>
+          <SelectField label="Qué registro usar" onChange={(value) => {
+            write('data-motion-reference-record-mode', value)
+            if (value !== 'specific') write('data-motion-reference-record-id', '')
+          }} value={referenceRecordMode} options={[
+            { value: 'context', label: 'El registro abierto desde otra página' },
+            { value: 'specific', label: 'Elegir un registro específico' },
+            { value: 'first', label: 'El primer registro de la colección' },
+            { value: 'last', label: 'El último registro de la colección' },
+          ]} />
+          {referenceRecordMode === 'context' && <div className="gjs-motion-navigation-help">
+            <strong>La página anterior envía el registro</strong>
+            <p>En esa página configura <b>Flujo → Registro que recibirá la otra página → {collectionDisplayName(referenceTable)}</b>.</p>
+            <small>El editor envía automáticamente la colección y el ID. No necesitas copiar <code>practice_id</code> ni escribir parámetros.</small>
+          </div>}
           {(referenceRecordMode === 'first' || referenceRecordMode === 'last') && <p className="gjs-motion-callout">Se usará {referenceRecordMode === 'first' ? 'el primer' : 'el último'} registro según el orden configurado para la colección.</p>}
           {referenceRecordMode === 'specific' && <div className="gjs-motion-record-picker">
             <label className="gjs-motion-field"><span>Buscar registro</span><input onChange={(event) => setRecordSearch(event.target.value)} placeholder="Título o identificador" type="search" value={recordSearch} /></label>
@@ -296,13 +313,13 @@ export function MotionPanel({ asWizard = false, component, config, notice, onOpe
               .map((record) => ({ label: record.label, value: record.id }))} />
             {recordStatus && <small className="gjs-motion-record-status" role="status">{recordStatus}</small>}
           </div>}
-          <SelectField label="Campo de plantilla" onChange={(value) => write('data-motion-reference-template-field', value)} value={attributes['data-motion-reference-template-field'] || ''} options={tableFields(referenceTable, ['json'])} />
-          <SelectField label="Video de respaldo" onChange={(value) => write('data-motion-reference-video-field', value)} value={attributes['data-motion-reference-video-field'] || ''} options={tableFields(referenceTable, ['media', 'url'])} />
-        </> : <div className="gjs-motion-callout">Selecciona la colección indicada por el parámetro y su campo de referencia.<button onClick={onOpenData} type="button">Abrir Datos</button></div>}
+          <SelectField label="Datos de movimiento" onChange={(value) => write('data-motion-reference-template-field', value)} value={attributes['data-motion-reference-template-field'] || ''} options={tableFields(referenceTable, ['json'])} />
+          <SelectField label="Video de la práctica" onChange={(value) => write('data-motion-reference-video-field', value)} value={attributes['data-motion-reference-video-field'] || ''} options={tableFields(referenceTable, ['media', 'url'])} />
+        </> : <div className="gjs-motion-callout">Selecciona la colección que contiene el video o los datos de movimiento.<button onClick={onOpenData} type="button">Abrir Datos</button></div>}
       </>}
     </Section>}
 
-    {!isReferenceView && showStep('model') && <Section description="Elige el modelo, la evaluación y el procesamiento." open={asWizard} title="Modelo y evaluación">
+    {!isReferenceView && showStep('model') && <Section description={mode === 'analyze' ? 'Elige qué modelo de MediaPipe produce los datos.' : 'Elige el modelo, la evaluación y el procesamiento.'} open={asWizard} title={mode === 'analyze' ? 'Modelo MediaPipe' : 'Modelo y evaluación'}>
       <SelectField label="Modelo" onChange={selectModel} value={model.id} options={visionModelRegistry.map((item) => ({
         value: item.id, label: item.label,
       }))} />
@@ -311,9 +328,9 @@ export function MotionPanel({ asWizard = false, component, config, notice, onOpe
       <SelectField label="Ejecución" onChange={(value) => write('data-vision-delegate', value)} value={attributes['data-vision-delegate'] || 'auto'} options={[
         { value: 'auto', label: 'Automática' }, { value: 'gpu', label: 'GPU' }, { value: 'cpu', label: 'CPU' },
       ]} />
-      <SelectField label="Evaluación" onChange={(value) => write('data-vision-evaluator', value)} value={evaluator} options={model.evaluators.map((id) => ({
+      {mode !== 'analyze' && <SelectField label="Evaluación" onChange={(value) => write('data-vision-evaluator', value)} value={evaluator} options={model.evaluators.map((id) => ({
         value: id, label: evaluatorLabels[id],
-      }))} />
+      }))} />}
       {model.id === 'holistic-landmarker' && <div className="gjs-motion-check-grid">
         <label><input checked={landmarkSelection.has('hands')} onChange={(event) => toggleLandmark('hands', event.target.checked)} type="checkbox" />Manos</label>
         <label><input checked={landmarkSelection.has('pose')} onChange={(event) => toggleLandmark('pose', event.target.checked)} type="checkbox" />Postura</label>
@@ -326,16 +343,21 @@ export function MotionPanel({ asWizard = false, component, config, notice, onOpe
         <label className="gjs-motion-field"><span>Cobertura mínima</span><input min="0" max="1" step="0.05" type="number" value={attributes['data-vision-minimum-coverage'] || '0.25'} onChange={(event) => write('data-vision-minimum-coverage', event.target.value)} /></label>
       </div>}
       <label className="gjs-motion-field"><span>Confianza mínima</span><input min="0" max="1" step="0.05" type="range" value={attributes['data-vision-confidence'] || '0.5'} onChange={(event) => write('data-vision-confidence', event.target.value)} /><output>{Math.round(Number(attributes['data-vision-confidence'] || .5) * 100)}%</output></label>
-      {model.output === 'landmarks' && <><SelectField label="Suavizado temporal" onChange={(value) => write('data-vision-smoothing', value)} value={attributes['data-vision-smoothing'] || '3'} options={[
+      {mode !== 'analyze' && model.output === 'landmarks' && <><SelectField label="Suavizado temporal" onChange={(value) => write('data-vision-smoothing', value)} value={attributes['data-vision-smoothing'] || '3'} options={[
         { value: '1', label: 'Ninguno' }, { value: '3', label: 'Ligero' }, { value: '5', label: 'Medio' }, { value: '7', label: 'Fuerte' },
       ]} />
       <label className="gjs-motion-switch"><input checked={attributes['data-vision-checkpoints'] !== 'false'} onChange={(event) => toggle('data-vision-checkpoints', event.target.checked)} type="checkbox" /><span><strong>Reducir a puntos clave</strong><small>Conserva cambios significativos de forma, orientación y trayectoria.</small></span></label></>}
     </Section>}
 
-    {mode !== 'reference' && !isReferenceView && showStep('result') && <Section description="Define la evaluación y lo que verá la persona." open={asWizard} title="Resultado">
+    {mode === 'analyze' && showStep('output') && <Section description="Publica los landmarks como un valor reutilizable del sitio." open title="Salida">
+      <label className="gjs-motion-field"><span>Nombre de la salida</span><input value={attributes[RUNTIME_SOURCE_NAME_ATTRIBUTE] || 'Landmarks de video'} onChange={(event) => write(RUNTIME_SOURCE_NAME_ATTRIBUTE, event.target.value)} /><small>Usa nombres como “Landmarks de referencia” y “Landmarks del estudiante” para distinguir dos análisis.</small></label>
+      <div className="gjs-motion-output-summary"><span><small>Variable</small><strong>{attributes[RUNTIME_OUTPUT_ID_ATTRIBUTE] || 'landmark-frames'}</strong></span><span><small>Tipo</small><strong>{attributes[RUNTIME_OUTPUT_TYPE_ATTRIBUTE] || 'json'}</strong></span><p>Disponible durante esta sesión de la página. La persona puede revisar el video temporal con sus landmarks. Analizar otro video reemplaza ambos.</p></div>
+    </Section>}
+
+    {mode === 'compare' && !isReferenceView && showStep('result') && <Section description="Define la evaluación y lo que verá la persona." open={asWizard} title="Resultado">
       {mode === 'compare' && evaluator !== 'quality' && <label className="gjs-motion-field"><span>Puntaje para aprobar</span><div className="gjs-motion-number"><input min="0" max="100" type="number" value={attributes['data-vision-passing-score'] || '75'} onChange={(event) => write('data-vision-passing-score', event.target.value)} /><em>%</em></div></label>}
-      <label className="gjs-motion-switch"><input checked={attributes['data-motion-show-results'] === 'true'} onChange={(event) => toggleResults(event.target.checked)} type="checkbox" /><span><strong>Mostrar resultados en la página</strong><small>Añade puntajes, retroalimentación y etapas al lienzo para que puedas modificar su estilo.</small></span></label>
-      <p className="gjs-motion-callout">{attributes['data-motion-show-results'] === 'true' ? 'El lienzo muestra valores de ejemplo. En la página publicada se reemplazan con el resultado real.' : 'La comparación se ejecutará sin mostrar el panel de resultados.'}</p>
+      <label className="gjs-motion-switch"><input checked={attributes['data-motion-show-results'] === 'true'} onChange={(event) => toggleResults(event.target.checked)} type="checkbox" /><span><strong>Mostrar tarjeta de resultados</strong><small>Añade una tarjeta separada con puntajes, retroalimentación y etapas para que puedas modificar su estilo.</small></span></label>
+      <p className="gjs-motion-callout">{attributes['data-motion-show-results'] === 'true' ? 'El lienzo muestra la tarjeta con valores de ejemplo. En la página publicada se reemplazan con el resultado real.' : 'La comparación se ejecutará sin mostrar la tarjeta de resultados.'}</p>
     </Section>}
 
     {mode === 'reference' && !isReferenceView && showStep('save') && <Section description="Elige qué ocurrirá con la referencia generada." open={asWizard} title="Guardado">

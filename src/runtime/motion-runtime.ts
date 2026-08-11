@@ -19,6 +19,11 @@ import {
 import type { MotionFeatureFrame, MotionStageComparison, MotionStageDefinition } from '../core/motion'
 import { createMediaPipeVisionDetector } from './vision/mediapipe-adapter'
 import type { VisionDetector, VisionFrameResult } from './vision/contracts'
+import {
+  LANDMARK_FRAMES_OUTPUT_ID,
+  RUNTIME_VALUE_EVENT,
+  RUNTIME_VALUE_STORE_PROPERTY,
+} from './values/runtime-value-contract'
 
 export interface MotionRuntimeConfig {
   activities: MotionActivity[]
@@ -87,6 +92,9 @@ type MotionRuntimeHelpers = {
   smoothMotionSequence: typeof smoothMotionSequence
   suggestMotionStages: typeof suggestMotionStages
   createMediaPipeVisionDetector: typeof createMediaPipeVisionDetector
+  landmarkFramesOutputId: string
+  runtimeValueEventName: string
+  runtimeValueStoreProperty: string
 }
 
 export function installMotionRuntime(
@@ -102,8 +110,30 @@ export function installMotionRuntime(
   const detectors = new Map<string, Promise<VisionDetector>>()
   let mediaPipeTimestamp = 0
 
+  function publishAnalyzeLandmarks(activity: MotionActivity, landmarkFrames: RuntimeLandmarkFrame[]) {
+    if (activity.mode !== 'analyze' || !activity.runtimeSourceId) return
+    const detail = {
+      sourceId: activity.runtimeSourceId,
+      outputId: runtimeHelpers.landmarkFramesOutputId,
+      type: 'json' as const,
+      value: landmarkFrames,
+    }
+    const store = (runtimeWindow as Window & Record<string, unknown>)[runtimeHelpers.runtimeValueStoreProperty] as {
+      publish?: (value: typeof detail) => boolean
+    } | undefined
+    if (typeof store?.publish === 'function') store.publish(detail)
+    else runtimeDocument.dispatchEvent(new CustomEvent(runtimeHelpers.runtimeValueEventName, { detail }))
+  }
+
   function activityFeatures(activity: MotionActivity): RuntimeFeatures {
-    if (activity.detector.task === 'holistic-landmarker') return activity.detector.landmarks
+    if (activity.detector.task === 'holistic-landmarker') {
+      const selection = activity.detector.landmarks
+      return {
+        hands: selection?.hands !== false,
+        pose: selection?.pose !== false,
+        face: selection?.face === true,
+      }
+    }
     return {
       hands: activity.detector.task === 'hand-landmarker' || activity.detector.task === 'gesture-recognizer',
       pose: activity.detector.task === 'pose-landmarker',
@@ -1001,6 +1031,7 @@ export function installMotionRuntime(
     const replayButton = root.querySelector<HTMLButtonElement>('[data-motion-replay]')
     const videoSourceControls = root.querySelector<HTMLElement>('[data-motion-video-source]')
     const fileInput = root.querySelector<HTMLInputElement>('[data-motion-file]')
+    const fileInputLabel = root.querySelector<HTMLElement>('[data-motion-file-label]')
     const cropBox = root.querySelector<HTMLElement>('[data-motion-crop-box]')
     const cropEditButton = root.querySelector<HTMLButtonElement>('[data-motion-crop-edit]')
     const cropResetButton = root.querySelector<HTMLButtonElement>('[data-motion-crop-reset]')
@@ -1011,13 +1042,20 @@ export function installMotionRuntime(
     const overlay = root.querySelector<HTMLCanvasElement>('[data-motion-overlay]')
     const placeholder = root.querySelector<HTMLElement>('[data-motion-placeholder]')
     const status = root.querySelector<HTMLElement>('[data-motion-status]')
+    const readyOutput = root.querySelector<HTMLElement>('[data-motion-ready]')
+    const resultsKey = root.getAttribute('data-motion-results-key')
+    const linkedResultsDock = resultsKey
+      ? [...runtimeDocument.querySelectorAll<HTMLElement>('[data-motion-results-dock]')]
+        .find((candidate) => candidate.getAttribute('data-motion-results-dock') === resultsKey)
+      : undefined
     const results = root.querySelector<HTMLElement>('[data-motion-results]')
-    const overall = root.querySelector<HTMLElement>('[data-motion-overall]')
-    const scores = root.querySelector<HTMLElement>('[data-motion-scores]')
-    const feedback = root.querySelector<HTMLElement>('[data-motion-feedback]')
-    const stageResults = root.querySelector<HTMLElement>('[data-motion-stage-results]')
-    const stageScores = root.querySelector<HTMLElement>('[data-motion-stage-scores]')
-    const download = root.querySelector<HTMLAnchorElement>('[data-motion-download]')
+      ?? linkedResultsDock?.querySelector<HTMLElement>('[data-motion-results]')
+    const overall = results?.querySelector<HTMLElement>('[data-motion-overall]')
+    const scores = results?.querySelector<HTMLElement>('[data-motion-scores]')
+    const feedback = results?.querySelector<HTMLElement>('[data-motion-feedback]')
+    const stageResults = results?.querySelector<HTMLElement>('[data-motion-stage-results]')
+    const stageScores = results?.querySelector<HTMLElement>('[data-motion-stage-scores]')
+    const download = results?.querySelector<HTMLAnchorElement>('[data-motion-download]')
     const storedTemplateField = activity.mode === 'reference'
       ? runtimeDocument.querySelector<HTMLInputElement>('[data-motion-template-field]')
       : undefined
@@ -1044,30 +1082,56 @@ export function installMotionRuntime(
     const referenceEmpty = workspace?.querySelector<HTMLElement>('[data-motion-reference-empty]')
     const referenceReplay = workspace?.querySelector<HTMLButtonElement>('[data-motion-reference-replay]')
     const referencePreviewStatus = workspace?.querySelector<HTMLElement>('[data-motion-reference-status]')
-    const comparisonContainer = activity.mode === 'compare' ? workspace?.parentElement : undefined
+    const comparisonContainer = activity.mode === 'compare'
+      ? workspace?.parentElement ?? root.closest<HTMLElement>('[data-builder-layout-row]')?.parentElement
+      : undefined
     const syncReplayButton = comparisonContainer?.querySelector<HTMLButtonElement>('[data-motion-sync-replay]')
     const syncReplayStatus = comparisonContainer?.querySelector<HTMLElement>('[data-motion-sync-status]')
-    const resultsDock = comparisonContainer?.querySelector<HTMLElement>('[data-motion-results-dock]')
-    if (!button || !video || !status || !results || !overall || !scores || !feedback) continue
-    if (activity.mode === 'compare' && resultsDock) resultsDock.append(results)
+    const resultsDock = linkedResultsDock
+      ?? comparisonContainer?.querySelector<HTMLElement>('[data-motion-results-dock]')
+    if (!button || !video || !status) continue
+    if (activity.mode !== 'analyze' && (!results || !overall || !scores || !feedback)) continue
+    if (activity.mode === 'compare' && resultsDock && results) resultsDock.append(results)
+    const showResults = activity.presentation.showResults
+      || (activity.mode === 'compare' && Boolean(resultsDock))
     button.textContent = activity.mode === 'reference' ? 'Iniciar grabación'
-      : activity.mode === 'analyze' ? 'Iniciar análisis' : 'Comenzar comparación'
+      : activity.mode === 'analyze' ? 'Iniciar captura' : 'Iniciar intento'
     if (stopButton) stopButton.textContent = activity.mode === 'compare'
       ? 'Detener y comparar'
-      : activity.mode === 'analyze' ? 'Detener análisis' : 'Detener y guardar'
+      : activity.mode === 'analyze' ? 'Detener y finalizar' : 'Detener y guardar'
     if (replayButton) replayButton.textContent = activity.mode === 'compare'
       ? 'Ver mi intento'
-      : 'Reproducir referencia'
-    if (videoSourceControls) videoSourceControls.hidden = activity.mode !== 'reference'
+      : activity.mode === 'analyze' ? 'Ver análisis' : 'Reproducir referencia'
+    const analyzesUploadedVideo = activity.mode === 'analyze' && activity.input.type === 'upload'
+    if (videoSourceControls) videoSourceControls.hidden = activity.mode !== 'reference' && !analyzesUploadedVideo
+    if (fileInputLabel) fileInputLabel.textContent = analyzesUploadedVideo ? 'Video para analizar' : 'Video de referencia'
+    if (analyzesUploadedVideo) button.hidden = !fileInput?.files?.[0]
+    root.dataset.motionRuntimeState = analyzesUploadedVideo ? 'awaiting-input' : 'idle'
     status.textContent = activity.mode === 'compare' && activity.reference.type === 'none'
       ? 'Selecciona una referencia en Movimiento.'
+      : analyzesUploadedVideo ? 'Selecciona un archivo de video para analizar.'
       : 'Listo para comenzar.'
+
+    const setAnalyzeState = (state: 'idle' | 'awaiting-input' | 'preparing' | 'capturing' | 'processing' | 'ready' | 'error') => {
+      if (activity.mode !== 'analyze') return
+      root.dataset.motionRuntimeState = state
+      if (readyOutput) readyOutput.hidden = state !== 'ready'
+      if (state === 'idle') button.textContent = 'Iniciar captura'
+      if (state === 'awaiting-input') button.textContent = 'Analizar video'
+      if (state === 'preparing') button.textContent = 'Preparando…'
+      if (state === 'capturing') button.textContent = 'Capturando…'
+      if (state === 'processing') button.textContent = 'Analizando…'
+      if (state === 'ready') button.textContent = analyzesUploadedVideo ? 'Analizar de nuevo' : 'Analizar otra grabación'
+      if (state === 'error') button.textContent = analyzesUploadedVideo ? 'Intentar de nuevo' : 'Reintentar captura'
+    }
 
     let stream: MediaStream | undefined
     let downloadUrl: string | undefined
     let stopRequested = false
     let recordedLandmarkFrames: RuntimeLandmarkFrame[] = []
     let replayGeneration = 0
+    let analyzeReviewPaused = false
+    let analyzeReviewRunning = false
     let referenceReplayGeneration = 0
     let selectedVideoUrl: string | undefined
     let learnerRecordingUrl: string | undefined
@@ -1176,6 +1240,9 @@ export function installMotionRuntime(
       ? new ResizeObserverConstructor(redrawDisplayedReference)
       : undefined
     if (referenceStage) referenceResizeObserver?.observe(referenceStage)
+    const inputOverlayFit = () => runtimeWindow.getComputedStyle(video).objectFit === 'cover'
+      ? 'cover'
+      : 'contain'
     const selectedSourceCrop = () => manualCrop
     const applyVideoCrop = (element: HTMLVideoElement, crop?: RuntimeSourceCrop) => {
       if (!crop) {
@@ -1233,7 +1300,14 @@ export function installMotionRuntime(
       const frame = recordedLandmarkFrames[frameIndex]
       if (frame && overlay) {
         overlay.hidden = false
-        drawHolisticOverlay(overlay, frame.width, frame.height, frame, activityFeatures(activity))
+        drawHolisticOverlay(
+          overlay,
+          frame.width,
+          frame.height,
+          frame,
+          activityFeatures(activity),
+          inputOverlayFit(),
+        )
         if (placeholder) placeholder.hidden = true
       }
       const template = stageTemplate()
@@ -1443,7 +1517,7 @@ export function installMotionRuntime(
       if (stageList) stageList.replaceChildren()
       motionInput?.querySelector('[data-motion-stage-overlay]')?.remove()
       editableStages = []
-      results.hidden = true
+      if (results) results.hidden = true
     }
     const containedVideoBounds = () => {
       if (!motionInput) return undefined
@@ -1634,7 +1708,14 @@ export function installMotionRuntime(
       video.hidden = true
       if (overlay) {
         overlay.hidden = false
-        drawHolisticOverlay(overlay, firstFrame.width, firstFrame.height, firstFrame, activityFeatures(activity))
+        drawHolisticOverlay(
+          overlay,
+          firstFrame.width,
+          firstFrame.height,
+          firstFrame,
+          activityFeatures(activity),
+          inputOverlayFit(),
+        )
       }
       if (placeholder) placeholder.hidden = true
       if (replayButton) replayButton.hidden = false
@@ -1679,7 +1760,7 @@ export function installMotionRuntime(
         if (displayedTime !== displayedSecond) {
           displayedSecond = displayedTime
           status.textContent = activity.mode === 'analyze'
-            ? `Analizando en vivo… ${displayedTime} s`
+            ? `Capturando landmarks… ${displayedTime} s`
             : `Grabando movimiento… ${displayedTime} s`
         }
         const result = await detectFrame(activity, source)
@@ -1692,29 +1773,18 @@ export function installMotionRuntime(
             source.videoHeight || 480,
             result,
             activityFeatures(activity),
+            inputOverlayFit(),
           )
         }
         const frame = featureFrame(result, elapsed, activityFeatures(activity))
         frames.push(frame)
         landmarkFrames.push(replayLandmarkFrame(result, source, elapsed))
-        if (activity.mode === 'analyze') {
-          while (frames.length > 120) frames.shift()
-          while (landmarkFrames.length > 120) landmarkFrames.shift()
-          while (visionResults.length > 120) visionResults.shift()
-          if (elapsed - lastLiveUpdate >= 250) {
-            lastLiveUpdate = elapsed
-            const live = evaluateVisionResults(activity, [frame], [result])
-            overall.textContent = `${live.overallScore}%`
-            scores.replaceChildren(...Object.entries(live.scores).map(([label, score]) => {
-              const item = runtimeDocument.createElement('div')
-              item.className = 'motion-results__score'
-              item.innerHTML = `<small>${label}</small><strong>${score}%</strong>`
-              return item
-            }))
-            feedback.textContent = live.feedback
-            results.hidden = !activity.presentation.showResults
-            root.dispatchEvent(new CustomEvent('motion:live-result', { bubbles: true, detail: live }))
-          }
+        if (activity.mode === 'analyze' && elapsed - lastLiveUpdate >= 250) {
+          lastLiveUpdate = elapsed
+          root.dispatchEvent(new CustomEvent('motion:capture-progress', {
+            bubbles: true,
+            detail: { elapsedMs: elapsed, frameCount: landmarkFrames.length },
+          }))
         }
         await new Promise((resolve) => runtimeWindow.setTimeout(resolve, 60))
       }
@@ -1741,7 +1811,6 @@ export function installMotionRuntime(
         throw new Error('Elige un tramo válido del video.')
       }
       const segmentDuration = endSeconds - startSeconds
-      const sampleCount = Math.max(8, Math.min(48, Math.ceil(segmentDuration * 6)))
       const crop = selectedSourceCrop()
       const frames: MotionFeatureFrame[] = []
       const landmarkFrames: RuntimeLandmarkFrame[] = []
@@ -1749,12 +1818,13 @@ export function installMotionRuntime(
       video.hidden = false
       applyVideoCrop(video, crop)
       if (placeholder) placeholder.hidden = true
-      for (let index = 0; index < sampleCount; index += 1) {
-        const progress = index / Math.max(1, sampleCount - 1)
-        const sourceTime = startSeconds + segmentDuration * progress
-        const elapsed = segmentDuration * progress * 1_000
-        status.textContent = `Analizando video… ${Math.round(progress * 100)}%`
-        await seek(source, Math.min(sourceTime, Math.max(0, duration - 0.01)))
+      if (typeof source.requestVideoFrameCallback !== 'function') {
+        throw new Error('Este navegador no permite recorrer todos los frames del video. Usa una versión reciente de Chrome.')
+      }
+      const analyzeCurrentFrame = async (sourceTime: number) => {
+        const elapsed = Math.max(0, sourceTime - startSeconds) * 1_000
+        const progress = Math.max(0, Math.min(1, (sourceTime - startSeconds) / segmentDuration))
+        status.textContent = `Analizando todos los frames… ${Math.round(progress * 100)}% · ${landmarkFrames.length} frames`
         const result = await detectFrame(activity, source, crop)
         visionResults.push(result)
         if (overlay) {
@@ -1765,12 +1835,56 @@ export function installMotionRuntime(
             crop ? (source.videoHeight || 480) * crop.height : source.videoHeight || 480,
             result,
             activityFeatures(activity),
-            crop ? 'cover' : 'contain',
+            inputOverlayFit(),
           )
         }
         frames.push(featureFrame(result, elapsed, activityFeatures(activity)))
         landmarkFrames.push(replayLandmarkFrame(result, source, elapsed, crop))
       }
+      const nextPresentedFrame = () => new Promise<number | undefined>((resolve, reject) => {
+        let settled = false
+        const timeout = runtimeWindow.setTimeout(() => {
+          if (settled) return
+          settled = true
+          source.pause()
+          if (source.ended || source.currentTime >= endSeconds - 0.25) resolve(undefined)
+          else reject(new Error('El navegador dejó de entregar frames del video durante el análisis.'))
+        }, 2_000)
+        source.requestVideoFrameCallback((_now, metadata) => {
+          if (settled) return
+          settled = true
+          runtimeWindow.clearTimeout(timeout)
+          source.pause()
+          resolve(metadata.mediaTime)
+        })
+        void source.play().catch((error) => {
+          if (settled) return
+          settled = true
+          runtimeWindow.clearTimeout(timeout)
+          reject(error)
+        })
+      })
+      source.pause()
+      await seek(source, startSeconds)
+      await analyzeCurrentFrame(startSeconds)
+      let previousMediaTime = startSeconds
+      let repeatedFrameCount = 0
+      while (previousMediaTime < endSeconds - 0.001) {
+        if (stopRequested) throw new Error('El análisis del video fue cancelado.')
+        const mediaTime = await nextPresentedFrame()
+        if (mediaTime === undefined || mediaTime > endSeconds + 0.001) break
+        if (mediaTime <= previousMediaTime + 0.0001) {
+          repeatedFrameCount += 1
+          if (repeatedFrameCount > 5) {
+            throw new Error('El video no avanzó al siguiente frame durante el análisis.')
+          }
+          continue
+        }
+        repeatedFrameCount = 0
+        await analyzeCurrentFrame(mediaTime)
+        previousMediaTime = mediaTime
+      }
+      source.pause()
       return {
         durationMs: segmentDuration * 1_000,
         frames,
@@ -1925,10 +2039,10 @@ export function installMotionRuntime(
           referencePreview.hidden = true
           referencePreviewStatus.textContent = previewVideoUrl
             ? showFrame ? 'Frame listo.' : showReference ? 'El origen no incluye puntos analizados.' : 'Video listo.'
-            : 'La práctica no tiene una reproducción visual guardada.'
+            : 'Práctica recibida. Este registro no tiene video ni referencia visual guardados.'
           if (referenceEmpty) {
             referenceEmpty.hidden = Boolean(previewVideoUrl)
-            referenceEmpty.textContent = 'Referencia visual no disponible.'
+            referenceEmpty.textContent = 'Práctica cargada sin referencia visual.'
           }
           if (referenceReplay) referenceReplay.disabled = !previewVideoUrl || showFrame
           return
@@ -2025,7 +2139,12 @@ export function installMotionRuntime(
     const captureInput = async () => {
       if (fileInput?.files?.[0] && selectedVideoUrl) {
         motionInput?.classList.remove('is-mirrored')
-        if (stopButton) stopButton.hidden = true
+        if (stopButton) {
+          stopButton.textContent = 'Cancelar análisis'
+          stopButton.hidden = false
+          stopButton.disabled = false
+        }
+        setAnalyzeState('processing')
         return analyzeSelectedVideo(video)
       }
       if (activity.input.type === 'url') {
@@ -2054,6 +2173,9 @@ export function installMotionRuntime(
         }
         return captureVideo(source, activity.input.continuous ? Number.POSITIVE_INFINITY : activity.input.durationMs, activity.input.continuous)
       }
+      if (activity.input.type === 'upload') {
+        throw new Error('Selecciona un archivo de video antes de iniciar el análisis.')
+      }
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: activity.input.facingMode }, audio: false,
       })
@@ -2064,6 +2186,7 @@ export function installMotionRuntime(
       if (placeholder) placeholder.hidden = true
       status.textContent = 'Prepárate…'
       await new Promise((resolve) => runtimeWindow.setTimeout(resolve, 1_000))
+      setAnalyzeState('capturing')
       const manualStop = activity.input.continuous || activity.mode === 'reference' || activity.mode === 'compare'
       if (manualStop && stopButton) {
         stopButton.hidden = false
@@ -2075,7 +2198,8 @@ export function installMotionRuntime(
       const MediaRecorderConstructor = (runtimeWindow as Window & {
         MediaRecorder?: typeof MediaRecorder
       }).MediaRecorder
-      if (activity.mode === 'compare' && typeof MediaRecorderConstructor === 'function') {
+      if ((activity.mode === 'compare' || activity.mode === 'analyze')
+        && typeof MediaRecorderConstructor === 'function') {
         try {
           const activeRecorder = new MediaRecorderConstructor(stream)
           recorder = activeRecorder
@@ -2091,7 +2215,10 @@ export function installMotionRuntime(
           recorderStopped = undefined
         }
       }
-      const captured = await captureVideo(video, activity.input.continuous ? Number.POSITIVE_INFINITY : activity.input.durationMs, manualStop)
+      const captureDuration = activity.mode === 'analyze'
+        ? activity.input.durationMs
+        : activity.input.continuous ? Number.POSITIVE_INFINITY : activity.input.durationMs
+      const captured = await captureVideo(video, captureDuration, manualStop)
       if (recorder?.state === 'recording') {
         recorder.stop()
         await recorderStopped
@@ -2106,47 +2233,106 @@ export function installMotionRuntime(
     }
     const replay = async (range: [number, number] = [0, 1]) => {
       if (!overlay || !recordedLandmarkFrames.length || !replayButton) return
+      if (activity.mode === 'analyze' && analyzeReviewRunning) {
+        analyzeReviewPaused = !analyzeReviewPaused
+        replayButton.textContent = analyzeReviewPaused ? 'Continuar revisión' : 'Pausar revisión'
+        if (analyzeReviewPaused) video.pause()
+        else await video.play().catch(() => undefined)
+        status.textContent = analyzeReviewPaused ? 'Revisión pausada.' : 'Reproduciendo el análisis…'
+        return
+      }
       const replayFrames = landmarkRange(recordedLandmarkFrames, range)
       if (!replayFrames.length) return
       const generation = ++replayGeneration
       button.disabled = true
-      replayButton.disabled = true
+      replayButton.disabled = activity.mode !== 'analyze'
+      analyzeReviewPaused = false
+      analyzeReviewRunning = activity.mode === 'analyze'
+      if (activity.mode === 'analyze') replayButton.textContent = 'Pausar revisión'
       video.hidden = true
       overlay.hidden = false
       if (placeholder) placeholder.hidden = true
       status.textContent = activity.mode === 'compare'
         ? 'Reproduciendo tu intento…'
-        : 'Reproduciendo referencia…'
-      if (activity.mode === 'compare' && learnerRecordingUrl) {
+        : activity.mode === 'analyze' ? 'Reproduciendo el análisis…' : 'Reproduciendo referencia…'
+      const reviewVideoUrl = activity.mode === 'analyze'
+        ? analyzesUploadedVideo ? selectedVideoUrl : learnerRecordingUrl
+        : activity.mode === 'compare' ? learnerRecordingUrl : undefined
+      let reviewVideoPlaying = false
+      if (reviewVideoUrl) {
         video.srcObject = null
-        video.src = learnerRecordingUrl
+        video.src = reviewVideoUrl
         video.muted = true
         video.hidden = false
         if (video.readyState < 1) await waitFor(video, 'loadedmetadata')
         await seek(video, (Number.isFinite(video.duration) ? video.duration : 0) * range[0])
-        await video.play().catch(() => undefined)
+        reviewVideoPlaying = await video.play().then(() => true).catch(() => false)
       }
-      let previousTime = replayFrames[0].t
-      for (const frame of replayFrames) {
-        if (generation !== replayGeneration) return
-        const delay = Math.max(0, Math.min(500, frame.t - previousTime))
-        if (delay) await new Promise((resolve) => runtimeWindow.setTimeout(resolve, delay))
-        if (generation !== replayGeneration) return
-        drawHolisticOverlay(
-          overlay,
-          frame.width,
-          frame.height,
-          frame,
-          activityFeatures(activity),
-        )
-        previousTime = frame.t
+      const drawReplayFrame = (frame: RuntimeLandmarkFrame) => drawHolisticOverlay(
+        overlay,
+        frame.width,
+        frame.height,
+        frame,
+        activityFeatures(activity),
+        inputOverlayFit(),
+      )
+      if (activity.mode === 'analyze' && reviewVideoPlaying && Number.isFinite(video.duration)) {
+        // The video is the review clock. Mapping its playback progress to the
+        // captured landmark timestamps prevents independent timers from
+        // drifting apart during playback or after a pause.
+        const videoStart = video.duration * range[0]
+        const videoEnd = video.duration * range[1]
+        const landmarkStart = replayFrames[0].t
+        const landmarkEnd = replayFrames.at(-1)!.t
+        const landmarkDuration = Math.max(1, landmarkEnd - landmarkStart)
+        let frameIndex = 0
+        let renderedIndex = -1
+        while (generation === replayGeneration) {
+          while (analyzeReviewPaused && generation === replayGeneration) {
+            await new Promise((resolve) => runtimeWindow.setTimeout(resolve, 60))
+          }
+          if (generation !== replayGeneration) return
+          const progress = Math.max(0, Math.min(1,
+            (video.currentTime - videoStart) / Math.max(0.001, videoEnd - videoStart),
+          ))
+          const targetTime = landmarkStart + landmarkDuration * progress
+          while (frameIndex + 1 < replayFrames.length
+            && Math.abs(replayFrames[frameIndex + 1].t - targetTime)
+              <= Math.abs(replayFrames[frameIndex].t - targetTime)) frameIndex += 1
+          if (frameIndex !== renderedIndex) {
+            drawReplayFrame(replayFrames[frameIndex])
+            renderedIndex = frameIndex
+          }
+          if (video.ended || video.currentTime >= videoEnd - 0.01) break
+          await new Promise<void>((resolve) => runtimeWindow.requestAnimationFrame(() => resolve()))
+        }
+        drawReplayFrame(replayFrames.at(-1)!)
+      } else {
+        let previousTime = replayFrames[0].t
+        for (const frame of replayFrames) {
+          if (generation !== replayGeneration) return
+          while (activity.mode === 'analyze' && analyzeReviewPaused && generation === replayGeneration) {
+            await new Promise((resolve) => runtimeWindow.setTimeout(resolve, 60))
+          }
+          if (generation !== replayGeneration) return
+          const delay = Math.max(0, Math.min(500, frame.t - previousTime))
+          if (delay) await new Promise((resolve) => runtimeWindow.setTimeout(resolve, delay))
+          if (generation !== replayGeneration) return
+          drawReplayFrame(frame)
+          previousTime = frame.t
+        }
       }
       video.pause()
       button.disabled = false
       replayButton.disabled = false
+      analyzeReviewRunning = false
+      analyzeReviewPaused = false
+      if (activity.mode === 'analyze') replayButton.textContent = 'Reproducir de nuevo'
       status.textContent = activity.mode === 'compare'
         ? 'Recapitulación terminada. El video permanece solamente en esta pestaña.'
-        : 'Reproducción terminada.'
+        : activity.mode === 'analyze'
+          ? 'Revisión terminada. El video temporal permanece solamente en esta pestaña.'
+          : 'Reproducción terminada.'
     }
     const replayTogether = async (
       referenceRange: [number, number] = [0, 1],
@@ -2196,7 +2382,9 @@ export function installMotionRuntime(
         video.load()
         video.hidden = true
         if (placeholder) placeholder.hidden = false
-        button.textContent = 'Iniciar grabación'
+        button.textContent = activity.mode === 'analyze' ? 'Analizar video' : 'Iniciar grabación'
+        if (analyzesUploadedVideo) button.hidden = true
+        if (analyzesUploadedVideo) setAnalyzeState('awaiting-input')
         motionInput?.classList.toggle(
           'is-mirrored',
           activity.input.type === 'camera' && activity.input.facingMode === 'user',
@@ -2222,13 +2410,20 @@ export function installMotionRuntime(
       video.hidden = false
       if (placeholder) placeholder.hidden = true
       button.textContent = 'Analizar tramo del video'
+      if (analyzesUploadedVideo) {
+        button.textContent = 'Analizar video'
+        setAnalyzeState('awaiting-input')
+      }
+      button.hidden = false
       status.textContent = 'Cargando video…'
       try {
         if (video.readyState < 1) await waitFor(video, 'loadedmetadata')
         if (segmentStart) segmentStart.value = '0'
         if (segmentEnd) segmentEnd.value = String(Math.min(10, video.duration).toFixed(1))
         setReferenceSourceMode('video', true)
-        status.textContent = `Video listo · ${video.duration.toFixed(1)} s. Elige el tramo.`
+        status.textContent = analyzesUploadedVideo
+          ? `Video listo · ${video.duration.toFixed(1)} s. Presiona Analizar video.`
+          : `Video listo · ${video.duration.toFixed(1)} s. Elige el tramo.`
       } catch {
         status.textContent = 'No se pudo abrir ese archivo de video.'
       }
@@ -2279,6 +2474,16 @@ export function installMotionRuntime(
         if (learnerRecordingUrl) URL.revokeObjectURL(learnerRecordingUrl)
         learnerRecordingUrl = undefined
       }
+      if (activity.mode === 'analyze') {
+        recordedLandmarkFrames = []
+        analyzeReviewPaused = false
+        analyzeReviewRunning = false
+        video.pause()
+        if (!analyzesUploadedVideo && learnerRecordingUrl) {
+          URL.revokeObjectURL(learnerRecordingUrl)
+          learnerRecordingUrl = undefined
+        }
+      }
       cropping = false
       cropStart = undefined
       cropDraft = undefined
@@ -2289,12 +2494,13 @@ export function installMotionRuntime(
       replayGeneration += 1
       stopRequested = false
       button.disabled = true
+      setAnalyzeState('preparing')
       sourceModeButtons.forEach((candidate) => { candidate.disabled = true })
       if (replayButton) replayButton.hidden = true
       video.hidden = true
       if (overlay) overlay.hidden = true
       if (placeholder) placeholder.hidden = false
-      results.hidden = true
+      if (results) results.hidden = true
       if (stageResults) stageResults.hidden = true
       if (stageScores) stageScores.replaceChildren()
       if (download) download.hidden = true
@@ -2320,7 +2526,34 @@ export function installMotionRuntime(
         }
         status.textContent = 'Realiza el movimiento ahora…'
         const captured = await captureInput()
-        if (activity.mode === 'compare') recordedLandmarkFrames = captured.landmarkFrames
+        if (activity.mode === 'compare' || activity.mode === 'analyze') {
+          recordedLandmarkFrames = captured.landmarkFrames
+        }
+        if (activity.mode === 'analyze') {
+          if (!captured.landmarkFrames.length) {
+            throw new Error('El análisis no produjo landmark frames. Revisa el video y el modelo seleccionado.')
+          }
+          publishAnalyzeLandmarks(activity, captured.landmarkFrames)
+          setAnalyzeState('ready')
+          if (replayButton) {
+            replayButton.textContent = 'Ver análisis'
+            replayButton.hidden = false
+          }
+          status.textContent = `${captured.landmarkFrames.length} frames del video analizados y disponibles en “${runtimeHelpers.landmarkFramesOutputId}”.`
+          root.dispatchEvent(new CustomEvent('motion:analysis', {
+            bubbles: true,
+            detail: {
+              frameCount: captured.landmarkFrames.length,
+              landmarkFrames: captured.landmarkFrames,
+              outputId: runtimeHelpers.landmarkFramesOutputId,
+              sourceId: activity.runtimeSourceId,
+            },
+          }))
+          return
+        }
+        if (!results || !overall || !scores || !feedback) {
+          throw new Error('La actividad no contiene su presentación de resultados.')
+        }
         if (!usesSequence) {
           const evaluation = evaluateVisionResults(activity, captured.frames, captured.visionResults)
           overall.textContent = `${evaluation.overallScore}%`
@@ -2332,35 +2565,30 @@ export function installMotionRuntime(
             return item
           }))
           feedback.textContent = evaluation.feedback
-          results.hidden = !activity.presentation.showResults
-          status.textContent = activity.mode === 'analyze'
-            ? 'Análisis detenido.'
-            : evaluation.overallScore >= passingScore(activity) ? 'Objetivo alcanzado.' : 'No se alcanzó el objetivo.'
+          results.hidden = !showResults
+          status.textContent = evaluation.overallScore >= passingScore(activity) ? 'Objetivo alcanzado.' : 'No se alcanzó el objetivo.'
           root.dispatchEvent(new CustomEvent('motion:result', { bubbles: true, detail: evaluation }))
           await saveResult(activity, evaluation, captured.durationMs, captured.landmarkFrames)
           return
         }
+        const features = activityFeatures(activity)
+        if (features.hands && captured.frames.filter(hasTrackedHand).length < 4) {
+          throw new Error('No se detectaron suficientes cuadros con las manos visibles. Mantén las manos completas dentro del recuadro hasta detener la comparación.')
+        }
+        if (features.pose && captured.frames.filter((frame) => frame.facePosture.length).length < 4) {
+          throw new Error('No se detectaron suficientes cuadros con la cabeza y los hombros visibles. Aléjate un poco de la cámara y mantente dentro del recuadro.')
+        }
         const preparedInput = prepareSequence(captured.frames, activity)
         if (preparedInput.length < 4) {
-          throw new Error('No hubo suficientes cuadros con seguimiento confiable. Mejora la luz y mantente dentro del encuadre.')
+          throw new Error('El seguimiento fue inestable. Mantén la posición dentro del recuadro hasta detener la comparación.')
         }
-        if (activityFeatures(activity).hands && !preparedInput.some(hasTrackedHand)) {
+        if (features.hands && !preparedInput.some(hasTrackedHand)) {
           throw new Error('Mantén las manos visibles durante todo el movimiento.')
         }
-        if (activityFeatures(activity).pose && !preparedInput.some((frame) => frame.facePosture.length)) {
+        if (features.pose && !preparedInput.some((frame) => frame.facePosture.length)) {
           throw new Error('Asegúrate de que la cabeza y los hombros estén visibles.')
         }
         const averageQuality = Math.round(preparedInput.reduce((total, frame) => total + (frame.quality ?? 1), 0) / preparedInput.length * 100)
-
-        if (activity.mode === 'analyze') {
-          overall.textContent = `${averageQuality}% de seguimiento`
-          scores.replaceChildren()
-          feedback.textContent = `Se extrajeron ${preparedInput.length} puntos temporales confiables. La secuencia está lista para usarse en otra acción.`
-          results.hidden = !activity.presentation.showResults
-          status.textContent = 'Análisis completado.'
-          root.dispatchEvent(new CustomEvent('motion:analysis', { bubbles: true, detail: { frames: preparedInput, quality: averageQuality } }))
-          return
-        }
 
         if (activity.mode === 'reference') {
           recordedLandmarkFrames = captured.landmarkFrames
@@ -2421,7 +2649,7 @@ export function installMotionRuntime(
           } else if (download) {
             download.hidden = true
           }
-          results.hidden = !activity.presentation.showResults
+          results.hidden = !showResults
           if (replayButton && recordedLandmarkFrames.length) replayButton.hidden = false
           status.textContent = 'Plantilla compilada localmente.'
           root.dispatchEvent(new CustomEvent('motion:reference', { bubbles: true, detail: template }))
@@ -2480,7 +2708,7 @@ export function installMotionRuntime(
           ? `${comparison.feedback} Revisa especialmente: ${weakestStage.label}.`
           : comparison.feedback
         renderStageComparisons(stageComparisons)
-        results.hidden = !activity.presentation.showResults
+        results.hidden = !showResults
         if (replayButton && recordedLandmarkFrames.length) replayButton.hidden = false
         if (syncReplayButton && recordedLandmarkFrames.length && previewTemplate?.landmarkFrames.length) {
           syncReplayButton.hidden = false
@@ -2505,6 +2733,7 @@ export function installMotionRuntime(
         }
       } catch (error) {
         status.textContent = error instanceof Error ? error.message : 'No se pudo analizar el movimiento.'
+        setAnalyzeState('error')
         root.dispatchEvent(new CustomEvent('motion:error', { bubbles: true, detail: { message: status.textContent } }))
       } finally {
         stopStream()
@@ -2519,7 +2748,10 @@ export function installMotionRuntime(
     const stop = () => {
       stopRequested = true
       if (stopButton) stopButton.disabled = true
-      status.textContent = 'Procesando referencia…'
+        if (activity.mode === 'analyze') {
+          setAnalyzeState('processing')
+          status.textContent = analyzesUploadedVideo ? 'Cancelando análisis…' : 'Finalizando landmarks…'
+      } else status.textContent = 'Procesando referencia…'
     }
     const replayCurrent = () => { void replay() }
     const replayReference = () => { void replayStoredReference() }
@@ -2622,7 +2854,7 @@ export function createMotionRuntimeSource() {
     serializedFunction(compareMotionSequences),
     serializedFunction(suggestMotionStages),
     serializedFunction(compareMotionStages),
-    `(${installMotionRuntime.toString()})(window, document, { compareMotionStages, compareMotionSequences, createMediaPipeVisionDetector, filterMotionFrames, reduceMotionCheckpoints, smoothMotionSequence, suggestMotionStages });`,
+    `(${installMotionRuntime.toString()})(window, document, { compareMotionStages, compareMotionSequences, createMediaPipeVisionDetector, filterMotionFrames, reduceMotionCheckpoints, smoothMotionSequence, suggestMotionStages, landmarkFramesOutputId: ${JSON.stringify(LANDMARK_FRAMES_OUTPUT_ID)}, runtimeValueEventName: ${JSON.stringify(RUNTIME_VALUE_EVENT)}, runtimeValueStoreProperty: ${JSON.stringify(RUNTIME_VALUE_STORE_PROPERTY)} });`,
   ].join('\n')
 }
 

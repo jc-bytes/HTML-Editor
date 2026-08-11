@@ -10,16 +10,21 @@ import type { EditorConnectionRecord } from '../editor-platform'
 import {
   accessModeLabels,
   appliedSupabaseSchema,
+  builtInDataFields,
   builtInFields,
   collectionDisplayName,
   createSupabaseMigrationSql,
   createSupabaseSetupSql,
+  dataFieldLabel,
   describeSupabaseSchemaChanges,
   fieldTypeLabels,
   isSafePublishableKey,
   importSupabaseSchemaSql,
   normalizedSupabaseConfig,
   readSupabaseAccessToken,
+  relatedDataFields,
+  relationAlias,
+  relationDisplayField,
   safeDatabaseIdentifier,
   verifySupabaseTable,
 } from './supabase-data'
@@ -34,7 +39,6 @@ import {
   dataComponentTemplateById,
   dataComponentTemplates,
   defaultDataComponentOptions,
-  compatibleFieldsForSlot,
   effectiveDataFields,
   filterControlKind,
   suggestDataComponentMapping,
@@ -81,16 +85,24 @@ interface SupabaseDataPanelProps {
 }
 
 type CollectionTemplate = {
+  access?: SupabaseAccessMode
   description: string
   fields: Array<{ name: string; type: SupabaseFieldType }>
   id: string
   name: string
+  recordMode?: 'multiple' | 'single_per_user'
 }
 
 type MediaSample = {
   error?: string
   loading: boolean
   url?: string
+}
+
+type TableSample = {
+  error?: string
+  loading: boolean
+  record?: Record<string, unknown>
 }
 
 type LoadedMediaSample = {
@@ -112,7 +124,16 @@ async function loadMediaSample(
     throw new Error('Inicia sesión en la vista previa para ver medios protegidos.')
   }
   const url = new URL(`${config.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(table.name)}`)
-  url.searchParams.set('select', field)
+  const [relatedAlias, relatedField] = field.split('.')
+  const relation = relatedField
+    ? table.relations.find((candidate) => relationAlias(candidate) === relatedAlias)
+    : undefined
+  const relatedTable = relation
+    ? config.tables.find((candidate) => candidate.id === relation.targetTableId)
+    : undefined
+  url.searchParams.set('select', relation && relatedTable && relatedField
+    ? `${relatedAlias}:${relatedTable.name}!${relation.column}!inner(${relatedField})`
+    : field)
   url.searchParams.set(field, 'not.is.null')
   url.searchParams.set('limit', '1')
   const response = await fetch(url.href, {
@@ -124,9 +145,13 @@ async function loadMediaSample(
   })
   if (!response.ok) throw new Error('No pudimos leer una URL de esta colección.')
   const records = await response.json().catch(() => []) as unknown
-  const value = Array.isArray(records) && records[0] && typeof records[0] === 'object'
-    ? (records[0] as Record<string, unknown>)[field]
+  const record = Array.isArray(records) && records[0] && typeof records[0] === 'object'
+    ? records[0] as Record<string, unknown>
     : undefined
+  const relatedRecord = record && relatedField && record[relatedAlias] && typeof record[relatedAlias] === 'object'
+    ? record[relatedAlias] as Record<string, unknown>
+    : undefined
+  const value = relatedRecord && relatedField ? relatedRecord[relatedField] : record?.[field]
   if (typeof value !== 'string' || !value.trim()) return undefined
   const mediaUrl = value.trim()
   const storageMatch = /^storage:\/\/([^/]+)\/(.+)$/i.exec(mediaUrl)
@@ -172,6 +197,43 @@ async function loadMediaSample(
   }
 }
 
+async function loadTableSample(
+  config: SupabaseEditorConfig,
+  table: SupabaseTableConfig,
+  signal: AbortSignal,
+) {
+  if (!config.projectUrl || !isSafePublishableKey(config.publishableKey)) {
+    throw new Error('Conecta Supabase para ver valores reales de esta colección.')
+  }
+  const accessToken = readSupabaseAccessToken(config.projectUrl)
+  if ((table.access === 'authenticated_read' || table.access === 'user_owned') && !accessToken) {
+    throw new Error('Inicia sesión en la vista previa para ver valores reales.')
+  }
+  const url = new URL(`${config.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(table.name)}`)
+  url.searchParams.set('select', '*')
+  url.searchParams.set('limit', '1')
+  const response = await fetch(url.href, {
+    signal,
+    headers: {
+      apikey: config.publishableKey,
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+  })
+  if (!response.ok) throw new Error('No pudimos leer una fila de ejemplo de esta colección.')
+  const records = await response.json().catch(() => []) as unknown
+  return Array.isArray(records) && records[0] && typeof records[0] === 'object'
+    ? records[0] as Record<string, unknown>
+    : undefined
+}
+
+function sampleValueLabel(value: unknown) {
+  if (value === undefined) return 'Sin muestra disponible'
+  if (value === null || value === '') return 'Vacío en la primera fila'
+  if (typeof value === 'boolean') return value ? 'Sí' : 'No'
+  const text = typeof value === 'object' ? JSON.stringify(value) : String(value)
+  return text.length > 86 ? `${text.slice(0, 83)}…` : text
+}
+
 const collectionTemplates: CollectionTemplate[] = [
   { id: 'products', name: 'Productos', description: 'Nombre, descripción, imagen y precio.', fields: [
     { name: 'nombre', type: 'text' }, { name: 'descripcion', type: 'long_text' },
@@ -188,6 +250,9 @@ const collectionTemplates: CollectionTemplate[] = [
   { id: 'events', name: 'Eventos', description: 'Nombre, fecha, lugar y descripción.', fields: [
     { name: 'nombre', type: 'text' }, { name: 'fecha', type: 'date' },
     { name: 'lugar', type: 'text' }, { name: 'descripcion', type: 'long_text' },
+  ] },
+  { id: 'roles', name: 'Roles de usuarios', description: 'Roles seguros para páginas y controles de gestión.', access: 'user_owned', recordMode: 'multiple', fields: [
+    { name: 'role', type: 'text' },
   ] },
   { id: 'blank', name: 'Desde cero', description: 'Comienza con un campo de título.', fields: [
     { name: 'titulo', type: 'text' },
@@ -364,11 +429,16 @@ function CollectionWizard({ config, onClose, onCreate }: {
   const [templateId, setTemplateId] = useState('books')
   const selectedTemplate = collectionTemplates.find((template) => template.id === templateId) ?? collectionTemplates[0]
   const createDraft = (template: CollectionTemplate): SupabaseTableConfig => ({
-    access: 'public_read',
+    access: template.access ?? 'public_read',
     displayName: template.name,
     fields: template.fields.map((field) => ({ ...field, id: crypto.randomUUID() })),
     id: `draft-${crypto.randomUUID()}`,
+    management: template.id === 'roles' ? {
+      actions: ['select', 'insert', 'update', 'delete'],
+      roles: ['admin'],
+    } : undefined,
     name: safeDatabaseIdentifier(template.name) || `collection_${Date.now()}`,
+    recordMode: template.recordMode ?? 'multiple',
     relations: [],
     setupStatus: 'draft',
   })
@@ -504,7 +574,7 @@ function CollectionWizard({ config, onClose, onCreate }: {
           {draft.fields.map((field) => <div className="gjs-data-field" key={field.id}>
             <input aria-label="Nombre de la información" onChange={(event) => updateDraft((current) => ({ ...current, fields: current.fields.map((candidate) => candidate.id === field.id ? { ...candidate, name: event.target.value } : candidate) }))} value={field.name} />
             <select aria-label="Tipo de información" onChange={(event) => updateDraft((current) => ({ ...current, fields: current.fields.map((candidate) => candidate.id === field.id ? { ...candidate, type: event.target.value as SupabaseFieldType } : candidate) }))} value={field.type}>
-              {(['text', 'long_text', 'number', 'boolean', 'date', 'datetime', 'media', 'url', 'json'] as const).map((type) => <option key={type} value={type}>{fieldTypeLabels[type]}</option>)}
+              {(['text', 'long_text', 'number', 'boolean', 'date', 'datetime', 'media', 'media_list', 'url', 'uuid', 'json'] as const).map((type) => <option key={type} value={type}>{fieldTypeLabels[type]}</option>)}
             </select>
             <button aria-label={`Eliminar ${field.name}`} disabled={draft.fields.length === 1} onClick={() => updateDraft((current) => ({ ...current, fields: current.fields.filter((candidate) => candidate.id !== field.id) }))} type="button">×</button>
           </div>)}
@@ -519,6 +589,13 @@ function CollectionWizard({ config, onClose, onCreate }: {
             <strong>Cada usuario ve la suya</strong><span>Para perfiles, progreso, favoritos e información personal.</span>
           </button>
         </div>
+        {draft.access === 'user_owned' && <label>
+          ¿Cuántos elementos puede tener cada persona?
+          <select aria-label="Cantidad de elementos por persona" onChange={(event) => updateDraft((current) => ({ ...current, recordMode: event.target.value as 'multiple' | 'single_per_user' }))} value={draft.recordMode ?? 'multiple'}>
+            <option value="multiple">Varios — favoritos, progreso o pedidos</option>
+            <option value="single_per_user">Uno — perfil, preferencias o ajustes</option>
+          </select>
+        </label>}
         <div className="gjs-data-wizard-actions"><button onClick={() => setStage(startChoice === 'template' ? 'templates' : 'start')} type="button">Atrás</button><button className="gjs-flow-primary" disabled={!canCreate} onClick={finishVisual} type="button">{drafts.length === 1 ? 'Crear colección' : `Crear ${drafts.length} colecciones`}</button></div>
       </div>}
       {mode === 'sql' && <div className="gjs-data-form gjs-data-sql-import">
@@ -555,7 +632,12 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
   const [tableId, setTableId] = useState(initialTableId ?? availableTables[0]?.id ?? '')
   const table = availableTables.find((candidate) => candidate.id === tableId)
   const template = dataComponentTemplateById(templateId)
-  const tableFields = table ? effectiveDataFields(table) : []
+  const directTableFields = table
+    ? [...new Map([...effectiveDataFields(table), ...builtInDataFields(table.access)]
+      .map((field) => [field.name, field])).values()]
+    : []
+  const relatedTableFields = table ? relatedDataFields(config, table) : []
+  const tableFields = [...directTableFields, ...relatedTableFields]
   const textFields = tableFields.filter((field) => field.type === 'text' || field.type === 'long_text')
   const filterableFields = tableFields.filter((field) => filterControlKind(field))
   const sortableFields = tableFields.filter((field) => !['media', 'json'].includes(field.type))
@@ -571,6 +653,71 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
     ...initialOptions,
   }))
   const [mediaSample, setMediaSample] = useState<MediaSample>({ loading: false })
+  const [tableSample, setTableSample] = useState<TableSample>({ loading: false })
+
+  const assignedSlotForField = (fieldName: string) => template.slots.find((slot) =>
+    mapping[slot.id] === fieldName)
+  const availableSlotsForField = (field: (typeof tableFields)[number]) => template.slots.filter((slot) =>
+    slot.accepts.includes(field.type) && (!mapping[slot.id] || mapping[slot.id] === field.name))
+
+  function assignFieldToSlot(fieldName: string, slotId: keyof DataComponentMapping) {
+    setMapping((current) => {
+      const next = { ...current }
+      Object.keys(next).forEach((candidate) => {
+        const key = candidate as keyof DataComponentMapping
+        if (next[key] === fieldName || key === slotId) delete next[key]
+      })
+      next[slotId] = fieldName
+      return next
+    })
+  }
+
+  function showField(field: (typeof tableFields)[number]) {
+    const available = availableSlotsForField(field)
+    const preferredSlotId = field.type === 'media' || field.type === 'url'
+      ? 'media'
+      : field.type === 'number' || field.type === 'boolean'
+        ? 'badge'
+        : field.type === 'long_text'
+          ? 'description'
+          : 'title'
+    const preferred = available.find((slot) => slot.id === preferredSlotId && !mapping[slot.id])
+      ?? available.find((slot) => !mapping[slot.id])
+    if (preferred) assignFieldToSlot(field.name, preferred.id)
+  }
+
+  function hideField(fieldName: string) {
+    setMapping((current) => Object.fromEntries(Object.entries(current)
+      .filter(([, value]) => value !== fieldName)) as DataComponentMapping)
+  }
+
+  function fieldChoice(field: (typeof tableFields)[number], related = false) {
+    const assignedSlot = assignedSlotForField(field.name)
+    const availableSlots = availableSlotsForField(field)
+    const directSample = related ? undefined : tableSample.record?.[field.name]
+    const sampleLabel = related && directSample === undefined
+      ? 'Campo relacionado · la muestra se carga al publicar'
+      : sampleValueLabel(directSample)
+    return <article className={assignedSlot ? 'selected' : ''} key={field.id}>
+      <div className="gjs-data-field-picker__identity">
+        <strong>{dataFieldLabel(config, table!, field.name)}</strong>
+        <span>{field.name} · {fieldTypeLabels[field.type]}</span>
+        <small title={sampleLabel}>{sampleLabel}</small>
+      </div>
+      {assignedSlot ? <div className="gjs-data-field-picker__format">
+        <label>
+          Mostrar como
+          <select aria-label={`Formato para ${dataFieldLabel(config, table!, field.name)}`} onChange={(event) => assignFieldToSlot(field.name, event.target.value as keyof DataComponentMapping)} value={assignedSlot.id}>
+            {template.slots.filter((slot) => slot.accepts.includes(field.type) && (!mapping[slot.id] || mapping[slot.id] === field.name))
+              .map((slot) => <option key={slot.id} value={slot.id}>{slot.label}</option>)}
+          </select>
+        </label>
+        <button aria-label={`Ocultar ${dataFieldLabel(config, table!, field.name)}`} onClick={() => hideField(field.name)} type="button">×</button>
+      </div> : availableSlots.length === 0
+        ? <span className="gjs-data-field-picker__unsupported">No disponible en este diseño</span>
+        : <button aria-label={`Mostrar ${dataFieldLabel(config, table!, field.name)}`} disabled={!availableSlots.some((slot) => !mapping[slot.id])} onClick={() => showField(field)} type="button">+ Mostrar</button>}
+    </article>
+  }
 
   function chooseDataTemplate(nextTemplateId: DataComponentTemplateId) {
     setTemplateId(nextTemplateId)
@@ -654,6 +801,26 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
     return () => controller.abort()
   }, [config, mapping.media, step, table])
 
+  useEffect(() => {
+    if (step !== 3 || !table || table.setupStatus !== 'verified') {
+      setTableSample({ loading: false })
+      return
+    }
+    const controller = new AbortController()
+    setTableSample({ loading: true })
+    void loadTableSample(config, table, controller.signal).then((record) => {
+      if (!controller.signal.aborted) setTableSample(record
+        ? { loading: false, record }
+        : { loading: false, error: 'La colección todavía no tiene filas para mostrar como ejemplo.' })
+    }).catch((cause: unknown) => {
+      if (!controller.signal.aborted) setTableSample({
+        loading: false,
+        error: cause instanceof Error ? cause.message : 'No pudimos cargar una fila de ejemplo.',
+      })
+    })
+    return () => controller.abort()
+  }, [config, step, table])
+
   return (
     <Modal onClose={onClose} title={editMode ? 'Editar componente con datos' : 'Añadir componente con datos'}>
       <div className="gjs-data-wizard-progress" aria-label={`Paso ${step} de 5`}>
@@ -683,20 +850,20 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
         </div>
       </div>}
       {step === 3 && table && <div className="gjs-data-form">
-        <div className="gjs-flow-introduction"><span aria-hidden="true">↔</span><div><strong>Elige qué mostrará cada parte</strong><p>Solo aparecen campos compatibles y disponibles en {collectionDisplayName(table)}.</p></div></div>
-        <div className="gjs-data-mapping-summary"><strong>{template.name}</strong><span>←</span><strong>{collectionDisplayName(table)}</strong></div>
-        <div className="gjs-data-mapping-list">
-          {template.slots.map((slot) => ({ slot, fields: compatibleFieldsForSlot(templateId, slot.id, table, mapping) }))
-            .filter(({ fields }) => fields.length > 0)
-            .map(({ slot, fields }) => <label key={slot.id}>
-              <span>{slot.label}</span>
-              <select aria-label={slot.label} onChange={(event) => setMapping((current) => ({ ...current, [slot.id]: event.target.value || undefined }))} value={mapping[slot.id] ?? ''}>
-                <option value="">No mostrar</option>
-                {fields.map((field) => <option key={field.id} value={field.name}>{field.name} · {fieldTypeLabels[field.type]}</option>)}
-              </select>
-            </label>)}
+        <div className="gjs-flow-introduction"><span aria-hidden="true">＋</span><div><strong>Elige qué campos quieres mostrar</strong><p>Estos son los campos reales de {collectionDisplayName(table)}. Pulsa + Mostrar y decide cómo aparecerá cada uno.</p></div></div>
+        <div className="gjs-data-mapping-summary"><strong>{collectionDisplayName(table)}</strong><span>→</span><strong>{template.name}</strong></div>
+        {tableSample.loading && <p className="gjs-data-sample-status" role="status">Cargando una fila de ejemplo…</p>}
+        {!tableSample.loading && tableSample.error && <p className="gjs-data-sample-status">{tableSample.error} Los nombres y tipos de campo siguen disponibles.</p>}
+        <div className="gjs-data-field-picker" aria-label={`Campos de ${collectionDisplayName(table)}`}>
+          <div className="gjs-data-field-picker__heading"><strong>Campos de esta tabla</strong><span>{directTableFields.length}</span></div>
+          {directTableFields.map((field) => fieldChoice(field))}
+          {relatedTableFields.length > 0 && <details className="gjs-data-related-fields">
+            <summary>Campos relacionados <span>{relatedTableFields.length}</span></summary>
+            <p>Información enlazada desde otras colecciones; no son columnas de {collectionDisplayName(table)}.</p>
+            <div>{relatedTableFields.map((field) => fieldChoice(field, true))}</div>
+          </details>}
         </div>
-        {!template.slots.some((slot) => compatibleFieldsForSlot(templateId, slot.id, table, mapping).length) && <p className="gjs-data-placeholder">Esta presentación no tiene partes compatibles con los campos de la colección.</p>}
+        {!directTableFields.length && <p className="gjs-data-placeholder">Esta colección no tiene campos disponibles todavía.</p>}
         {mapping.media && <label>
           Mostrar el medio como
           <select aria-label="Tipo de medio" onChange={(event) => setMediaKind(event.target.value as DataComponentOptions['mediaKind'])} value={mediaKind}>
@@ -744,7 +911,7 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
             </div>
             <label className="gjs-data-pagination-toggle"><input checked={displayOptions.pagination} onChange={(event) => setDisplayOptions((current) => ({ ...current, pagination: event.target.checked }))} type="checkbox" /><span><strong>Mostrar Anterior y Siguiente</strong><small>Solo aparecen cuando hay más información disponible.</small></span></label>
         </div>}
-        <label>Ordenar por<select aria-label="Campo para ordenar" onChange={(event) => setDisplayOptions((current) => ({ ...current, sortField: event.target.value || undefined }))} value={displayOptions.sortField ?? ''}><option value="">Orden predeterminado</option>{sortableFields.map((field) => <option key={field.id} value={field.name}>{field.name} · {fieldTypeLabels[field.type]}</option>)}</select></label>
+        <label>Ordenar por<select aria-label="Campo para ordenar" onChange={(event) => setDisplayOptions((current) => ({ ...current, sortField: event.target.value || undefined }))} value={displayOptions.sortField ?? ''}><option value="">Orden predeterminado</option>{sortableFields.map((field) => <option key={field.id} value={field.name}>{dataFieldLabel(config, table, field.name)} · {fieldTypeLabels[field.type]}</option>)}</select></label>
         {displayOptions.sortField && <label>Dirección<select aria-label="Dirección del orden" onChange={(event) => setDisplayOptions((current) => ({ ...current, sortDirection: event.target.value as 'asc' | 'desc' }))} value={displayOptions.sortDirection}><option value="asc">Ascendente</option><option value="desc">Descendente</option></select></label>}
       </div>}
       {step === 5 && table && <div className="gjs-data-form">
@@ -758,7 +925,7 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
                 ? [['eq', 'Es igual a'], ['gte', 'Desde'], ['lte', 'Hasta']]
                 : [['eq', 'Es igual a']]
             return <div className="gjs-data-field" key={`${filter.field}-${index}`}>
-              <select aria-label={`Campo de regla ${index + 1}`} onChange={(event) => setDisplayOptions((current) => ({ ...current, fixedFilters: current.fixedFilters.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, field: event.target.value, operator: 'eq', value: '' } : candidate) }))} value={filter.field}>{filterableFields.map((candidate) => <option key={candidate.id} value={candidate.name}>{candidate.name}</option>)}</select>
+              <select aria-label={`Campo de regla ${index + 1}`} onChange={(event) => setDisplayOptions((current) => ({ ...current, fixedFilters: current.fixedFilters.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, field: event.target.value, operator: 'eq', value: '' } : candidate) }))} value={filter.field}>{filterableFields.map((candidate) => <option key={candidate.id} value={candidate.name}>{dataFieldLabel(config, table, candidate.name)}</option>)}</select>
               <select aria-label={`Condición de regla ${index + 1}`} onChange={(event) => setDisplayOptions((current) => ({ ...current, fixedFilters: current.fixedFilters.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, operator: event.target.value as DataComponentFixedFilter['operator'] } : candidate) }))} value={filter.operator}>{operators.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
               {field?.type === 'boolean' ? <select aria-label={`Valor de regla ${index + 1}`} onChange={(event) => setDisplayOptions((current) => ({ ...current, fixedFilters: current.fixedFilters.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, value: event.target.value } : candidate) }))} value={filter.value}><option value="true">Sí</option><option value="false">No</option></select> : <input aria-label={`Valor de regla ${index + 1}`} onChange={(event) => setDisplayOptions((current) => ({ ...current, fixedFilters: current.fixedFilters.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, value: event.target.value } : candidate) }))} type={field?.type === 'number' ? 'number' : field?.type === 'date' || field?.type === 'datetime' ? 'date' : 'text'} value={filter.value} />}
               <button aria-label={`Eliminar regla ${index + 1}`} onClick={() => setDisplayOptions((current) => ({ ...current, fixedFilters: current.fixedFilters.filter((_, candidateIndex) => candidateIndex !== index) }))} type="button">×</button>
@@ -770,11 +937,11 @@ function DataComponentWizard({ config, editMode = false, initialMapping, initial
           }} type="button">+ Añadir regla</button>
         </section>
         <section className="gjs-data-display-options"><strong>Controles para visitantes</strong>
-          <label>Campo de búsqueda<select aria-label="Campo de búsqueda" onChange={(event) => setDisplayOptions((current) => ({ ...current, searchField: event.target.value || undefined, visitorFilters: current.visitorFilters.filter((filter) => filter.field !== event.target.value) }))} value={displayOptions.searchField ?? ''}><option value="">Sin búsqueda</option>{textFields.map((field) => <option key={field.id} value={field.name}>{field.name}</option>)}</select></label>
+          <label>Campo de búsqueda<select aria-label="Campo de búsqueda" onChange={(event) => setDisplayOptions((current) => ({ ...current, searchField: event.target.value || undefined, visitorFilters: current.visitorFilters.filter((filter) => filter.field !== event.target.value) }))} value={displayOptions.searchField ?? ''}><option value="">Sin búsqueda</option>{textFields.map((field) => <option key={field.id} value={field.name}>{dataFieldLabel(config, table, field.name)}</option>)}</select></label>
           <div className="gjs-data-fields"><strong>Permitir filtrar por</strong>{filterableFields.filter((field) => field.name !== displayOptions.searchField).map((field) => {
             const kind = filterControlKind(field)!
             const checked = displayOptions.visitorFilters.some((filter) => filter.field === field.name)
-            return <label className="gjs-data-pagination-toggle" key={field.id}><input checked={checked} onChange={(event) => setDisplayOptions((current) => ({ ...current, visitorFilters: event.target.checked ? [...current.visitorFilters.filter((filter) => filter.field !== field.name), { field: field.name, kind }] : current.visitorFilters.filter((filter) => filter.field !== field.name) }))} type="checkbox" /><span><strong>{field.name}</strong><small>{fieldTypeLabels[field.type]}</small></span></label>
+            return <label className="gjs-data-pagination-toggle" key={field.id}><input checked={checked} onChange={(event) => setDisplayOptions((current) => ({ ...current, visitorFilters: event.target.checked ? [...current.visitorFilters.filter((filter) => filter.field !== field.name), { field: field.name, kind }] : current.visitorFilters.filter((filter) => filter.field !== field.name) }))} type="checkbox" /><span><strong>{dataFieldLabel(config, table, field.name)}</strong><small>{fieldTypeLabels[field.type]}</small></span></label>
           })}</div>
           <label className="gjs-data-pagination-toggle"><input checked={displayOptions.visitorSort} onChange={(event) => setDisplayOptions((current) => ({ ...current, visitorSort: event.target.checked, visitorSortFields: event.target.checked && !current.visitorSortFields.length ? sortableFields.map((field) => field.name) : current.visitorSortFields }))} type="checkbox" /><span><strong>Permitir cambiar el orden</strong><small>Ofrece los campos ordenables en la página.</small></span></label>
         </section>
@@ -810,6 +977,9 @@ function TableModal({ config, editorProjectId, isGuest, onChange, onClose, table
   if (!foundTable) return null
   const table = foundTable
   const hasVerifiedSchema = Boolean(table.verifiedSchema)
+  const rolesTable = config.tables.find((candidate) => candidate.access === 'user_owned'
+    && /(^|_)roles?($|_)/i.test(candidate.name)
+    && candidate.fields.some((field) => field.name === 'role'))
 
   function updateTable(update: (current: SupabaseTableConfig) => SupabaseTableConfig, affectsSchema = true) {
     let nextConfig: SupabaseEditorConfig = {
@@ -846,6 +1016,26 @@ function TableModal({ config, editorProjectId, isGuest, onChange, onClose, table
     }))
   }
 
+  function renameField(fieldId: string, requestedName: string) {
+    const normalizedName = safeDatabaseIdentifier(requestedName)
+    if (builtInFields(table.access).includes(normalizedName)) {
+      setNotice(`“${normalizedName}” ya existe automáticamente en esta colección. No necesitas añadirlo otra vez.`)
+      return
+    }
+    if (normalizedName && table.fields.some((field) => field.id !== fieldId
+      && safeDatabaseIdentifier(field.name) === normalizedName)) {
+      setNotice(`“${normalizedName}” ya existe en esta colección. Usa otro nombre.`)
+      return
+    }
+    setNotice('')
+    updateTable((current) => ({
+      ...current,
+      fields: current.fields.map((candidate) => candidate.id === fieldId
+        ? { ...candidate, name: requestedName }
+        : candidate),
+    }))
+  }
+
   function addRelation() {
     const relationColumns = [
       ...table.fields.filter((field) => field.type === 'uuid').map((field) => field.name),
@@ -862,6 +1052,9 @@ function TableModal({ config, editorProjectId, isGuest, onChange, onClose, table
       column,
       targetTableId: target.id,
       targetColumn: 'id',
+      displayField: relationDisplayField(config, {
+        id: 'preview', column, targetTableId: target.id, targetColumn: 'id', onDelete: 'restrict',
+      }),
       onDelete: 'restrict',
     }
     updateTable((current) => ({ ...current, relations: [...current.relations, relation] }))
@@ -960,21 +1153,22 @@ function TableModal({ config, editorProjectId, isGuest, onChange, onClose, table
             <input onChange={(event) => updateTable((current) => ({ ...current, displayName: event.target.value }), false)} value={collectionDisplayName(table)} />
           </label>
           <div className="gjs-data-section-heading">
-            <div><strong>Información de cada elemento</strong><span>{table.fields.length} campos</span></div>
+            <div><strong>Información automática</strong><span>Ya existe; no tienes que crearla.</span></div>
+          </div>
+          <div aria-label="Información automática" className="gjs-data-builtins">{builtInFields(table.access).map((field) => <span key={field}>{field}</span>)}</div>
+          <div className="gjs-data-section-heading">
+            <div><strong>Información personalizada</strong><span>{table.fields.length} campos</span></div>
             <button onClick={addField} type="button">+ Información</button>
           </div>
           <div className="gjs-data-fields">
             {table.fields.map((field) => (
               <div className="gjs-data-field" key={field.id}>
-                <input aria-label="Nombre de la información" onChange={(event) => updateTable((current) => ({
-                  ...current,
-                  fields: current.fields.map((candidate) => candidate.id === field.id ? { ...candidate, name: event.target.value } : candidate),
-                }))} value={field.name} />
+                <input aria-label="Nombre de la información" onChange={(event) => renameField(field.id, event.target.value)} value={field.name} />
                 <select aria-label="Tipo de información" onChange={(event) => updateTable((current) => ({
                   ...current,
                   fields: current.fields.map((candidate) => candidate.id === field.id ? { ...candidate, type: event.target.value as SupabaseFieldType } : candidate),
                 }))} value={field.type}>
-                  {(['text', 'long_text', 'number', 'boolean', 'date', 'datetime', 'media', 'url', 'json'] as const).map((type) => <option key={type} value={type}>{fieldTypeLabels[type]}</option>)}
+              {(['text', 'long_text', 'number', 'boolean', 'date', 'datetime', 'media', 'media_list', 'url', 'uuid', 'json'] as const).map((type) => <option key={type} value={type}>{fieldTypeLabels[type]}</option>)}
                 </select>
                 <button aria-label={`Eliminar ${field.name}`} onClick={() => updateTable((current) => ({
                   ...current,
@@ -983,6 +1177,50 @@ function TableModal({ config, editorProjectId, isGuest, onChange, onClose, table
               </div>
             ))}
           </div>
+          {table.fields.some((field) => field.type === 'media' || field.type === 'media_list') && <div className="gjs-data-upload-settings">
+            <div className="gjs-data-section-heading"><div><strong>Archivos</strong><span>Convierte campos multimedia en controles de subida.</span></div></div>
+            {table.fields.filter((field) => field.type === 'media' || field.type === 'media_list').map((field) => <details key={field.id}>
+              <summary>{field.name}<span>{field.upload ? 'Subida configurada' : 'Usar URL'}</span></summary>
+              <div>
+                <label>Entrada<select aria-label={`Entrada para ${field.name}`} onChange={(event) => updateTable((current) => ({
+                  ...current,
+                  fields: current.fields.map((candidate) => candidate.id === field.id ? {
+                    ...candidate,
+                    upload: event.target.value === 'upload' ? candidate.upload ?? {
+                      bucket: safeDatabaseIdentifier(`${current.name}_${candidate.name}`),
+                      kind: 'image', maxSizeMb: 10, visibility: 'private',
+                    } : undefined,
+                  } : candidate),
+                }))} value={field.upload ? 'upload' : 'url'}><option value="url">Pegar una URL</option><option value="upload">Subir un archivo</option></select></label>
+                {field.upload && <>
+                  <label>Tipo permitido<select aria-label={`Tipo permitido para ${field.name}`} onChange={(event) => updateTable((current) => ({
+                    ...current,
+                    fields: current.fields.map((candidate) => candidate.id === field.id && candidate.upload
+                      ? { ...candidate, upload: { ...candidate.upload, kind: event.target.value as typeof candidate.upload.kind } }
+                      : candidate),
+                  }))} value={field.upload.kind}><option value="image">Imágenes</option><option value="video">Videos</option><option value="audio">Audio</option><option value="document">Documentos</option><option value="any">Cualquier archivo</option></select></label>
+                  <label>Tamaño máximo (MB)<input aria-label={`Tamaño máximo para ${field.name}`} max="100" min="1" onChange={(event) => updateTable((current) => ({
+                    ...current,
+                    fields: current.fields.map((candidate) => candidate.id === field.id && candidate.upload
+                      ? { ...candidate, upload: { ...candidate.upload, maxSizeMb: Number(event.target.value) } }
+                      : candidate),
+                  }))} type="number" value={field.upload.maxSizeMb} /></label>
+                  <label>Acceso<select aria-label={`Acceso de archivos para ${field.name}`} onChange={(event) => updateTable((current) => ({
+                    ...current,
+                    fields: current.fields.map((candidate) => candidate.id === field.id && candidate.upload
+                      ? { ...candidate, upload: { ...candidate.upload, visibility: event.target.value as 'public' | 'private' } }
+                      : candidate),
+                  }))} value={field.upload.visibility}><option value="private">Privado · solo su propietario</option><option value="public">Público · cualquiera con el enlace</option></select></label>
+                  <label>Carpeta de Storage<input aria-label={`Bucket para ${field.name}`} onChange={(event) => updateTable((current) => ({
+                    ...current,
+                    fields: current.fields.map((candidate) => candidate.id === field.id && candidate.upload
+                      ? { ...candidate, upload: { ...candidate.upload, bucket: safeDatabaseIdentifier(event.target.value) } }
+                      : candidate),
+                  }))} value={field.upload.bucket} /></label>
+                </>}
+              </div>
+            </details>)}
+          </div>}
           {hasVerifiedSchema && <p className="gjs-data-safety">Los cambios se convertirán automáticamente en una migración. El editor avisará antes de eliminar datos o cambiar tipos.</p>}
         </div>
       )}
@@ -1004,26 +1242,41 @@ function TableModal({ config, editorProjectId, isGuest, onChange, onClose, table
           {!table.relations.length && <div className="gjs-data-placeholder">Esta colección todavía no tiene relaciones.</div>}
           {table.relations.map((relation) => (
             <div className="gjs-data-relation" key={relation.id}>
-              <select aria-label="Campo de origen" onChange={(event) => updateTable((current) => ({
+              <label><span>Guardar en</span><select aria-label="Campo de origen" onChange={(event) => updateTable((current) => ({
                 ...current,
                 relations: current.relations.map((candidate) => candidate.id === relation.id ? { ...candidate, column: event.target.value } : candidate),
               }))} value={relation.column}>
                 {[...table.fields.filter((field) => field.type === 'uuid').map((field) => field.name), ...builtInFields(table.access).filter((field) => field === 'id' || field === 'user_id')].map((field) => <option key={field} value={field}>{field}</option>)}
-              </select>
+              </select></label>
               <span>→</span>
-              <select aria-label="Tabla relacionada" onChange={(event) => updateTable((current) => ({
+              <label><span>Elegir de</span><select aria-label="Colección relacionada" onChange={(event) => updateTable((current) => ({
                 ...current,
-                relations: current.relations.map((candidate) => candidate.id === relation.id ? { ...candidate, targetTableId: event.target.value, targetColumn: 'id' } : candidate),
+                relations: current.relations.map((candidate) => candidate.id === relation.id ? {
+                  ...candidate,
+                  targetTableId: event.target.value,
+                  targetColumn: 'id',
+                  displayField: relationDisplayField(config, { ...candidate, targetTableId: event.target.value, targetColumn: 'id' }),
+                } : candidate),
               }))} value={relation.targetTableId}>
                 <option value="auth.users">Usuarios de Supabase Auth</option>
                 {config.tables.filter((candidate) => candidate.id !== table.id).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
-              </select>
-              <select aria-label="Al eliminar" onChange={(event) => updateTable((current) => ({
+              </select></label>
+              {relation.targetTableId !== 'auth.users' && <label><span>Mostrar como</span><select aria-label="Texto visible de la relación" onChange={(event) => updateTable((current) => ({
+                ...current,
+                relations: current.relations.map((candidate) => candidate.id === relation.id
+                  ? { ...candidate, displayField: event.target.value }
+                  : candidate),
+              }), false)} value={relationDisplayField(config, relation)}>
+                {(config.tables.find((candidate) => candidate.id === relation.targetTableId)
+                  ? effectiveDataFields(config.tables.find((candidate) => candidate.id === relation.targetTableId)!)
+                  : []).map((field) => <option key={field.id} value={field.name}>{field.name}</option>)}
+              </select></label>}
+              <label><span>Si se borra</span><select aria-label="Al eliminar" onChange={(event) => updateTable((current) => ({
                 ...current,
                 relations: current.relations.map((candidate) => candidate.id === relation.id ? { ...candidate, onDelete: event.target.value as SupabaseRelation['onDelete'] } : candidate),
               }))} value={relation.onDelete}>
                 <option value="restrict">Impedir borrado</option><option value="cascade">Borrar relacionados</option><option value="set null">Vaciar relación</option>
-              </select>
+              </select></label>
               <button className="gjs-flow-danger" onClick={() => updateTable((current) => ({ ...current, relations: current.relations.filter((candidate) => candidate.id !== relation.id) }))} type="button">Eliminar</button>
             </div>
           ))}
@@ -1045,6 +1298,55 @@ function TableModal({ config, editorProjectId, isGuest, onChange, onClose, table
             <p>{table.access === 'user_owned' && 'Cada usuario podrá acceder solamente a filas cuyo user_id sea suyo.'}</p>
             <p>{table.access === 'private' && 'No estará disponible desde el navegador ni el sitio exportado.'}</p>
           </div>
+          {table.access === 'user_owned' && <label>
+            Elementos por persona
+            <select aria-label="Cantidad de elementos por persona" onChange={(event) => updateTable((current) => ({ ...current, recordMode: event.target.value as 'multiple' | 'single_per_user' }))} value={table.recordMode ?? 'multiple'}>
+              <option value="multiple">Varios elementos</option>
+              <option value="single_per_user">Un solo elemento</option>
+            </select>
+          </label>}
+          {table.access !== 'private' && <div className="gjs-data-divider" />}
+          {table.access !== 'private' && <label>
+            <span>Gestión por roles</span>
+            <select aria-label="Gestión por roles" onChange={(event) => updateTable((current) => ({
+              ...current,
+              management: event.target.value === 'enabled'
+                ? current.management ?? { roles: ['admin'], actions: ['select', 'update', 'delete'] }
+                : undefined,
+            }))} value={table.management ? 'enabled' : 'disabled'}>
+              <option value="disabled">Sin controles especiales</option>
+              <option disabled={!rolesTable} value="enabled">Permitir a ciertos roles</option>
+            </select>
+          </label>}
+          {table.access !== 'private' && !rolesTable && <p className="gjs-data-safety">Crea primero la colección “Roles de usuarios” para activar permisos de gestión.</p>}
+          {table.management && <>
+            <label>
+              Roles administradores
+              <input aria-label="Roles con permisos de gestión" onChange={(event) => updateTable((current) => ({
+                ...current,
+                management: current.management ? {
+                  ...current.management,
+                  roles: event.target.value.split(',').map((role) => role.trim()).filter(Boolean),
+                } : undefined,
+              }))} placeholder="admin, editor" value={table.management.roles.join(', ')} />
+            </label>
+            <fieldset className="gjs-data-management-actions">
+              <legend>Qué pueden hacer</legend>
+              {([['select', 'Ver todos'], ['insert', 'Crear'], ['update', 'Editar y aprobar'], ['delete', 'Eliminar']] as const).map(([action, label]) => <label key={action}>
+                <input checked={table.management?.actions.includes(action) ?? false} onChange={(event) => updateTable((current) => ({
+                  ...current,
+                  management: current.management ? {
+                    ...current.management,
+                    actions: event.target.checked
+                      ? [...new Set([...current.management.actions, action])]
+                      : current.management.actions.filter((candidate) => candidate !== action),
+                  } : undefined,
+                }))} type="checkbox" />
+                <span>{label}</span>
+              </label>)}
+            </fieldset>
+            <p className="gjs-data-safety">El primer rol administrador se asigna desde Supabase. Las personas no pueden darse permisos a sí mismas.</p>
+          </>}
           <p className="gjs-data-safety">La protección de datos se configura automáticamente en Supabase.</p>
           {hasVerifiedSchema && <p className="gjs-data-safety">Al cambiarla, el editor generará las columnas y políticas de seguridad necesarias.</p>}
         </div>
@@ -1114,11 +1416,15 @@ function ElementDataControls({ config, element, onRemoveBinding, onSaveBinding, 
   const table = availableTables.find((candidate) => candidate.id === tableId) ?? availableTables[0]
   const availableFields = useMemo(() => {
     if (!table) return []
-    const fields = table.fields.map((field) => field.name)
+    const fields = [...new Set([
+      ...table.fields.map((field) => field.name),
+      ...builtInFields(table.access),
+      ...relatedDataFields(config, table).map((field) => field.name),
+    ])]
     return element.bindingField && !fields.includes(element.bindingField)
       ? [element.bindingField, ...fields]
       : fields
-  }, [element.bindingField, table])
+  }, [config, element.bindingField, table])
   const [field, setField] = useState(element.bindingField ?? availableFields[0] ?? '')
   const [target, setTarget] = useState(element.bindingTarget)
   const [scope, setScope] = useState<'context' | 'first'>(
@@ -1145,7 +1451,7 @@ function ElementDataControls({ config, element, onRemoveBinding, onSaveBinding, 
         <option value="context">El elemento elegido en otra pantalla</option>
         <option value="first">{table?.access === 'user_owned' ? 'Información del usuario actual' : 'El primer elemento disponible'}</option>
       </select></label>}
-      <label>Información<select aria-label="Información" onChange={(event) => setField(event.target.value)} value={field}>{availableFields.map((candidate) => <option key={candidate} value={candidate}>{candidate}</option>)}</select></label>
+      <label>Información<select aria-label="Información" onChange={(event) => setField(event.target.value)} value={field}>{availableFields.map((candidate) => <option key={candidate} value={candidate}>{table ? dataFieldLabel(config, table, candidate) : candidate}</option>)}</select></label>
       <button className="gjs-flow-primary" disabled={!field || !table} onClick={() => table && onSaveBinding(table.id, field, target, inheritedTableId ? 'context' : scope)} type="button">{element.bindingField ? 'Actualizar información' : 'Mostrar esta información'}</button>
       {element.bindingField && <button className="gjs-flow-danger" onClick={onRemoveBinding} type="button">Dejar de mostrar esta información</button>}
       {!inheritedTableId && <button className={element.isRepeater ? 'gjs-flow-danger' : 'gjs-flow-secondary'} onClick={() => table && onToggleRepeater(table.id)} type="button">{element.isRepeater ? 'Mostrar solo un elemento' : 'Mostrar uno por cada elemento'}</button>}

@@ -11,10 +11,14 @@ import {
   createMotionConfigSource,
   createMotionRuntimeSource,
 } from '../../../runtime/motion-runtime'
+import { createFunctionBlockRuntimeSource } from '../../../runtime/functions/function-block-runtime'
+import { createRuntimeValueStoreSource } from '../../../runtime/values/runtime-value-store'
 
 const textDecoder = new TextDecoder()
 const runtimePath = 'builder-runtime/navigation.js'
 const overridesPath = 'builder-runtime/overrides.css'
+const functionRuntimePath = 'builder-runtime/functions.js'
+const valueRuntimePath = 'builder-runtime/runtime-values.js'
 const motionRuntimePath = 'motion-runtime/analysis.js'
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -34,7 +38,7 @@ function injectNavigationRuntime(
   page: ProjectPage,
 ) {
   const document = new DOMParser().parseFromString(markup, 'text/html')
-  document.querySelectorAll('[data-builder-config], [data-builder-runtime], [data-builder-overrides], [data-motion-config], [data-motion-runtime]')
+  document.querySelectorAll('[data-builder-config], [data-builder-runtime], [data-builder-overrides], [data-builder-runtime-values], [data-builder-function-runtime], [data-motion-config], [data-motion-runtime]')
     .forEach((node) => node.remove())
   applyContentOverrides(document, bundle.manifest, page.id)
 
@@ -78,6 +82,20 @@ function injectNavigationRuntime(
   runtimeScript.dataset.builderRuntime = 'true'
   runtimeScript.src = relativeProjectPath(page.file, runtimePath)
   document.body.append(configScript, runtimeScript)
+
+  if (document.querySelector('[data-builder-runtime-source-id],[data-builder-function-id],[data-builder-js-lab]')) {
+    const valueRuntime = document.createElement('script')
+    valueRuntime.dataset.builderRuntimeValues = 'true'
+    valueRuntime.src = relativeProjectPath(page.file, valueRuntimePath)
+    document.body.append(valueRuntime)
+  }
+
+  if (document.querySelector('[data-builder-function-id],[data-builder-js-lab]')) {
+    const functionRuntime = document.createElement('script')
+    functionRuntime.dataset.builderFunctionRuntime = 'true'
+    functionRuntime.src = relativeProjectPath(page.file, functionRuntimePath)
+    document.body.append(functionRuntime)
+  }
 
   if (bundle.manifest.motionActivities?.some((activity) => activity.pageId === page.id)) {
     const motionConfig = document.createElement('script')
@@ -132,6 +150,8 @@ export class ZipProjectExporter implements ProjectExporter {
 
     for (const file of bundle.files) {
       if (file.path === 'project.json' || file.path === runtimePath || file.path === overridesPath
+        || file.path === functionRuntimePath
+        || file.path === valueRuntimePath
         || file.path === motionRuntimePath) {
         continue
       }
@@ -148,6 +168,26 @@ export class ZipProjectExporter implements ProjectExporter {
 
     archive.file('project.json', JSON.stringify(bundle.manifest, null, 2))
     archive.file(runtimePath, createNavigationRuntimeSource())
+    const usesValueRuntime = bundle.manifest.pages.some((page) => {
+      const file = bundle.files.find((candidate) => candidate.path === page.file)
+      if (!file) return false
+      const markup = textDecoder.decode(file.bytes)
+      return markup.includes('data-builder-runtime-source-id') || markup.includes('data-builder-function-id')
+    })
+    if (usesValueRuntime) archive.file(valueRuntimePath, createRuntimeValueStoreSource())
+    const usesFunctionRuntime = bundle.manifest.pages.some((page) => {
+      const file = bundle.files.find((candidate) => candidate.path === page.file)
+      return file ? textDecoder.decode(file.bytes).includes('data-builder-function-id') : false
+    })
+    if (usesFunctionRuntime) {
+      const bundledFunctionRuntime = bundle.files.find((file) => file.path === functionRuntimePath)
+      archive.file(
+        functionRuntimePath,
+        bundledFunctionRuntime
+          ? textDecoder.decode(bundledFunctionRuntime.bytes)
+          : createFunctionBlockRuntimeSource(),
+      )
+    }
     if (bundle.manifest.motionActivities?.length) {
       archive.file(motionRuntimePath, createMotionRuntimeSource())
     }

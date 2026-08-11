@@ -27,6 +27,28 @@ el sitio muestra un estado vacío comprensible en lugar de desaparecer el diseñ
 Las colecciones propias del usuario se comprueban con la sesión iniciada guardada
 por la vista previa.
 
+## Colecciones relacionadas
+
+En **Datos → Colección → Avanzado → Relaciones** se puede conectar un campo con
+otra colección. La relación pregunta tres cosas visibles: dónde guardar el
+identificador, de qué colección elegirlo y qué texto debe ver la persona.
+
+Después de crearla:
+
+- **Información** ofrece campos como `Autores → nombre`, sin mostrar el
+  identificador interno.
+- Los componentes dinámicos pueden mostrar, buscar, filtrar y ordenar usando
+  información de la colección relacionada.
+- **Añadir campos de esta colección** crea una lista desplegable que carga las
+  opciones permitidas y guarda el identificador correcto.
+- La vista previa y el ZIP exportado conservan tanto la relación como sus
+  controles.
+
+Supabase aplica también las reglas RLS de la colección relacionada. Por ello,
+una lista solo ofrece registros que la persona actual tiene permiso de leer.
+El selector carga como máximo 100 opciones; las colecciones mucho mayores
+necesitarán en el futuro un selector con búsqueda remota.
+
 ## Componentes responsive con datos
 
 Desde **Añadir → Supabase → Datos dinámicos**, el estudiante puede comenzar por el
@@ -109,7 +131,59 @@ Los descendientes se vinculan usando `item` como dato recibido. Una conexión en
 la plantilla puede enviar `$record.id`, que se convierte en el ID de la fila
 real que fue pulsada.
 
+## Perfiles y gestión por roles
+
+Una colección marcada como **un solo elemento por persona** puede conectarse a
+un formulario mediante **Flujo → Guardar mis datos**. El sitio carga el registro
+de la sesión actual y la misma acción lo crea o actualiza. `user_id` se obtiene
+de la sesión y no de un campo editable.
+
+Para áreas de administración, crea la plantilla **Roles de usuarios** y activa
+**Gestión por roles** en cada colección que corresponda. Allí se eligen los
+roles y si pueden ver todos los registros, crear, editar o eliminar. El editor
+genera políticas RLS y una función de autorización dentro del esquema privado;
+ocultar un botón nunca sustituye estas políticas.
+
+El primer `admin` debe asignarse desde Supabase. Después, un formulario de
+gestión puede conectar `user_id` y `role` para asignar permisos a otras cuentas.
+En **Flujo**, la acción **Cambiar información** convierte un botón en una
+actualización segura. Un doble clic abre su configuración. El editor detecta si
+el botón está dentro de una tarjeta repetida, si la página recibió un registro
+desde otra tarjeta o si existe una colección con un solo elemento por persona.
+Solo ofrece esas opciones como posibles destinos.
+
+El nuevo valor puede ser fijo, venir de un campo del formulario, usar la persona
+conectada, usar la fecha actual, alternar un campo de Sí/No o sumar y restar en
+un campo numérico. El editor limita estas opciones según el tipo del campo y las
+conserva tanto en la vista previa como en el ZIP exportado.
+
+## Archivos
+
+Un campo de imagen o archivo puede guardar una URL escrita manualmente o subir
+el archivo a Supabase Storage. En **Datos → Colección → Información → Archivos**
+se elige la carpeta, el tipo permitido, el tamaño máximo y si los archivos son
+públicos o privados. Las listas de archivos usan un campo JSON; los archivos
+individuales usan un campo de texto.
+
+Al añadir los campos de una colección a un formulario, el editor crea el
+selector de archivo correspondiente. El sitio exportado sube el archivo y
+guarda una dirección `storage://` en el registro. Los archivos privados se
+abren con un enlace temporal; los públicos usan su dirección pública. Al
+reemplazar o quitar un archivo, el anterior se elimina solamente después de
+que el registro se haya guardado correctamente.
+
+El SQL generado prepara la carpeta y sus políticas para que cada persona solo
+pueda gestionar archivos dentro de su propia subcarpeta. Quitar una
+configuración del editor no borra automáticamente la carpeta ni los archivos
+existentes.
+
 ## Navegación con contexto
+
+Cuando un botón, enlace o tarjeta está dentro de una lista de datos, **Flujo →
+Ir a otra pantalla** muestra **Registro que recibirá la otra página**. Se puede enviar el elemento
+actual o uno de sus elementos relacionados. Por ejemplo, una fila de intentos
+puede abrir la práctica indicada por `practice_id`; la pantalla de destino
+recibe entonces un registro de `Practices`, no el intento.
 
 ```json
 {

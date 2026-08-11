@@ -10189,24 +10189,6 @@
                           ]
                         }
                       ]
-                    },
-                    {
-                      "tagName": "footer",
-                      "classes": [
-                        "site-footer"
-                      ],
-                      "components": [
-                        {
-                          "tagName": "p",
-                          "type": "text",
-                          "components": [
-                            {
-                              "type": "textnode",
-                              "content": "Proyecto educativo de Lengua de Señas Panameña · Medios de demostración pendientes de revisión experta."
-                            }
-                          ]
-                        }
-                      ]
                     }
                   ]
                 }
@@ -10624,24 +10606,6 @@
                                   ]
                                 }
                               ]
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "tagName": "footer",
-                      "classes": [
-                        "site-footer"
-                      ],
-                      "components": [
-                        {
-                          "tagName": "p",
-                          "type": "text",
-                          "components": [
-                            {
-                              "type": "textnode",
-                              "content": "Proyecto educativo de Lengua de Señas Panameña · Medios de demostración pendientes de revisión experta."
                             }
                           ]
                         }
@@ -11257,7 +11221,7 @@
                                     "data-motion-reference-url": "",
                                     "data-motion-reference-template": "",
                                     "data-motion-reference-display": "video-reference",
-                                    "data-motion-show-results": "false",
+                                    "data-motion-show-results": "true",
                                     "data-motion-reference-save": "download",
                                     "data-motion-reference-save-table": "",
                                     "data-motion-reference-save-context": "record",
@@ -12158,7 +12122,7 @@
                               "components": [
                                 {
                                   "type": "textnode",
-                                  "content": "Antes de comenzar"
+                                  "content": "Consejo de cámara"
                                 }
                               ]
                             },
@@ -12168,27 +12132,9 @@
                               "components": [
                                 {
                                   "type": "textnode",
-                                  "content": "Busca buena iluminación, deja visibles las manos y los hombros, y permite la cámara cuando el navegador lo solicite."
+                                  "content": "Para obtener mejor seguimiento, deja visibles las manos y los hombros. Los resultados y errores de cada intento aparecen arriba."
                                 }
                               ]
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "tagName": "footer",
-                      "classes": [
-                        "site-footer"
-                      ],
-                      "components": [
-                        {
-                          "tagName": "p",
-                          "type": "text",
-                          "components": [
-                            {
-                              "type": "textnode",
-                              "content": "Proyecto educativo de Lengua de Señas Panameña · Medios de demostración pendientes de revisión experta."
                             }
                           ]
                         }
@@ -12821,24 +12767,6 @@
                           ]
                         }
                       ]
-                    },
-                    {
-                      "tagName": "footer",
-                      "classes": [
-                        "site-footer"
-                      ],
-                      "components": [
-                        {
-                          "tagName": "p",
-                          "type": "text",
-                          "components": [
-                            {
-                              "type": "textnode",
-                              "content": "Proyecto educativo de Lengua de Señas Panameña · Medios de demostración pendientes de revisión experta."
-                            }
-                          ]
-                        }
-                      ]
                     }
                   ]
                 }
@@ -13449,24 +13377,6 @@
                           ]
                         }
                       ]
-                    },
-                    {
-                      "tagName": "footer",
-                      "classes": [
-                        "site-footer"
-                      ],
-                      "components": [
-                        {
-                          "tagName": "p",
-                          "type": "text",
-                          "components": [
-                            {
-                              "type": "textnode",
-                              "content": "Proyecto educativo de Lengua de Señas Panameña · Medios de demostración pendientes de revisión experta."
-                            }
-                          ]
-                        }
-                      ]
                     }
                   ]
                 }
@@ -13892,24 +13802,6 @@
                           ]
                         }
                       ]
-                    },
-                    {
-                      "tagName": "footer",
-                      "classes": [
-                        "site-footer"
-                      ],
-                      "components": [
-                        {
-                          "tagName": "p",
-                          "type": "text",
-                          "components": [
-                            {
-                              "type": "textnode",
-                              "content": "Proyecto educativo de Lengua de Señas Panameña · Medios de demostración pendientes de revisión experta."
-                            }
-                          ]
-                        }
-                      ]
                     }
                   ]
                 }
@@ -14292,24 +14184,6 @@
                                   ]
                                 }
                               ]
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "tagName": "footer",
-                      "classes": [
-                        "site-footer"
-                      ],
-                      "components": [
-                        {
-                          "tagName": "p",
-                          "type": "text",
-                          "components": [
-                            {
-                              "type": "textnode",
-                              "content": "Proyecto educativo de Lengua de Señas Panameña · Medios de demostración pendientes de revisión experta."
                             }
                           ]
                         }
@@ -16088,24 +15962,6 @@
                                 "data-motion-template-field": "",
                                 "type": "hidden"
                               }
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "tagName": "footer",
-                      "classes": [
-                        "site-footer"
-                      ],
-                      "components": [
-                        {
-                          "tagName": "p",
-                          "type": "text",
-                          "components": [
-                            {
-                              "type": "textnode",
-                              "content": "Proyecto educativo de Lengua de Señas Panameña · Medios de demostración pendientes de revisión experta."
                             }
                           ]
                         }

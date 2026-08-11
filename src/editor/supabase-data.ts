@@ -5,22 +5,78 @@ export const DATA_REPEATER_ATTRIBUTE = 'data-builder-repeater'
 export const DATA_SCOPE_ATTRIBUTE = 'data-builder-data-scope'
 export const SUPABASE_STORAGE_KEY = 'visual-editor-supabase'
 
-export type SupabaseFieldType = 'text' | 'long_text' | 'number' | 'boolean' | 'date' | 'datetime' | 'media' | 'url' | 'uuid' | 'json'
+export type SupabaseFieldType = 'text' | 'long_text' | 'number' | 'boolean' | 'date' | 'datetime' | 'media' | 'media_list' | 'url' | 'uuid' | 'json'
+export type SupabaseUploadKind = 'image' | 'video' | 'audio' | 'document' | 'any'
 export type SupabaseAccessMode = 'public_read' | 'authenticated_read' | 'user_owned' | 'private'
+export type SupabaseRecordMode = 'multiple' | 'single_per_user'
+export type SupabaseManagementAction = 'select' | 'insert' | 'update' | 'delete'
 export type SupabaseSetupStatus = 'draft' | 'needs_installation' | 'verified'
 
 export interface SupabaseField {
   id: string
   name: string
   type: SupabaseFieldType
+  upload?: {
+    bucket: string
+    kind: SupabaseUploadKind
+    maxSizeMb: number
+    visibility: 'public' | 'private'
+  }
 }
 
 export interface SupabaseRelation {
+  displayField?: string
   id: string
   column: string
   targetTableId: string
   targetColumn: string
   onDelete: 'cascade' | 'restrict' | 'set null'
+}
+
+export function relationAlias(relation: SupabaseRelation) {
+  return `related_${safeDatabaseIdentifier(relation.column) || 'record'}`
+}
+
+export function relationDisplayField(config: SupabaseEditorConfig, relation: SupabaseRelation) {
+  const target = config.tables.find((table) => table.id === relation.targetTableId)
+  if (!target) return relation.targetColumn
+  const available = [
+    ...target.fields,
+    ...(target.verifiedSchema?.fields ?? []),
+  ]
+  const requested = safeDatabaseIdentifier(relation.displayField ?? '')
+  if (requested && available.some((field) => safeDatabaseIdentifier(field.name) === requested)) return requested
+  return safeDatabaseIdentifier(available.find((field) => field.type === 'text' || field.type === 'long_text')?.name ?? '')
+    || safeDatabaseIdentifier(available[0]?.name ?? '')
+    || relation.targetColumn
+}
+
+export function relatedDataFields(config: SupabaseEditorConfig, table: SupabaseTableConfig): SupabaseField[] {
+  return table.relations.flatMap((relation) => {
+    const target = config.tables.find((candidate) => candidate.id === relation.targetTableId)
+    if (!target || target.access === 'private') return []
+    const configuredByName = new Map(target.fields.map((field) => [field.name, field]))
+    const source = target.verifiedSchema?.fields.length
+      ? target.verifiedSchema.fields.map((field, index) => ({
+        ...field,
+        id: field.id ?? configuredByName.get(field.name)?.id ?? `verified-${index}-${field.name}`,
+      }))
+      : target.fields
+    return source.map((field) => ({
+      ...field,
+      id: `${relation.id}:${field.id}`,
+      name: `${relationAlias(relation)}.${safeDatabaseIdentifier(field.name)}`,
+      upload: undefined,
+    }))
+  })
+}
+
+export function dataFieldLabel(config: SupabaseEditorConfig, table: SupabaseTableConfig, fieldName: string) {
+  const [alias, nestedField] = fieldName.split('.')
+  if (!nestedField) return fieldName
+  const relation = table.relations.find((candidate) => relationAlias(candidate) === alias)
+  const target = relation && config.tables.find((candidate) => candidate.id === relation.targetTableId)
+  return target ? `${collectionDisplayName(target)} → ${nestedField}` : fieldName
 }
 
 export interface SupabaseTableConfig {
@@ -29,12 +85,22 @@ export interface SupabaseTableConfig {
   fields: SupabaseField[]
   id: string
   name: string
+  management?: {
+    actions: SupabaseManagementAction[]
+    roles: string[]
+  }
+  recordMode?: SupabaseRecordMode
   relations: SupabaseRelation[]
   setupStatus?: SupabaseSetupStatus
   verifiedSchema?: {
     access?: SupabaseAccessMode
-    fields: Array<{ id?: string; name: string; type: SupabaseFieldType }>
+    fields: Array<{ id?: string; name: string; type: SupabaseFieldType; upload?: SupabaseField['upload'] }>
     name?: string
+    management?: {
+      actions: SupabaseManagementAction[]
+      roles: string[]
+    }
+    recordMode?: SupabaseRecordMode
     relations?: SupabaseRelation[]
     verifiedAt: string
   }
@@ -47,7 +113,7 @@ export interface SupabaseSchemaChange {
   sql: string
 }
 
-type SupabaseVerifiedField = { id?: string; name: string; type: SupabaseFieldType }
+type SupabaseVerifiedField = { id?: string; name: string; type: SupabaseFieldType; upload?: SupabaseField['upload'] }
 
 export interface SupabaseEditorConfig {
   projectUrl: string
@@ -91,6 +157,7 @@ export const fieldTypeLabels: Record<SupabaseFieldType, string> = {
   date: 'Fecha',
   datetime: 'Fecha y hora',
   media: 'Imagen o video',
+  media_list: 'Varios archivos',
   url: 'Enlace web',
   uuid: 'Identificador',
   json: 'Datos JSON',
@@ -124,6 +191,21 @@ export function builtInFields(access: SupabaseAccessMode) {
   ]
 }
 
+export function builtInDataFields(access: SupabaseAccessMode): SupabaseField[] {
+  const types: Record<string, SupabaseFieldType> = {
+    id: 'uuid',
+    published: 'boolean',
+    sort_order: 'number',
+    user_id: 'uuid',
+    created_at: 'datetime',
+  }
+  return builtInFields(access).map((name) => ({
+    id: `automatic-${name}`,
+    name,
+    type: types[name],
+  }))
+}
+
 function quotedIdentifier(value: string) {
   return `"${value.replaceAll('"', '""')}"`
 }
@@ -134,12 +216,20 @@ function sqlType(type: SupabaseFieldType) {
   if (type === 'date') return 'date'
   if (type === 'datetime') return 'timestamptz'
   if (type === 'uuid') return 'uuid'
-  if (type === 'json') return 'jsonb'
+  if (type === 'json' || type === 'media_list') return 'jsonb'
   return 'text'
 }
 
 function sqlBaseType(type: SupabaseFieldType) {
   return type === 'boolean' ? 'boolean' : sqlType(type)
+}
+
+export function uploadAccept(kind: SupabaseUploadKind) {
+  if (kind === 'image') return 'image/*'
+  if (kind === 'video') return 'video/*'
+  if (kind === 'audio') return 'audio/*'
+  if (kind === 'document') return '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv'
+  return '*/*'
 }
 
 function generatedConstraintName(tableName: string, column: string) {
@@ -156,17 +246,38 @@ function normalizeTable(table: SupabaseTableConfig, fallbackIndex: number): Supa
     const fieldName = safeDatabaseIdentifier(field.name)
     if (!fieldName || seen.has(fieldName)) return []
     seen.add(fieldName)
-    return [{ ...field, name: fieldName }]
+    const supportsUpload = field.type === 'media' || field.type === 'media_list'
+    const upload = supportsUpload && field.upload ? {
+      bucket: safeDatabaseIdentifier(field.upload.bucket) || `${name}_${fieldName}`,
+      kind: ['image', 'video', 'audio', 'document', 'any'].includes(field.upload.kind)
+        ? field.upload.kind : 'any' as SupabaseUploadKind,
+      maxSizeMb: Math.min(100, Math.max(1, Number(field.upload.maxSizeMb) || 10)),
+      visibility: field.upload.visibility === 'public' ? 'public' as const : 'private' as const,
+    } : undefined
+    return [{ ...field, name: fieldName, ...(upload ? { upload } : {}), ...(!supportsUpload ? { upload: undefined } : {}) }]
   })
   const validColumns = new Set([...builtInFields(access), ...fields.map((field) => field.name)])
+  const managementRoles = [...new Set((table.management?.roles ?? [])
+    .map((role) => safeDatabaseIdentifier(role)).filter(Boolean))].slice(0, 20)
+  const managementActions = [...new Set((table.management?.actions ?? []).filter((action): action is SupabaseManagementAction =>
+    ['select', 'insert', 'update', 'delete'].includes(action)))]
   return {
     ...table,
     access,
     id: table.id || `table-${name}`,
     name,
+    management: managementRoles.length && managementActions.length
+      ? { roles: managementRoles, actions: managementActions }
+      : undefined,
+    recordMode: access === 'user_owned' && table.recordMode === 'single_per_user'
+      ? 'single_per_user'
+      : 'multiple',
     displayName: table.displayName?.trim() || rawName.trim() || name,
     fields,
-    relations: (table.relations ?? []).filter((relation) => validColumns.has(relation.column)),
+    relations: (table.relations ?? []).filter((relation) => validColumns.has(relation.column)).map((relation) => ({
+      ...relation,
+      ...(relation.displayField ? { displayField: safeDatabaseIdentifier(relation.displayField) } : {}),
+    })),
     setupStatus: table.setupStatus ?? 'draft',
     verifiedSchema: table.verifiedSchema ? {
       ...table.verifiedSchema,
@@ -177,6 +288,10 @@ function normalizeTable(table: SupabaseTableConfig, fallbackIndex: number): Supa
         name: safeDatabaseIdentifier(verified.name) || verified.name,
       })),
       name: safeDatabaseIdentifier(table.verifiedSchema.name ?? name) || name,
+      management: table.verifiedSchema.management,
+      recordMode: table.verifiedSchema.recordMode === 'single_per_user'
+        ? 'single_per_user'
+        : 'multiple',
     } : undefined,
   }
 }
@@ -237,6 +352,7 @@ function splitSqlColumns(body: string) {
 
 function fieldTypeFromSql(name: string, definition: string, previous?: SupabaseFieldType): SupabaseFieldType {
   const lowered = definition.toLowerCase()
+  if (previous === 'media_list' && /^(json|jsonb)\b/.test(lowered)) return 'media_list'
   if (/^uuid\b/.test(lowered)) return 'uuid'
   if (/^(json|jsonb)\b/.test(lowered)) return 'json'
   if (/^(timestamp|timestamptz)\b/.test(lowered)) return 'datetime'
@@ -265,6 +381,7 @@ export function importSupabaseSchemaSql(sql: string, current: SupabaseEditorConf
     columns: Array<{ definition: string; name: string }>
     id: string
     name: string
+    recordMode: SupabaseRecordMode
   }> = []
   let match: RegExpExecArray | null
   while ((match = tablePattern.exec(sql))) {
@@ -273,6 +390,7 @@ export function importSupabaseSchemaSql(sql: string, current: SupabaseEditorConf
     const previous = current.tables.find((table) => table.name === name)
     const prefix = sql.slice(Math.max(0, match.index - 180), match.index)
     const marker = prefix.match(/--\s*@builder-access\s+(public_read|authenticated_read|user_owned|private)\s*$/im)?.[1] as SupabaseAccessMode | undefined
+    const recordModeMarker = prefix.match(/--\s*@builder-record-mode\s+(multiple|single_per_user)\s*$/im)?.[1] as SupabaseRecordMode | undefined
     const columns = splitSqlColumns(match[2]).flatMap((part) => {
       if (/^(constraint|primary\s+key|foreign\s+key|unique\s*\(|check\s*\()/i.test(part)) return []
       const columnMatch = part.match(/^("(?:""|[^"])+"|[a-z_][a-z0-9_]*)\s+([\s\S]+)$/i)
@@ -290,6 +408,7 @@ export function importSupabaseSchemaSql(sql: string, current: SupabaseEditorConf
       columns,
       id: previous?.id ?? `sql-table-${name}`,
       name,
+      recordMode: recordModeMarker ?? previous?.recordMode ?? 'multiple',
     })
   }
   if (!parsed.length) throw new Error('No encontramos instrucciones CREATE TABLE compatibles.')
@@ -335,7 +454,9 @@ export function importSupabaseSchemaSql(sql: string, current: SupabaseEditorConf
       displayName: previous?.displayName ?? parsedTable.name.split('_').map((word) => `${word[0]?.toUpperCase() ?? ''}${word.slice(1)}`).join(' '),
       fields,
       id: parsedTable.id,
+      management: previous?.management,
       name: parsedTable.name,
+      recordMode: parsedTable.access === 'user_owned' ? parsedTable.recordMode : 'multiple',
       relations,
       setupStatus: previous?.verifiedSchema ? 'needs_installation' as const : 'draft' as const,
       verifiedSchema: previous?.verifiedSchema,
@@ -359,29 +480,89 @@ export function isSafePublishableKey(value: string) {
   }
 }
 
-function createPolicySql(table: SupabaseTableConfig) {
+function roleTableName(config: SupabaseEditorConfig) {
+  return config.tables.find((table) => table.access === 'user_owned'
+    && /(^|_)roles?($|_)/i.test(table.name)
+    && table.fields.some((field) => field.name === 'role'))?.name
+}
+
+function quotedSqlString(value: string) {
+  return `'${value.replaceAll("'", "''")}'`
+}
+
+function roleHelperSql(name: string) {
+  return `create schema if not exists private;
+create or replace function private.builder_has_any_role(required_roles text[])
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  return exists (
+    select 1 from public.${quotedIdentifier(name)}
+    where user_id = (select auth.uid()) and role = any(required_roles)
+  );
+end;
+$$;
+revoke all on function private.builder_has_any_role(text[]) from public;
+grant usage on schema private to authenticated;
+grant execute on function private.builder_has_any_role(text[]) to authenticated;`
+}
+
+function createPolicySql(table: SupabaseTableConfig, configuredRoleTable?: string) {
   const target = `public.${quotedIdentifier(table.name)}`
   const prefix = table.name
-  const dropPolicies = ['public_read', 'authenticated_read', 'own_select', 'own_insert', 'own_update', 'own_delete']
+  const dropPolicies = ['public_read', 'authenticated_read', 'own_select', 'own_insert', 'own_update', 'own_delete',
+    'manager_select', 'manager_insert', 'manager_update', 'manager_delete']
     .map((suffix) => `drop policy if exists ${quotedIdentifier(`${prefix}_${suffix}`)} on ${target};`)
     .join('\n')
+  const managerRoles = table.management?.roles ?? []
+  const managerActions = table.management?.actions ?? []
+  const managerCheck = configuredRoleTable && managerRoles.length
+    ? `(select private.builder_has_any_role(array[${managerRoles.map(quotedSqlString).join(', ')}]::text[]))`
+    : ''
+  const managerGrants = managerCheck
+    ? `grant ${managerActions.join(', ')} on table ${target} to authenticated;`
+    : ''
+  const managerPolicies = managerCheck ? managerActions.map((action) => {
+    if (action === 'insert') return `create policy ${quotedIdentifier(`${prefix}_manager_insert`)} on ${target}\nfor insert to authenticated with check (${managerCheck});`
+    if (action === 'update') return `create policy ${quotedIdentifier(`${prefix}_manager_update`)} on ${target}\nfor update to authenticated using (${managerCheck}) with check (${managerCheck});`
+    return `create policy ${quotedIdentifier(`${prefix}_manager_${action}`)} on ${target}\nfor ${action} to authenticated using (${managerCheck});`
+  }).join('\n') : ''
   if (table.access === 'public_read') {
     return `${dropPolicies}
 grant select on table ${target} to anon, authenticated;
+${managerGrants}
 create policy ${quotedIdentifier(`${prefix}_public_read`)} on ${target}
-for select to anon, authenticated using (published = true);`
+for select to anon, authenticated using (published = true);
+${managerPolicies}`
   }
   if (table.access === 'authenticated_read') {
     return `${dropPolicies}
 revoke all on table ${target} from anon;
 grant select on table ${target} to authenticated;
+${managerGrants}
 create policy ${quotedIdentifier(`${prefix}_authenticated_read`)} on ${target}
-for select to authenticated using (true);`
+for select to authenticated using (true);
+${managerPolicies}`
   }
   if (table.access === 'user_owned') {
+    const isRoleTable = configuredRoleTable === table.name
+    if (isRoleTable) {
+      return `${dropPolicies}
+revoke all on table ${target} from anon, authenticated;
+grant select on table ${target} to authenticated;
+${managerGrants}
+create policy ${quotedIdentifier(`${prefix}_own_select`)} on ${target}
+for select to authenticated using ((select auth.uid()) = user_id);
+${managerPolicies}`
+    }
     return `${dropPolicies}
 revoke all on table ${target} from anon;
 grant select, insert, update, delete on table ${target} to authenticated;
+${managerGrants}
 create policy ${quotedIdentifier(`${prefix}_own_select`)} on ${target}
 for select to authenticated using ((select auth.uid()) = user_id);
 create policy ${quotedIdentifier(`${prefix}_own_insert`)} on ${target}
@@ -391,7 +572,8 @@ for update to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
 create policy ${quotedIdentifier(`${prefix}_own_delete`)} on ${target}
-for delete to authenticated using ((select auth.uid()) = user_id);`
+for delete to authenticated using ((select auth.uid()) = user_id);
+${managerPolicies}`
   }
   return `${dropPolicies}
 revoke all on table ${target} from anon, authenticated;`
@@ -422,6 +604,50 @@ create index if not exists ${quotedIdentifier(`${table.name}_${relation.column}_
 on public.${quotedIdentifier(table.name)} (${quotedIdentifier(relation.column)});`
 }
 
+function storageMimeTypes(kind: SupabaseUploadKind) {
+  if (kind === 'image') return ['image/*']
+  if (kind === 'video') return ['video/*']
+  if (kind === 'audio') return ['audio/*']
+  if (kind === 'document') return [
+    'application/pdf', 'text/plain', 'text/csv',
+    'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ]
+  return []
+}
+
+function createStorageBucketSql(field: SupabaseField) {
+  if (!field.upload) return ''
+  const bucket = field.upload.bucket
+  const policyPrefix = `builder_${bucket}`
+  const maxBytes = Math.round(field.upload.maxSizeMb * 1024 * 1024)
+  const mimeTypes = storageMimeTypes(field.upload.kind)
+  const mimeSql = mimeTypes.length
+    ? `array[${mimeTypes.map(quotedSqlString).join(', ')}]::text[]`
+    : 'null'
+  const ownerCheck = `bucket_id = ${quotedSqlString(bucket)} and (storage.foldername(name))[1] = (select auth.uid()::text)`
+  return `insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (${quotedSqlString(bucket)}, ${quotedSqlString(bucket)}, ${field.upload.visibility === 'public'}, ${maxBytes}, ${mimeSql})
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists ${quotedIdentifier(`${policyPrefix}_select`)} on storage.objects;
+drop policy if exists ${quotedIdentifier(`${policyPrefix}_insert`)} on storage.objects;
+drop policy if exists ${quotedIdentifier(`${policyPrefix}_update`)} on storage.objects;
+drop policy if exists ${quotedIdentifier(`${policyPrefix}_delete`)} on storage.objects;
+create policy ${quotedIdentifier(`${policyPrefix}_select`)} on storage.objects
+for select to authenticated using (${ownerCheck});
+create policy ${quotedIdentifier(`${policyPrefix}_insert`)} on storage.objects
+for insert to authenticated with check (${ownerCheck});
+create policy ${quotedIdentifier(`${policyPrefix}_update`)} on storage.objects
+for update to authenticated using (${ownerCheck}) with check (${ownerCheck});
+create policy ${quotedIdentifier(`${policyPrefix}_delete`)} on storage.objects
+for delete to authenticated using (${ownerCheck});`
+}
+
 function createTableSql(config: SupabaseEditorConfig, table: SupabaseTableConfig) {
   const target = `public.${quotedIdentifier(table.name)}`
   const builtIns = [
@@ -450,14 +676,21 @@ alter table ${target} alter column ${quotedIdentifier(field.name)} type ${sqlBas
     ] : []),
   ]
   const relations = table.relations.map((relation) => createRelationSql(config, table, relation)).filter(Boolean)
+  const storageBuckets = [...new Map(table.fields.flatMap((field) => field.upload
+    ? [[field.upload.bucket, createStorageBucketSql(field)] as const]
+    : [])).values()]
   const publicIndex = table.access === 'public_read'
     ? `create index if not exists ${quotedIdentifier(`${table.name}_published_sort_idx`)}
 on ${target} (published, sort_order);`
     : ''
   const ownerIndex = table.access === 'user_owned'
-    ? `create index if not exists ${quotedIdentifier(`${table.name}_user_id_idx`)} on ${target} (user_id);`
+    ? table.recordMode === 'single_per_user'
+      ? `create unique index if not exists ${quotedIdentifier(`${table.name}_user_id_unique`)} on ${target} (user_id);`
+      : `create index if not exists ${quotedIdentifier(`${table.name}_user_id_idx`)} on ${target} (user_id);`
     : ''
-  return `-- Table: ${table.name}
+  return `-- @builder-access ${table.access}
+-- @builder-record-mode ${table.recordMode ?? 'multiple'}
+-- Table: ${table.name}
 create table if not exists ${target} (
   ${builtIns.join(',\n  ')}
 );
@@ -466,11 +699,12 @@ ${fields.join('\n')}
 ${builtInUpdates.join('\n')}
 
 alter table ${target} enable row level security;
-${createPolicySql(table)}
+${createPolicySql(table, roleTableName(config))}
 
 ${publicIndex}
 ${ownerIndex}
-${relations.join('\n')}`.trim()
+${relations.join('\n')}
+${storageBuckets.join('\n')}`.trim()
 }
 
 export function createSupabaseSetupSql(input: SupabaseEditorConfig, tableId?: string) {
@@ -479,7 +713,7 @@ export function createSupabaseSetupSql(input: SupabaseEditorConfig, tableId?: st
   return `-- Generated by Visual Builder
 -- Run this in Supabase > SQL Editor.
 
-${tables.map((table) => createTableSql(config, table)).join('\n\n')}`
+${roleTableName(config) ? `${roleHelperSql(roleTableName(config)!)}\n\n` : ''}${tables.map((table) => createTableSql(config, table)).join('\n\n')}`
 }
 
 function snapshotFieldFor(
@@ -489,6 +723,11 @@ function snapshotFieldFor(
   return field.id
     ? table.fields.find((candidate) => candidate.id === field.id)
     : table.fields.find((candidate) => candidate.name === field.name)
+}
+
+function databaseRelation(relation: SupabaseRelation) {
+  const { displayField: _displayField, ...databaseFields } = relation
+  return databaseFields
 }
 
 export function describeSupabaseSchemaChanges(
@@ -515,6 +754,12 @@ export function describeSupabaseSchemaChanges(
       id: `rename-table:${table.id}`,
       label: `Renombrar la tabla ${oldTableName} a ${table.name}`,
       sql: `alter table public.${quotedIdentifier(oldTableName)} rename to ${quotedIdentifier(table.name)};`,
+    })
+    if (roleTableName(config) === table.name) changes.push({
+      destructive: false,
+      id: `role-helper:${table.id}`,
+      label: 'Actualizar la comprobación segura de roles',
+      sql: roleHelperSql(table.name),
     })
   }
 
@@ -548,6 +793,14 @@ export function describeSupabaseSchemaChanges(
         sql: `alter table ${target} alter column ${quotedIdentifier(current.name)} type ${type} using ${quotedIdentifier(current.name)}::${type};`,
       })
     }
+    if (current.upload && JSON.stringify(oldField.upload ?? null) !== JSON.stringify(current.upload)) {
+      changes.push({
+        destructive: false,
+        id: `storage:${current.id}`,
+        label: `Configurar archivos para ${current.name}`,
+        sql: createStorageBucketSql(current),
+      })
+    }
   }
   for (const field of table.fields) {
     if (matchedCurrentIds.has(field.id)) continue
@@ -556,6 +809,12 @@ export function describeSupabaseSchemaChanges(
       id: `add-field:${field.id}`,
       label: `Añadir el campo ${field.name}`,
       sql: `alter table ${target} add column ${quotedIdentifier(field.name)} ${sqlType(field.type)};`,
+    })
+    if (field.upload) changes.push({
+      destructive: false,
+      id: `storage:${field.id}`,
+      label: `Configurar archivos para ${field.name}`,
+      sql: createStorageBucketSql(field),
     })
   }
 
@@ -596,7 +855,32 @@ export function describeSupabaseSchemaChanges(
       destructive: false,
       id: `access:${table.id}`,
       label: `Actualizar la visibilidad: ${accessModeLabels[table.access]}`,
-      sql: `alter table ${target} enable row level security;\n${createPolicySql(table)}${accessIndex}`,
+      sql: `alter table ${target} enable row level security;\n${createPolicySql(table, roleTableName(config))}${accessIndex}`,
+    })
+  }
+  const oldManagement = baseline.management
+  const newManagement = table.management
+  if (JSON.stringify(oldManagement ?? null) !== JSON.stringify(newManagement ?? null)) {
+    const configuredRoleTable = roleTableName(config)
+    changes.push({
+      destructive: false,
+      id: `management:${table.id}`,
+      label: newManagement ? 'Actualizar permisos de gestión' : 'Quitar permisos de gestión',
+      sql: `${configuredRoleTable ? `${roleHelperSql(configuredRoleTable)}\n` : ''}${createPolicySql(table, configuredRoleTable)}`,
+    })
+  }
+  const oldRecordMode = baseline.recordMode ?? 'multiple'
+  const newRecordMode = table.access === 'user_owned' ? table.recordMode ?? 'multiple' : 'multiple'
+  if (oldRecordMode !== newRecordMode && table.access === 'user_owned') {
+    changes.push({
+      destructive: newRecordMode === 'single_per_user',
+      id: `record-mode:${table.id}`,
+      label: newRecordMode === 'single_per_user'
+        ? 'Permitir un solo registro por persona'
+        : 'Permitir varios registros por persona',
+      sql: newRecordMode === 'single_per_user'
+        ? `drop index if exists public.${quotedIdentifier(`${table.name}_user_id_idx`)};\ncreate unique index if not exists ${quotedIdentifier(`${table.name}_user_id_unique`)} on ${target} (user_id);`
+        : `drop index if exists public.${quotedIdentifier(`${table.name}_user_id_unique`)};\ncreate index if not exists ${quotedIdentifier(`${table.name}_user_id_idx`)} on ${target} (user_id);`,
     })
   }
   changes.push(...removedBuiltIns)
@@ -605,7 +889,7 @@ export function describeSupabaseSchemaChanges(
   const newRelationsById = new Map(table.relations.map((relation) => [relation.id, relation]))
   for (const oldRelation of oldRelations) {
     const current = newRelationsById.get(oldRelation.id)
-    if (current && JSON.stringify(current) === JSON.stringify(oldRelation)) continue
+    if (current && JSON.stringify(databaseRelation(current)) === JSON.stringify(databaseRelation(oldRelation))) continue
     changes.push({
       destructive: false,
       id: `remove-relation:${oldRelation.id}`,
@@ -616,7 +900,7 @@ export function describeSupabaseSchemaChanges(
   const oldRelationsById = new Map(oldRelations.map((relation) => [relation.id, relation]))
   for (const relation of table.relations) {
     const oldRelation = oldRelationsById.get(relation.id)
-    if (oldRelation && JSON.stringify(oldRelation) === JSON.stringify(relation)) continue
+    if (oldRelation && JSON.stringify(databaseRelation(oldRelation)) === JSON.stringify(databaseRelation(relation))) continue
     const relationSql = createRelationSql(config, table, relation)
     if (relationSql) changes.push({
       destructive: false,
@@ -637,8 +921,16 @@ export function createSupabaseMigrationSql(input: SupabaseEditorConfig, tableId:
 export function appliedSupabaseSchema(table: SupabaseTableConfig): NonNullable<SupabaseTableConfig['verifiedSchema']> {
   return {
     access: table.access,
-    fields: table.fields.map((field) => ({ id: field.id, name: field.name, type: field.type })),
+    fields: table.fields.map((field) => ({
+      id: field.id, name: field.name, type: field.type,
+      ...(field.upload ? { upload: { ...field.upload } } : {}),
+    })),
+    management: table.management ? {
+      actions: [...table.management.actions],
+      roles: [...table.management.roles],
+    } : undefined,
     name: table.name,
+    recordMode: table.recordMode ?? 'multiple',
     relations: table.relations.map((relation) => ({ ...relation })),
     verifiedAt: new Date().toISOString(),
   }

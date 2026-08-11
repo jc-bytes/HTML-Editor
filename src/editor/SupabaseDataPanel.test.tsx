@@ -43,6 +43,26 @@ describe('SupabaseDataPanel user data controls', () => {
     expect(screen.queryByRole('button', { name: /Autenticación/ })).not.toBeInTheDocument()
   })
 
+  it('shows automatic fields and explains that created_at already exists', () => {
+    const onChange = vi.fn()
+    const automaticFieldConfig: SupabaseEditorConfig = {
+      ...config,
+      tables: [{
+        ...config.tables[0],
+        fields: [{ id: 'created', name: 'created_a', type: 'datetime' }],
+      }],
+    }
+    render(<SupabaseDataPanel {...baseProps} config={automaticFieldConfig} onChange={onChange} selectedElement={null} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /profiles/i }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Información' }))
+
+    expect(screen.getByLabelText('Información automática')).toHaveTextContent('created_at')
+    fireEvent.change(screen.getByDisplayValue('created_a'), { target: { value: 'created_at' } })
+    expect(screen.getByRole('status')).toHaveTextContent('created_at” ya existe automáticamente')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
   it('imports a SQL file into visual collections without removing unrelated collections', async () => {
     const onChange = vi.fn()
     render(<SupabaseDataPanel {...baseProps} onChange={onChange} selectedElement={null} />)
@@ -104,6 +124,7 @@ describe('SupabaseDataPanel user data controls', () => {
     }} />)
 
     expect(screen.getByRole('option', { name: 'Información del usuario actual' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'created_at' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mostrar uno por cada elemento' })).toBeInTheDocument()
   })
 
@@ -157,9 +178,8 @@ describe('SupabaseDataPanel user data controls', () => {
     fireEvent.click(screen.getByRole('button', { name: /Lista visual/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
 
-    expect(screen.getByLabelText('Título')).toHaveValue('display_name')
-    expect(screen.queryByLabelText('Imagen o video')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Descripción')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Formato para display_name')).toHaveValue('title')
+    expect(screen.queryByLabelText('Tipo de medio')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
     expect(screen.getByLabelText('Máximo de elementos por página')).toHaveValue(12)
     expect(screen.getByLabelText('Columnas en escritorio')).toHaveValue(1)
@@ -197,7 +217,7 @@ describe('SupabaseDataPanel user data controls', () => {
     />)
 
     expect(screen.getByRole('dialog', { name: 'Editar componente con datos' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Título')).toHaveValue('display_name')
+    expect(screen.getByLabelText('Formato para display_name')).toHaveValue('title')
     fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
     expect(screen.getByLabelText('Máximo de elementos por página')).toHaveValue(6)
     expect(screen.getByLabelText('Columnas en escritorio')).toHaveValue(2)
@@ -250,7 +270,7 @@ describe('SupabaseDataPanel user data controls', () => {
     expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining('/rest/v1/practices?'), expect.objectContaining({
       headers: expect.objectContaining({ apikey: mediaConfig.publishableKey }),
     }))
-    expect(String(fetchSpy.mock.calls[0][0])).toContain('media_url=not.is.null')
+    expect(fetchSpy.mock.calls.some(([request]) => String(request).includes('media_url=not.is.null'))).toBe(true)
     expect(screen.getByRole('link', { name: /Abrir URL original/ })).toHaveAttribute(
       'href',
       'https://cdn.example.com/practice.jpg',
@@ -270,13 +290,15 @@ describe('SupabaseDataPanel user data controls', () => {
         ? JSON.stringify({ access_token: 'teacher-token' })
         : null),
     })
-    const fetchSpy = vi.spyOn(window, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify([{
-        media_url: 'storage://practice-reference-videos/teacher-1/practice-1/reference',
-      }]), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
+    const fetchSpy = vi.spyOn(window, 'fetch').mockImplementation(async (request) => {
+      const url = String(request)
+      if (url.includes('/storage/v1/object/sign/')) return new Response(JSON.stringify({
         signedURL: '/object/sign/practice-reference-videos/teacher-1/practice-1/reference?token=signed',
-      }), { status: 200 }))
+      }), { status: 200 })
+      return new Response(JSON.stringify([{
+        media_url: 'storage://practice-reference-videos/teacher-1/practice-1/reference',
+      }]), { status: 200 })
+    })
 
     render(<SupabaseDataPanel
       {...baseProps}
@@ -292,7 +314,7 @@ describe('SupabaseDataPanel user data controls', () => {
       'src',
       'https://school.supabase.co/storage/v1/object/sign/practice-reference-videos/teacher-1/practice-1/reference?token=signed',
     )
-    expect(fetchSpy).toHaveBeenNthCalledWith(2,
+    expect(fetchSpy).toHaveBeenCalledWith(
       'https://school.supabase.co/storage/v1/object/sign/practice-reference-videos/teacher-1/practice-1/reference',
       expect.objectContaining({
         method: 'POST',
@@ -300,6 +322,46 @@ describe('SupabaseDataPanel user data controls', () => {
         body: JSON.stringify({ expiresIn: 3_600 }),
       }),
     )
+  })
+
+  it('shows real table fields and sample values before choosing how to display them', async () => {
+    const attemptsConfig: SupabaseEditorConfig = {
+      ...config,
+      tables: [{
+        id: 'attempts-table', name: 'practice_attempts', displayName: 'Practice Attempts', access: 'public_read',
+        fields: [
+          { id: 'title', name: 'title', type: 'text' },
+          { id: 'score', name: 'score', type: 'number' },
+          { id: 'created', name: 'created_at', type: 'datetime' },
+        ],
+        relations: [], setupStatus: 'verified',
+      }],
+    }
+    vi.spyOn(window, 'fetch').mockResolvedValue(new Response(JSON.stringify([{
+      title: 'Balance practice', score: 92, created_at: '2026-08-09T20:15:00Z',
+    }]), { status: 200 }))
+
+    render(<SupabaseDataPanel
+      {...baseProps}
+      config={attemptsConfig}
+      dataComponentEditRequest={{
+        mapping: { title: 'title' }, options: { mediaKind: 'image' }, requestId: 1,
+        tableId: 'attempts-table', templateId: 'featured_detail',
+      }}
+      selectedElement={null}
+    />)
+
+    expect(screen.getByLabelText('Campos de Practice Attempts')).toBeInTheDocument()
+    expect(await screen.findByText('92')).toBeInTheDocument()
+    expect(screen.getByText('2026-08-09T20:15:00Z')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Tipo de medio')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar score' }))
+    expect(screen.getByLabelText('Formato para score')).toHaveValue('badge')
+    fireEvent.change(screen.getByLabelText('Formato para score'), { target: { value: 'description' } })
+    expect(screen.getByLabelText('Formato para score')).toHaveValue('description')
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultar score' }))
+    expect(screen.getByRole('button', { name: 'Mostrar score' })).toBeInTheDocument()
   })
 
   it('allows visual edits to installed fields and previews an ALTER migration', () => {
@@ -335,6 +397,66 @@ describe('SupabaseDataPanel user data controls', () => {
       .toContain('rename column "display_name" to "full_name"')
   })
 
+  it('turns a media field into a configurable Storage upload', () => {
+    const onChange = vi.fn()
+    const mediaConfig: SupabaseEditorConfig = {
+      ...config,
+      tables: [{
+        ...config.tables[0],
+        fields: [{ id: 'avatar', name: 'avatar', type: 'media' }],
+      }],
+    }
+    render(<SupabaseDataPanel {...baseProps} config={mediaConfig} onChange={onChange} selectedElement={null} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /profiles/i }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Información' }))
+    fireEvent.click(screen.getByText('avatar'))
+    fireEvent.change(screen.getByLabelText('Entrada para avatar'), { target: { value: 'upload' } })
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      tables: [expect.objectContaining({
+        fields: [expect.objectContaining({
+          name: 'avatar',
+          upload: { bucket: 'profiles_avatar', kind: 'image', maxSizeMb: 10, visibility: 'private' },
+        })],
+      })],
+    }))
+  })
+
+  it('chooses the human-readable field for a related collection', () => {
+    const onChange = vi.fn()
+    const relationConfig: SupabaseEditorConfig = {
+      ...config,
+      tables: [{
+        ...config.tables[0],
+        fields: [{ id: 'school', name: 'school_id', type: 'uuid' }],
+        relations: [{
+          id: 'profile-school', column: 'school_id', targetTableId: 'schools', targetColumn: 'id',
+          displayField: 'name', onDelete: 'restrict',
+        }],
+      }, {
+        id: 'schools', name: 'schools', access: 'public_read', relations: [],
+        fields: [
+          { id: 'name', name: 'name', type: 'text' },
+          { id: 'city', name: 'city', type: 'text' },
+        ],
+      }],
+    }
+    render(<SupabaseDataPanel {...baseProps} config={relationConfig} onChange={onChange} selectedElement={null} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /profiles/i }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Avanzado' }))
+    expect(screen.getByLabelText('Colección relacionada')).toHaveValue('schools')
+    fireEvent.change(screen.getByLabelText('Texto visible de la relación'), { target: { value: 'city' } })
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      tables: expect.arrayContaining([expect.objectContaining({
+        id: 'profiles-table',
+        relations: [expect.objectContaining({ displayField: 'city' })],
+      })]),
+    }))
+  })
+
   it('confirms private tables without pretending they are browser-connected', () => {
     const onChange = vi.fn()
     const privateConfig: SupabaseEditorConfig = {
@@ -363,6 +485,29 @@ describe('SupabaseDataPanel user data controls', () => {
         setupStatus: 'verified',
         verifiedSchema: expect.objectContaining({ name: 'user_roles' }),
       })],
+    }))
+  })
+
+  it('configures collection management only when a secure roles collection exists', () => {
+    const onChange = vi.fn()
+    const managedConfig: SupabaseEditorConfig = {
+      ...config,
+      tables: [config.tables[0], {
+        id: 'roles', name: 'user_roles', access: 'user_owned',
+        fields: [{ id: 'role', name: 'role', type: 'text' }], relations: [],
+      }],
+    }
+    render(<SupabaseDataPanel {...baseProps} config={managedConfig} onChange={onChange} selectedElement={null} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /profiles/ }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Visibilidad' }))
+    fireEvent.change(screen.getByLabelText('Gestión por roles'), { target: { value: 'enabled' } })
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      tables: expect.arrayContaining([expect.objectContaining({
+        id: 'profiles-table',
+        management: { roles: ['admin'], actions: ['select', 'update', 'delete'] },
+      })]),
     }))
   })
 

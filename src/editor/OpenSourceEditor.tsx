@@ -44,6 +44,12 @@ import {
   FLOW_CONFIRM_MESSAGE_ATTRIBUTE,
   FLOW_DATA_SOURCE_ATTRIBUTE,
   FLOW_FIELD_MAP_ATTRIBUTE,
+  FLOW_FIXED_FIELD_ATTRIBUTE,
+  FLOW_FIXED_VALUE_ATTRIBUTE,
+  FLOW_RECORD_MODE_ATTRIBUTE,
+  FLOW_VALUE_AMOUNT_ATTRIBUTE,
+  FLOW_VALUE_INPUT_ATTRIBUTE,
+  FLOW_VALUE_SOURCE_ATTRIBUTE,
   FLOW_INACTIVE_LABEL_ATTRIBUTE,
   FLOW_OWNER_FIELD_ATTRIBUTE,
   FLOW_RECORD_FIELD_ATTRIBUTE,
@@ -53,7 +59,10 @@ import {
   type InteractionAnimation,
   type DataActionConnection,
   type DataActionKind,
+  type DataActionRecordMode,
+  type DataActionValueSource,
   type RecordToggleConnection,
+  type ScreenFlowConnection,
   dataActionAttributes,
   readDataActionConnection,
   readInteractionAnimation,
@@ -62,6 +71,7 @@ import {
   recordToggleAttributes,
   screenFlowAttributes,
 } from './flow-connections'
+import { DynamicFieldActionDialog, type DynamicFieldActionDraft } from './DynamicFieldActionDialog'
 import { createPreviewController } from './preview-controller'
 import { editorProjectBundle, exportEditorProject } from './export-project'
 import { EditorRuntimePreview } from './EditorRuntimePreview'
@@ -78,8 +88,13 @@ import {
   DATA_SOURCE_ATTRIBUTE,
   DATA_REPEATER_ATTRIBUTE,
   DATA_SCOPE_ATTRIBUTE,
+  builtInFields,
+  collectionDisplayName,
   normalizedSupabaseConfig,
+  relationDisplayField,
   storeSupabaseConfig,
+  supabaseDataSourceId,
+  uploadAccept,
 } from './supabase-data'
 import type { SupabaseEditorConfig } from './supabase-data'
 import { SupabaseDataPanel } from './SupabaseDataPanel'
@@ -117,12 +132,31 @@ import { attachCanvasGestures } from './canvas-gestures'
 import {
   createMotionAnalysisPlugin,
   findMotionActivityComponent,
-  MOTION_CAPTURE_REFERENCE_BLOCK_ID,
-  MOTION_COMPARE_BLOCK_ID,
   MOTION_ANALYSIS_BLOCK_ID,
   MOTION_VIEW_REFERENCE_BLOCK_ID,
 } from './motion-analysis'
 import { MotionPanel, MotionSettingsDialog } from './MotionPanel'
+import {
+  createExternalFunctionBlocksPlugin,
+  DEFAULT_JS_LAB_CODE,
+  ensureJsLab,
+  externalFunctionCallStatement,
+  findJsLab,
+  jsLabRuntimeSourceOptions,
+  readJsLabSettings,
+  updateJsLabScript,
+  JS_LAB_CODE_EDITOR_ATTRIBUTE,
+  JS_LAB_BLOCK_ID,
+} from './external-function-blocks'
+import { ExternalLibrariesPanel } from './ExternalLibrariesPanel'
+import {
+  loadPreparedImportedLibrary,
+  type PreparedImportedLibraryFile,
+} from '../external-libraries/imported-library'
+import {
+  createProjectExternalLibraries,
+  type ProjectExternalLibraries,
+} from './project-external-libraries'
 import { AuthSettingsDialog } from './AuthSettingsDialog'
 import {
   applyNavbarLogoutPresentation,
@@ -211,6 +245,7 @@ type ElementSummary = {
   interactionAnimation: InteractionAnimation
   isRepeater: boolean
   label: string
+  screenFlow?: ScreenFlowConnection
   tag: string
   targetPageId?: string
   recordToggle?: RecordToggleConnection
@@ -481,12 +516,72 @@ const BORDER_COLOR_COMMAND = 'builder:set-border-color'
 const CONTAINER_POSITION_COMMAND = 'builder:set-container-position'
 const CONTAINER_HORIZONTAL_POSITION_COMMAND = 'builder:set-container-horizontal-position'
 const AUTH_SETTINGS_COMMAND = 'builder:open-auth-settings'
+const DATA_COMPONENT_SETTINGS_COMMAND = 'builder:open-data-component-settings'
 const BACKGROUND_COLOR_ICON = '<svg aria-hidden="true" viewBox="0 0 20 20"><path d="m5.2 9.1 5.3-5.3 5.7 5.7-5.3 5.3a2 2 0 0 1-2.8 0l-2.9-2.9a2 2 0 0 1 0-2.8Z" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/><path d="m8 6.3 5.7 5.7M4 16.2h12" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"/></svg>'
 const BORDER_COLOR_ICON = '<svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3.5" y="3.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6.7 6.7h6.6v6.6H6.7z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="1.4 1.4"/></svg>'
 const CONTAINER_POSITION_ICON = '<svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3.5" y="3.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 10h8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="m10 6-1.8 2h3.6L10 6Zm0 8 1.8-2H8.2l1.8 2Z" fill="currentColor"/></svg>'
 const CONTAINER_HORIZONTAL_POSITION_ICON = '<svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3.5" y="3.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 6v8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="m6 10 2-1.8v3.6L6 10Zm8 0-2 1.8V8.2L14 10Z" fill="currentColor"/></svg>'
 const AUTH_SETTINGS_ICON = '<svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.8 3.8h4.4l.5 1.8 1.7 1 .1 1.9 1.4 1.5-1 1.6.1 1.9-1.7 1-.6 1.7H8.3l-.6-1.7-1.7-1 .1-1.9-1-1.6 1.4-1.5.1-1.9 1.7-1 .5-1.8Z" fill="none" stroke="currentColor" stroke-width="1.35"/><circle cx="10" cy="10" r="2.2" fill="none" stroke="currentColor" stroke-width="1.45"/></svg>'
+const DATA_COMPONENT_SETTINGS_ICON = '<svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3.5" y="4" width="13" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.8 8h12.4M8 4.3v11.4" fill="none" stroke="currentColor" stroke-width="1.35"/><path d="m10.5 12.8 1.4-1.4 1.2 1.2 2-2" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 let directColorPickerAnchor: DOMRect | null = null
+
+type EyeDropperResult = { sRGBHex: string }
+type EyeDropperApi = { open: () => Promise<EyeDropperResult> }
+type EyeDropperConstructor = new () => EyeDropperApi
+
+const COLOR_PICKER_PALETTE = [
+  ['#ffffff', '#f4f4f5', '#d4d4d8', '#a1a1aa', '#71717a', '#3f3f46', '#18181b', '#000000'],
+  ['#ef4444', '#f97316', '#f59e0b', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6'],
+  ['#6366f1', '#8b5cf6', '#a855f7', '#ec4899', '#7c2d12', '#166534', '#155e75', '#1e3a8a'],
+]
+
+/** Adds the browser eyedropper and clearer direct-entry affordances to Spectrum. */
+export function enhanceColorPicker(
+  picker: HTMLElement,
+  EyeDropperClass = (window as Window & { EyeDropper?: EyeDropperConstructor }).EyeDropper,
+) {
+  if (picker.dataset.builderEnhanced === 'true') return false
+  picker.dataset.builderEnhanced = 'true'
+
+  const input = picker.querySelector<HTMLInputElement>('.sp-input')
+  const inputContainer = picker.querySelector<HTMLElement>('.sp-input-container')
+  if (!input || !inputContainer) return false
+
+  input.setAttribute('aria-label', 'Valor del color')
+  input.placeholder = '#RRGGBB, rgb() o hsl()'
+
+  const sampleButton = document.createElement('button')
+  sampleButton.type = 'button'
+  sampleButton.className = 'visual-editor-eyedropper'
+  sampleButton.setAttribute('aria-label', 'Tomar un color de la pantalla')
+  sampleButton.title = EyeDropperClass
+    ? 'Tomar un color de cualquier lugar de la pantalla'
+    : 'El navegador no permite tomar colores de la pantalla'
+  sampleButton.disabled = !EyeDropperClass
+  sampleButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 20 20"><path d="m13.8 2.7 3.5 3.5-2.1 2.1-.8-.8-6.9 6.9-2 .5-.4-.4.5-2 6.9-6.9-.8-.8 2.1-2.1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="m5.6 12.5 1.9 1.9M3.5 16.5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'
+  inputContainer.append(sampleButton)
+
+  sampleButton.addEventListener('click', async (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!EyeDropperClass) return
+    try {
+      const { sRGBHex } = await new EyeDropperClass().open()
+      input.value = sRGBHex
+      // Spectrum owns the real color input. Its visible text field commits a
+      // valid value on change, which keeps inspector and direct-toolbar flows
+      // on the same GrapesJS undo/save path.
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      input.focus()
+    } catch (cause) {
+      // Escape/cancel is expected and should leave the current color intact.
+      if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
+        sampleButton.title = 'No se pudo tomar el color. Inténtalo de nuevo.'
+      }
+    }
+  })
+  return true
+}
 
 export function applyContainerVerticalAlignment(component: Component, alignment: 'top' | 'center' | 'bottom') {
   const parent = component.parent()
@@ -910,7 +1005,7 @@ function summarizeComponent(component?: Component | null): ElementSummary | null
       && attributes[DATA_REPEATER_ATTRIBUTE] !== 'true'
       ? attributes[DATA_REPEATER_ATTRIBUTE] as string
       : undefined,
-    ...(flowConnection ? { targetPageId: flowConnection.targetPageId } : {}),
+    ...(flowConnection ? { screenFlow: flowConnection, targetPageId: flowConnection.targetPageId } : {}),
     ...(recordToggle ? { recordToggle } : {}),
     ...(dataAction ? { dataAction } : {}),
   }
@@ -933,11 +1028,42 @@ function formInputNames(component?: Component | null) {
   }))]
 }
 
+function incomingRecordTableIds(editor: Editor | null, targetPageId: string) {
+  if (!editor || !targetPageId) return []
+  const descendants = (parent: Component): Component[] => parent.components().models.flatMap(
+    (child) => [child, ...descendants(child)],
+  )
+  const tableIds: string[] = []
+  editor.Pages.getAll().forEach((page) => {
+    const root = page.getMainComponent()
+    ;[root, ...descendants(root)].forEach((component) => {
+      if (component.getAttributes()[FLOW_TARGET_ATTRIBUTE] !== targetPageId) return
+      const flowConnection = readScreenFlowConnection(component.getAttributes())
+      if (flowConnection?.dataSourceTableId) {
+        tableIds.push(flowConnection.dataSourceTableId)
+        return
+      }
+      let ancestor: Component | null | undefined = component
+      while (ancestor) {
+        const tableId = ancestor.getAttributes()[DATA_REPEATER_ATTRIBUTE]
+        if (typeof tableId === 'string' && tableId && tableId !== 'true') {
+          tableIds.push(tableId)
+          break
+        }
+        ancestor = ancestor.parent()
+      }
+    })
+  })
+  return [...new Set(tableIds)]
+}
+
 function positionColorPicker() {
   requestAnimationFrame(() => {
     const picker = document.querySelector<HTMLElement>('.visual-editor-color-picker:not(.sp-hidden)')
     const trigger = document.querySelector<HTMLElement>('.sp-replacer.sp-active')
     if (!picker) return
+
+    enhanceColorPicker(picker)
 
     const triggerRect = directColorPickerAnchor ?? trigger?.getBoundingClientRect()
     const pickerRect = picker.getBoundingClientRect()
@@ -1235,13 +1361,21 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const panToolLockedRef = useRef(false)
   const initialSupabaseConfigRef = useRef(EMPTY_SUPABASE_CONFIG)
   const supabaseConfigRef = useRef(initialSupabaseConfigRef.current)
+  const projectExternalLibrariesRef = useRef<ProjectExternalLibraries | null>(null)
+  const jsLabSaveTimerRef = useRef<number | null>(null)
+  const jsLabStoreQueueRef = useRef<Promise<void>>(Promise.resolve())
+  if (!projectExternalLibrariesRef.current) {
+    const initialLibraries = createProjectExternalLibraries()
+    if (!initialLibraries.ok) throw new Error(initialLibraries.error)
+    projectExternalLibrariesRef.current = initialLibraries.value
+  }
   const [error, setError] = useState<string | null>(null)
   const [pages, setPages] = useState<EditorPageSummary[]>([
     { access: 'public', id: BLANK_PAGE.id, isHome: true, name: BLANK_PAGE.name, roles: [] },
   ])
   const [activePageId, setActivePageId] = useState<string>(BLANK_PAGE.id)
   const [rightPanel, setRightPanel] = useState<'styles' | 'properties' | 'motion' | 'flow'>('styles')
-  const [leftPanel, setLeftPanel] = useState<'layers' | 'data'>('layers')
+  const [leftPanel, setLeftPanel] = useState<'layers' | 'data' | 'libraries'>('layers')
   const [blocksOpen, setBlocksOpen] = useState(false)
   const [blockDropActive, setBlockDropActive] = useState(false)
   const [dataComponentEditRequest, setDataComponentEditRequest] = useState<DataComponentEditRequest | null>(null)
@@ -1270,6 +1404,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const [navbarLinkSettings, setNavbarLinkSettings] = useState<NavbarLinkSettings | null>(null)
   const [activePageHasAuth, setActivePageHasAuth] = useState(false)
   const [flowTargetPageId, setFlowTargetPageId] = useState('')
+  const [flowNavigationDataSourceTableId, setFlowNavigationDataSourceTableId] = useState('')
+  const [flowNavigationRecordField, setFlowNavigationRecordField] = useState('')
   const [flowAction, setFlowAction] = useState<'navigate' | 'toggle-record' | DataActionKind>('navigate')
   const [flowDataSourceTableId, setFlowDataSourceTableId] = useState('')
   const [flowOwnerField, setFlowOwnerField] = useState('user_id')
@@ -1279,6 +1415,13 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const [flowFieldMappings, setFlowFieldMappings] = useState<Array<{ field: string; inputName: string }>>([])
   const [flowSuccessMessage, setFlowSuccessMessage] = useState('Registro creado.')
   const [flowConfirmMessage, setFlowConfirmMessage] = useState('')
+  const [flowFixedField, setFlowFixedField] = useState('')
+  const [flowFixedValue, setFlowFixedValue] = useState('')
+  const [flowRecordMode, setFlowRecordMode] = useState<DataActionRecordMode>('context')
+  const [flowValueSource, setFlowValueSource] = useState<DataActionValueSource>('fixed')
+  const [flowValueInputName, setFlowValueInputName] = useState('')
+  const [flowValueAmount, setFlowValueAmount] = useState(1)
+  const [dynamicActionDialogOpen, setDynamicActionDialogOpen] = useState(false)
   const [flowNotice, setFlowNotice] = useState('')
   const [previewActive, setPreviewActive] = useState(false)
   const [canvasZoom, setCanvasZoom] = useState(100)
@@ -1290,6 +1433,92 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     width: '100%',
   })
   const [supabaseConfig, setSupabaseConfig] = useState(initialSupabaseConfigRef.current)
+  const [availableExternalLibraries, setAvailableExternalLibraries] = useState(
+    () => projectExternalLibrariesRef.current!.listLibraries(),
+  )
+
+  async function persistProjectSnapshot(
+    grapesjsData: Record<string, unknown>,
+    libraries: ProjectExternalLibraries = projectExternalLibrariesRef.current!,
+  ) {
+    const projectData: EditorProjectData = {
+      externalLibraries: libraries.imported,
+      grapesjs: grapesjsData,
+      supabaseConfig: supabaseConfigRef.current as unknown as Record<string, unknown>,
+    }
+    if (isGuest) saveGuestProjectData(projectData)
+    else await saveEditorProjectData(editorProjectId, projectData)
+  }
+
+  async function addImportedLibrary(prepared: PreparedImportedLibraryFile) {
+    const loaded = await loadPreparedImportedLibrary(prepared)
+    if (!loaded.ok) throw new Error(loaded.error)
+
+    const next = createProjectExternalLibraries([
+      ...projectExternalLibrariesRef.current!.imported,
+      loaded.value,
+    ])
+    if (!next.ok) throw new Error(next.error)
+
+    const editor = editorRef.current
+    if (!editor) throw new Error('El editor todavía no está listo para añadir bibliotecas.')
+    const previousLibraries = projectExternalLibrariesRef.current!
+    projectExternalLibrariesRef.current = next.value
+    try {
+      await persistProjectSnapshot(
+        editor.getProjectData() as Record<string, unknown>,
+        next.value,
+      )
+    } catch (cause) {
+      projectExternalLibrariesRef.current = previousLibraries
+      throw cause
+    }
+    setAvailableExternalLibraries(next.value.listLibraries())
+  }
+
+  async function useExternalFunction(libraryId: string, functionId: string) {
+    const editor = editorRef.current
+    if (!editor) throw new Error('El editor todavía no está listo para usar funciones.')
+    const library = projectExternalLibrariesRef.current!.listLibraries()
+      .find((candidate) => candidate.id === libraryId)
+    const registration = library?.functions.find(({ metadata }) => metadata.id === functionId)
+    if (!library || !registration) throw new Error('La función seleccionada ya no está disponible.')
+
+    const lab = ensureJsLab(editor).component
+    const current = readJsLabSettings(lab)
+    const existingCode = current.code === DEFAULT_JS_LAB_CODE ? '' : current.code.trimEnd()
+    const runtimeSources = jsLabRuntimeSourceOptions(editor)
+    const call = externalFunctionCallStatement(registration.metadata, existingCode, runtimeSources)
+    const code = `${existingCode ? `${existingCode}\n` : ''}${call.statement}`
+    updateJsLabScript(lab, { code })
+    editor.select(lab)
+    setLeftPanel('libraries')
+    if (jsLabSaveTimerRef.current !== null) {
+      window.clearTimeout(jsLabSaveTimerRef.current)
+      jsLabSaveTimerRef.current = null
+    }
+    await queueJsLabStore(editor)
+  }
+
+  function scheduleJsLabSave(editor: Editor) {
+    if (jsLabSaveTimerRef.current !== null) window.clearTimeout(jsLabSaveTimerRef.current)
+    jsLabSaveTimerRef.current = window.setTimeout(() => {
+      jsLabSaveTimerRef.current = null
+      void queueJsLabStore(editor).catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'No se pudo guardar el código de JS Lab.')
+      })
+    }, 350)
+  }
+
+  function queueJsLabStore(editor: Editor) {
+    const save = jsLabStoreQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        await editor.store()
+      })
+    jsLabStoreQueueRef.current = save
+    return save
+  }
 
   useEffect(() => {
     if (!error) return
@@ -1323,6 +1552,13 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
               const projectData = isGuest
                 ? loadGuestProjectData()
                 : await loadEditorProjectData(editorProjectId)
+              const restoredLibraries = createProjectExternalLibraries(projectData.externalLibraries ?? [])
+              if (!restoredLibraries.ok) {
+                setError(`No se pudieron restaurar las bibliotecas: ${restoredLibraries.error}`)
+              } else {
+                projectExternalLibrariesRef.current = restoredLibraries.value
+                setAvailableExternalLibraries(restoredLibraries.value.listLibraries())
+              }
               if (projectData.supabaseConfig) {
                 const nextConfig = normalizedSupabaseConfig(
                   projectData.supabaseConfig as unknown as SupabaseEditorConfig,
@@ -1348,12 +1584,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           },
           async store(data) {
             try {
-              const projectData = {
-                grapesjs: data as Record<string, unknown>,
-                supabaseConfig: supabaseConfigRef.current as unknown as Record<string, unknown>,
-              }
-              if (isGuest) saveGuestProjectData(projectData)
-              else await saveEditorProjectData(editorProjectId, projectData)
+              await persistProjectSnapshot(data as Record<string, unknown>)
             } catch (cause: unknown) {
               setError(cause instanceof Error ? cause.message : isGuest
                 ? 'No se pudo guardar el proyecto en este navegador.'
@@ -1380,6 +1611,14 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         colorPicker: {
           appendTo: document.body,
           containerClassName: 'gjs-editor-sp visual-editor-color-picker',
+          showInput: true,
+          showInitial: true,
+          showPalette: true,
+          showSelectionPalette: true,
+          preferredFormat: 'hex',
+          allowEmpty: true,
+          maxSelectionSize: 12,
+          palette: COLOR_PICKER_PALETTE,
           show: positionColorPicker,
         },
         canvas: {
@@ -1404,6 +1643,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           createGridLayoutPlugin,
           createSectionLayoutPlugin,
           createMotionAnalysisPlugin(),
+          createExternalFunctionBlocksPlugin(),
           presetWebpage,
           blocksBasic,
           pluginForms,
@@ -1503,8 +1743,43 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         })
         return true
       }
+      const dataComponentFor = (component?: Component | null) => {
+        let current = component ?? null
+        while (current) {
+          const attributes = current.getAttributes()
+          const classes = current.getClasses()
+          if (typeof attributes[DATA_COMPONENT_ATTRIBUTE] === 'string'
+            || classes.some((className) => [
+              'builder-data-grid',
+              'builder-data-carousel',
+              'builder-data-list',
+              'builder-data-featured',
+            ].includes(className))) return current
+          current = current.parent() ?? null
+        }
+        return null
+      }
+      const openDataSettingsForComponent = (component?: Component | null) => {
+        const dataComponent = dataComponentFor(component)
+        const element = dataComponent?.getEl() as HTMLElement | undefined
+        const settings = element ? readDataComponentSettings(element) : null
+        if (!dataComponent || !settings) return false
+        editingDataComponentRef.current = dataComponent
+        editor.select(dataComponent)
+        syncSelectedElement(dataComponent)
+        setBlocksOpen(false)
+        setLeftPanel('data')
+        setDataComponentEditRequest((current) => ({
+          ...settings,
+          requestId: (current?.requestId ?? 0) + 1,
+        }))
+        return true
+      }
       editor.Commands.add(AUTH_SETTINGS_COMMAND, {
         run: (currentEditor) => openAuthSettingsForComponent(currentEditor.getSelected()),
+      })
+      editor.Commands.add(DATA_COMPONENT_SETTINGS_COMMAND, {
+        run: (currentEditor) => openDataSettingsForComponent(currentEditor.getSelected()),
       })
       editor.Pages.select(BLANK_PAGE.id)
       installInlineTypographyControls(editor)
@@ -1568,7 +1843,11 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       const previewController = createPreviewController({
         onStart: () => {
           try {
-            const bundle = editorProjectBundle(editor, supabaseConfigRef.current)
+            const bundle = editorProjectBundle(
+              editor,
+              supabaseConfigRef.current,
+              projectExternalLibrariesRef.current!.listFunctionRegistrations(),
+            )
             const selectedPageId = editor.Pages.getSelected()?.getId()
             setBlocksOpen(false)
             setPreviewSession(createEditorPreviewSession(bundle, selectedPageId))
@@ -1598,7 +1877,11 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         run: async () => {
           try {
             setError(null)
-            await exportEditorProject(editor, supabaseConfigRef.current)
+            await exportEditorProject(
+              editor,
+              supabaseConfigRef.current,
+              projectExternalLibrariesRef.current!.listFunctionRegistrations(),
+            )
           } catch (cause) {
             setError(cause instanceof Error ? cause.message : 'No se pudo exportar el sitio.')
           }
@@ -1636,6 +1919,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         setSelectedMotionComponent(motionComponent)
         if (!motionComponent) setMotionNotice('')
         setFlowTargetPageId(summary?.targetPageId ?? '')
+        setFlowNavigationDataSourceTableId(summary?.screenFlow?.dataSourceTableId ?? '')
+        setFlowNavigationRecordField(summary?.screenFlow?.recordField ?? '')
         setFlowAction(summary?.recordToggle ? 'toggle-record' : summary?.dataAction?.action ?? 'navigate')
         setFlowDataSourceTableId(summary?.recordToggle?.dataSourceTableId ?? summary?.dataAction?.dataSourceTableId ?? '')
         setFlowOwnerField(summary?.recordToggle?.ownerField ?? summary?.dataAction?.ownerField ?? 'user_id')
@@ -1645,6 +1930,12 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         setFlowFieldMappings(summary?.dataAction?.fieldMappings ?? [])
         setFlowSuccessMessage(summary?.dataAction?.successMessage ?? 'Registro creado.')
         setFlowConfirmMessage(summary?.dataAction?.confirmMessage ?? '')
+        setFlowFixedField(summary?.dataAction?.fixedField ?? '')
+        setFlowFixedValue(summary?.dataAction?.fixedValue ?? '')
+        setFlowRecordMode(summary?.dataAction?.recordMode ?? 'context')
+        setFlowValueSource(summary?.dataAction?.valueSource ?? (summary?.dataAction?.fixedValue === '$now' ? 'now' : 'fixed'))
+        setFlowValueInputName(summary?.dataAction?.valueInputName ?? '')
+        setFlowValueAmount(summary?.dataAction?.valueAmount ?? 1)
         setFlowNotice('')
         setRightPanel((current) => motionComponent
           ? 'motion'
@@ -1769,33 +2060,20 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           })
         }
         canvasDocument.addEventListener('dblclick', openNavbarLinkOptions, true)
-        const openDataComponentOptions = (event: MouseEvent) => {
+        const openDynamicActionOptions = (event: MouseEvent) => {
           const target = event.target as Element | null
-          if (!target || typeof target.closest !== 'function') return
-          const rootElement = findDataComponentRoot(target)
-          if (!rootElement) return
-          const settings = readDataComponentSettings(rootElement)
-          const component = editor.getWrapper()?.find([
-            `[${DATA_COMPONENT_ATTRIBUTE}]`,
-            '.builder-data-grid',
-            '.builder-data-carousel',
-            '.builder-data-list',
-            '.builder-data-featured',
-          ].join(',')).find((candidate) => candidate.getEl() === rootElement)
-          if (!settings || !component) return
+          const actionElement = target?.closest?.(`[${FLOW_ACTION_ATTRIBUTE}="set-record-field"]`) as HTMLElement | null
+          if (!actionElement) return
+          const component = pageComponents.find((candidate) => candidate.getEl() === actionElement)
+          if (!component) return
           event.preventDefault()
-          event.stopPropagation()
-          editingDataComponentRef.current = component
+          event.stopImmediatePropagation()
           editor.select(component)
           syncSelectedElement(component)
-          setBlocksOpen(false)
-          setLeftPanel('data')
-          setDataComponentEditRequest((current) => ({
-            ...settings,
-            requestId: (current?.requestId ?? 0) + 1,
-          }))
+          setRightPanel('flow')
+          setDynamicActionDialogOpen(true)
         }
-        canvasDocument.addEventListener('dblclick', openDataComponentOptions, true)
+        canvasDocument.addEventListener('dblclick', openDynamicActionOptions, true)
         const openMotionComponentOptions = (event: MouseEvent) => {
           const target = event.target as Element | null
           const rootElement = target?.closest?.(`[data-motion-activity]`) as HTMLElement | null
@@ -1813,7 +2091,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         canvasDocument.addEventListener('dblclick', openMotionComponentOptions, true)
         canvasDoubleClickCleanups.push(() => {
           canvasDocument.removeEventListener('dblclick', openNavbarLinkOptions, true)
-          canvasDocument.removeEventListener('dblclick', openDataComponentOptions, true)
+          canvasDocument.removeEventListener('dblclick', openDynamicActionOptions, true)
           canvasDocument.removeEventListener('dblclick', openMotionComponentOptions, true)
         })
       }
@@ -1895,10 +2173,26 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         const heightCap = Math.min(960, Math.max(480, visibleCanvasHeight))
         if (canvasDocument) installEditorCanvasLayoutGuards(canvasDocument, heightCap)
       }
+      const installJsLabCanvasEditing = () => {
+        const canvasDocument = editor.Canvas.getDocument()
+        if (!canvasDocument || canvasDocument.documentElement.dataset.builderJsLabEditing === 'true') return
+        canvasDocument.documentElement.setAttribute('data-builder-js-lab-editing', 'true')
+        canvasDocument.addEventListener('input', (event) => {
+          const target = event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null
+          const labElement = target?.closest?.('[data-builder-js-lab]')
+          const lab = labElement ? findJsLab(editor) : undefined
+          if (!target || !lab) return
+          if (target.hasAttribute(JS_LAB_CODE_EDITOR_ATTRIBUTE)) {
+            updateJsLabScript(lab, { code: target.value })
+          } else return
+          scheduleJsLabSave(editor)
+        }, true)
+      }
       const handleCanvasBodyLoad = () => {
         stabilizeEditorCanvas()
         installGridEditorStyles(editor)
         installDataComponentDoubleClick()
+        installJsLabCanvasEditing()
       }
       editor.on('canvas:frame:load:head', installEditorViewport)
       editor.on('canvas:frame:load:body', handleCanvasBodyLoad)
@@ -1923,6 +2217,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         installEditorViewport()
         stabilizeEditorCanvas()
         installDataComponentDoubleClick()
+        installJsLabCanvasEditing()
         if (ensureDataDesignPlaceholders(editor) > 0) {
           void editor.store().catch((cause: unknown) => {
             setError(cause instanceof Error ? cause.message : 'No se pudieron guardar los espacios de diseño.')
@@ -1983,6 +2278,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         requestAnimationFrame(() => {
           installGridEditorStyles(editor)
           installDataComponentDoubleClick()
+          installJsLabCanvasEditing()
         })
       })
       editor.on('page:update', syncPages)
@@ -2033,6 +2329,23 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         component.set('resizable', false)
         addComponentPositionToolbar(component)
         addComponentColorToolbar(component)
+        if (dataComponentFor(component)) {
+          component.initToolbar()
+          const toolbar = [...(component.get('toolbar') ?? [])] as ToolbarButtonProps[]
+          if (!toolbar.some((item) => item.id === DATA_COMPONENT_SETTINGS_COMMAND)) {
+            const deleteIndex = toolbar.findIndex((item) => item.command === 'tlb-delete')
+            toolbar.splice(deleteIndex < 0 ? toolbar.length : deleteIndex, 0, {
+              id: DATA_COMPONENT_SETTINGS_COMMAND,
+              command: DATA_COMPONENT_SETTINGS_COMMAND,
+              label: DATA_COMPONENT_SETTINGS_ICON,
+              attributes: {
+                'aria-label': 'Editar datos de esta tarjeta',
+                title: 'Editar datos de esta tarjeta',
+              },
+            })
+            component.set('toolbar', toolbar)
+          }
+        }
         if (authActionComponentFor(component)) {
           component.initToolbar()
           const toolbar = [...(component.get('toolbar') ?? [])] as ToolbarButtonProps[]
@@ -2094,11 +2407,19 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       }))
       const completeBlockInsertion = (component: Component, block: Block) => {
         setBlocksOpen(false)
+        if (block.getId() === JS_LAB_BLOCK_ID) {
+          const existingLab = findJsLab(editor)
+          if (existingLab && existingLab !== component) {
+            component.remove()
+            editor.select(existingLab)
+          } else {
+            editor.select(component)
+          }
+          setRightPanel('properties')
+        }
         if ([
           MOTION_VIEW_REFERENCE_BLOCK_ID,
-          MOTION_COMPARE_BLOCK_ID,
           MOTION_ANALYSIS_BLOCK_ID,
-          MOTION_CAPTURE_REFERENCE_BLOCK_ID,
         ].includes(block.getId())) {
           editor.select(component)
           setRightPanel('motion')
@@ -2117,6 +2438,16 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       editor.on('block:click', (block: Block) => {
         draggedBlockRef.current = null
         setBlockDropActive(false)
+        if (block.getId() === JS_LAB_BLOCK_ID) {
+          const lab = ensureJsLab(editor).component
+          editor.select(lab)
+          setBlocksOpen(false)
+          setRightPanel('properties')
+          void editor.store().catch((cause: unknown) => {
+            setError(cause instanceof Error ? cause.message : 'No se pudo guardar JS Lab.')
+          })
+          return
+        }
         const blockContent = block.getContent()
         const content = typeof blockContent === 'function' ? blockContent() : blockContent
         if (!content) return
@@ -2179,6 +2510,10 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     }
 
     return () => {
+      if (jsLabSaveTimerRef.current !== null) {
+        window.clearTimeout(jsLabSaveTimerRef.current)
+        jsLabSaveTimerRef.current = null
+      }
       canvasResizeObserver?.disconnect()
       canvasDoubleClickCleanups.forEach((cleanup) => cleanup())
       ;(editorRef.current as (Editor & { __removePanShortcuts?: () => void }) | null)?.__removePanShortcuts?.()
@@ -2235,6 +2570,16 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     draggedBlockRef.current = null
     setBlockDropActive(false)
     if (!editor || !block) return
+    if (block.getId() === JS_LAB_BLOCK_ID) {
+      const lab = ensureJsLab(editor).component
+      editor.select(lab)
+      setBlocksOpen(false)
+      setRightPanel('properties')
+      void editor.store().catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'No se pudo guardar JS Lab.')
+      })
+      return
+    }
 
     const blockContent = block.getContent()
     const content = typeof blockContent === 'function' ? blockContent() : blockContent
@@ -2246,9 +2591,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     setBlocksOpen(false)
     if ([
       MOTION_VIEW_REFERENCE_BLOCK_ID,
-      MOTION_COMPARE_BLOCK_ID,
       MOTION_ANALYSIS_BLOCK_ID,
-      MOTION_CAPTURE_REFERENCE_BLOCK_ID,
     ].includes(block.getId())) {
       setRightPanel('motion')
       setMotionDialogOpen(true)
@@ -2412,7 +2755,12 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     if (!window.confirm(`¿Eliminar “${page.getName() || 'Sin título'}”? Esta acción no se puede deshacer.${connectionWarning}`)) return
 
     inboundConnections.forEach((component) => {
-      component.removeAttributes([FLOW_ACTION_ATTRIBUTE, FLOW_TARGET_ATTRIBUTE])
+      component.removeAttributes([
+        FLOW_ACTION_ATTRIBUTE,
+        FLOW_TARGET_ATTRIBUTE,
+        FLOW_DATA_SOURCE_ATTRIBUTE,
+        FLOW_RECORD_FIELD_ATTRIBUTE,
+      ])
     })
     inboundAuthDestinations.forEach((component) => component.removeAttributes(AUTH_DESTINATION_ATTRIBUTE))
     const fallback = editor.Pages.getAll().find((candidate) => candidate.getId() !== pageId)
@@ -2449,16 +2797,57 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const resolvedFlowTargetPageId = availableFlowPages.some((page) => page.id === flowTargetPageId)
     ? flowTargetPageId
     : availableFlowPages[0]?.id ?? ''
+  const flowNavigationSourceTableId = selectedElement?.repeaterTableId
+    ?? selectedElement?.inheritedRepeaterTableId
+  const flowNavigationSourceTable = supabaseConfig.tables.find((table) =>
+    table.id === flowNavigationSourceTableId)
+  const flowNavigationRelatedRecords = (flowNavigationSourceTable?.relations ?? []).flatMap((relation) => {
+    const target = supabaseConfig.tables.find((table) => table.id === relation.targetTableId)
+    return target && target.access !== 'private' ? [{ relation, target }] : []
+  })
+  const resolvedFlowNavigationRecord = flowNavigationRelatedRecords.find(({ relation, target }) =>
+    relation.column === flowNavigationRecordField && target.id === flowNavigationDataSourceTableId)
   const writableFlowTables = supabaseConfig.tables.filter((table) => table.access === 'user_owned')
-  const resolvedFlowDataSourceTableId = writableFlowTables.some((table) =>
+  const singleUserFlowTables = writableFlowTables.filter((table) => table.recordMode === 'single_per_user')
+  const managedFlowTables = (action: 'select' | 'insert' | 'update' | 'delete') =>
+    supabaseConfig.tables.filter((table) => table.management?.actions.includes(action))
+  const uniqueFlowTables = (tables: typeof supabaseConfig.tables) => [...new Map(
+    tables.map((table) => [table.id, table]),
+  ).values()]
+  const detectedContextTableIds = [...new Set([
+    ...(selectedElement?.inheritedRepeaterTableId ? [selectedElement.inheritedRepeaterTableId] : []),
+    ...incomingRecordTableIds(editorRef.current, activePageId),
+  ])]
+  const canUpdateTable = (table: (typeof supabaseConfig.tables)[number]) =>
+    table.access === 'user_owned' || Boolean(table.management?.actions.includes('update'))
+  const dynamicContextTables = supabaseConfig.tables.filter((table) =>
+    detectedContextTableIds.includes(table.id) && canUpdateTable(table))
+  const dynamicCurrentUserTables = singleUserFlowTables
+  const recordActionFlowTables = flowAction === 'save-current-user-record'
+    ? singleUserFlowTables
+    : flowAction === 'set-record-field' ? uniqueFlowTables([...dynamicContextTables, ...dynamicCurrentUserTables])
+      : flowAction === 'create-record' ? uniqueFlowTables([...writableFlowTables, ...managedFlowTables('insert')])
+        : flowAction === 'update-record' ? uniqueFlowTables([...writableFlowTables, ...managedFlowTables('update')])
+          : flowAction === 'delete-record' ? uniqueFlowTables([...writableFlowTables, ...managedFlowTables('delete')])
+            : writableFlowTables
+  const resolvedFlowDataSourceTableId = recordActionFlowTables.some((table) =>
     table.id === flowDataSourceTableId)
     ? flowDataSourceTableId
-    : writableFlowTables.find((table) => /favorite/i.test(table.name))?.id
-      ?? writableFlowTables[0]?.id
+    : recordActionFlowTables.find((table) => /favorite/i.test(table.name))?.id
+      ?? recordActionFlowTables[0]?.id
       ?? ''
-  const flowDataSourceTable = writableFlowTables.find((table) =>
+  const flowDataSourceTable = recordActionFlowTables.find((table) =>
     table.id === resolvedFlowDataSourceTableId)
+  const isFlowRoleTable = Boolean(flowDataSourceTable
+    && /(^|_)roles?($|_)/i.test(flowDataSourceTable.name)
+    && flowDataSourceTable.fields.some((field) => field.name === 'role'))
   const flowFieldNames = [...new Set([
+    ...(flowAction === 'set-record-field' && flowDataSourceTable
+      ? builtInFields(flowDataSourceTable.access).filter((field) => field === 'published')
+      : []),
+    ...(isFlowRoleTable && (flowAction === 'create-record' || flowAction === 'update-record')
+      ? ['user_id']
+      : []),
     ...(flowDataSourceTable?.fields.map((field) => field.name) ?? []),
     ...(flowDataSourceTable?.verifiedSchema?.fields.map((field) => field.name) ?? []),
   ])]
@@ -2468,6 +2857,135 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const isRecordDataAction = flowAction === 'create-record'
     || flowAction === 'update-record'
     || flowAction === 'delete-record'
+    || flowAction === 'save-current-user-record'
+    || flowAction === 'set-record-field'
+
+  function addCurrentUserFormFields() {
+    const editor = editorRef.current
+    let form = editor?.getSelected() ?? null
+    while (form && String(form.get('tagName')).toUpperCase() !== 'FORM') form = form.parent() ?? null
+    if (!editor || !form || !flowDataSourceTable) return
+    const existingNames = new Set(formInputNames(form))
+    const missingFields = flowDataSourceTable.fields.filter((field) => !existingNames.has(field.name))
+    const submitButton = form.find('button[type="submit"]')[0]
+    const at = submitButton?.index()
+    missingFields.forEach((field, index) => {
+      const label = field.name.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())
+      const relation = flowDataSourceTable.relations.find((candidate) =>
+        candidate.column === field.name && candidate.targetTableId !== 'auth.users')
+      const relationTarget = relation
+        ? supabaseConfig.tables.find((candidate) => candidate.id === relation.targetTableId)
+        : undefined
+      const control = field.type === 'long_text' || field.type === 'json'
+        ? { tagName: 'textarea', attributes: { name: field.name, rows: '4' } }
+        : relation && relationTarget ? {
+          tagName: 'select',
+          attributes: {
+            name: field.name,
+            'data-builder-relation-source': supabaseDataSourceId(relationTarget.id),
+            'data-builder-relation-label': relationDisplayField(supabaseConfig, relation),
+            'data-builder-relation-value': relation.targetColumn,
+          },
+          components: [{ tagName: 'option', attributes: { value: '' }, components: `Selecciona ${collectionDisplayName(relationTarget)}` }],
+        }
+        : field.upload ? {
+          tagName: 'input',
+          attributes: {
+            accept: uploadAccept(field.upload.kind),
+            name: field.name,
+            type: 'file',
+            ...(field.type === 'media_list' ? { multiple: 'multiple' } : {}),
+            'data-builder-upload-bucket': field.upload.bucket,
+            'data-builder-upload-kind': field.upload.kind,
+            'data-builder-upload-max-bytes': String(Math.round(field.upload.maxSizeMb * 1024 * 1024)),
+          },
+        }
+        : {
+          tagName: 'input',
+          attributes: {
+            name: field.name,
+            type: field.type === 'number' ? 'number'
+              : field.type === 'boolean' ? 'checkbox'
+                : field.type === 'date' ? 'date'
+                  : field.type === 'datetime' ? 'datetime-local'
+                    : field.type === 'url' || field.type === 'media' ? 'url' : 'text',
+          },
+        }
+      form.append({
+        tagName: 'label',
+        attributes: { class: 'builder-current-user-field' },
+        components: field.type === 'boolean'
+          ? [control, { tagName: 'span', components: label }]
+          : [{ tagName: 'span', components: label }, control],
+      }, at === undefined ? undefined : { at: at + index })
+    })
+    const nextMappings = flowDataSourceTable.fields.map((field) => ({
+      field: field.name,
+      inputName: field.name,
+    }))
+    setFlowFieldMappings(nextMappings)
+    setSelectedElement(summarizeComponent(form))
+    setFlowNotice(missingFields.length
+      ? `Se añadieron ${missingFields.length} campos. Puedes cambiar su diseño en el lienzo.`
+      : 'Todos los campos de esta colección ya están en el formulario.')
+    void editor.store().catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : 'No se pudieron añadir los campos.')
+    })
+  }
+
+  function saveDynamicFieldAction(draft: DynamicFieldActionDraft) {
+    const editor = editorRef.current
+    const component = editor?.getSelected()
+    if (!editor || !component || !draft.tableId || !draft.field) return
+    component.removeAttributes([
+      FLOW_ACTION_ATTRIBUTE,
+      FLOW_TARGET_ATTRIBUTE,
+      FLOW_DATA_SOURCE_ATTRIBUTE,
+      FLOW_OWNER_FIELD_ATTRIBUTE,
+      FLOW_RECORD_FIELD_ATTRIBUTE,
+      FLOW_CONTEXT_ATTRIBUTE,
+      FLOW_ACTIVE_LABEL_ATTRIBUTE,
+      FLOW_INACTIVE_LABEL_ATTRIBUTE,
+      FLOW_FIELD_MAP_ATTRIBUTE,
+      FLOW_FIXED_FIELD_ATTRIBUTE,
+      FLOW_FIXED_VALUE_ATTRIBUTE,
+      FLOW_RECORD_MODE_ATTRIBUTE,
+      FLOW_VALUE_SOURCE_ATTRIBUTE,
+      FLOW_VALUE_INPUT_ATTRIBUTE,
+      FLOW_VALUE_AMOUNT_ATTRIBUTE,
+      FLOW_SUCCESS_MESSAGE_ATTRIBUTE,
+      FLOW_CONFIRM_MESSAGE_ATTRIBUTE,
+    ])
+    component.addAttributes(dataActionAttributes({
+      action: 'set-record-field',
+      dataSourceTableId: draft.tableId,
+      contextKey: 'record',
+      fieldMappings: [],
+      fixedField: draft.field,
+      fixedValue: draft.fixedValue,
+      recordMode: draft.recordMode,
+      valueSource: draft.valueSource,
+      ...(draft.valueSource === 'form' ? { valueInputName: draft.valueInputName } : {}),
+      ...(draft.valueSource === 'increment' ? { valueAmount: draft.valueAmount } : {}),
+      ...(draft.recordMode === 'current_user' ? { ownerField: 'user_id' } : {}),
+      successMessage: draft.successMessage.trim() || 'Información actualizada.',
+      ...(draft.confirmMessage.trim() ? { confirmMessage: draft.confirmMessage.trim() } : {}),
+    }))
+    setFlowAction('set-record-field')
+    setFlowDataSourceTableId(draft.tableId)
+    setFlowFixedField(draft.field)
+    setFlowFixedValue(draft.fixedValue)
+    setFlowRecordMode(draft.recordMode)
+    setFlowValueSource(draft.valueSource)
+    setFlowValueInputName(draft.valueInputName)
+    setFlowValueAmount(draft.valueAmount)
+    setFlowSuccessMessage(draft.successMessage.trim() || 'Información actualizada.')
+    setFlowConfirmMessage(draft.confirmMessage.trim())
+    setSelectedElement(summarizeComponent(component))
+    setFlowNotice('La acción del botón quedó configurada.')
+    setDynamicActionDialogOpen(false)
+    void editor.store()
+  }
 
   function saveFlowConnection() {
     const editor = editorRef.current
@@ -2477,7 +2995,11 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     if (flowAction === 'toggle-record'
       && (!resolvedFlowDataSourceTableId || !flowOwnerField.trim() || !flowRecordField.trim())) return
     if (isRecordDataAction && !resolvedFlowDataSourceTableId) return
-    if ((flowAction === 'create-record' || flowAction === 'update-record')
+    if (flowAction === 'set-record-field' && (!flowFixedField
+      || (flowValueSource === 'fixed' && flowFixedValue === '')
+      || (flowValueSource === 'form' && !flowValueInputName))) return
+    if ((flowAction === 'create-record' || flowAction === 'update-record'
+      || flowAction === 'save-current-user-record')
       && !resolvedFlowFieldMappings.length) return
 
     component.removeAttributes([
@@ -2490,11 +3012,23 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       FLOW_ACTIVE_LABEL_ATTRIBUTE,
       FLOW_INACTIVE_LABEL_ATTRIBUTE,
       FLOW_FIELD_MAP_ATTRIBUTE,
+      FLOW_FIXED_FIELD_ATTRIBUTE,
+      FLOW_FIXED_VALUE_ATTRIBUTE,
+      FLOW_RECORD_MODE_ATTRIBUTE,
+      FLOW_VALUE_SOURCE_ATTRIBUTE,
+      FLOW_VALUE_INPUT_ATTRIBUTE,
+      FLOW_VALUE_AMOUNT_ATTRIBUTE,
       FLOW_SUCCESS_MESSAGE_ATTRIBUTE,
       FLOW_CONFIRM_MESSAGE_ATTRIBUTE,
     ])
     if (flowAction === 'navigate') {
-      component.addAttributes(screenFlowAttributes(resolvedFlowTargetPageId))
+      component.addAttributes(screenFlowAttributes(
+        resolvedFlowTargetPageId,
+        resolvedFlowNavigationRecord ? {
+          dataSourceTableId: resolvedFlowNavigationRecord.target.id,
+          recordField: resolvedFlowNavigationRecord.relation.column,
+        } : undefined,
+      ))
     } else if (flowAction === 'toggle-record') {
       component.addAttributes(recordToggleAttributes({
         dataSourceTableId: resolvedFlowDataSourceTableId,
@@ -2510,12 +3044,24 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
         dataSourceTableId: resolvedFlowDataSourceTableId,
         contextKey: 'record',
         fieldMappings: flowAction === 'delete-record' ? [] : resolvedFlowFieldMappings,
-        ...(flowAction === 'create-record' && flowOwnerField.trim()
-          ? { ownerField: flowOwnerField.trim() }
+        ...((flowAction === 'create-record' || flowAction === 'save-current-user-record')
+          && flowOwnerField.trim()
+          ? { ownerField: flowAction === 'save-current-user-record' ? 'user_id' : flowOwnerField.trim() }
           : {}),
         successMessage: flowSuccessMessage.trim() || (flowAction === 'create-record'
-          ? 'Registro creado.' : flowAction === 'update-record' ? 'Cambios guardados.' : 'Registro eliminado.'),
+          ? 'Registro creado.' : flowAction === 'update-record' || flowAction === 'save-current-user-record'
+            ? 'Cambios guardados.' : flowAction === 'set-record-field'
+              ? 'Estado actualizado.' : 'Registro eliminado.'),
         ...(flowConfirmMessage.trim() ? { confirmMessage: flowConfirmMessage.trim() } : {}),
+        ...(flowAction === 'set-record-field' ? {
+          fixedField: flowFixedField,
+          fixedValue: flowFixedValue,
+          recordMode: flowRecordMode,
+          valueSource: flowValueSource,
+          ...(flowValueInputName ? { valueInputName: flowValueInputName } : {}),
+          ...(flowValueSource === 'increment' ? { valueAmount: flowValueAmount } : {}),
+          ...(flowRecordMode === 'current_user' ? { ownerField: 'user_id' } : {}),
+        } : {}),
       }))
     }
     setSelectedElement(summarizeComponent(component))
@@ -2530,6 +3076,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       setFlowDataSourceTableId(resolvedFlowDataSourceTableId)
       setFlowNotice(flowAction === 'create-record' ? 'El formulario ahora crea un registro.'
         : flowAction === 'update-record' ? 'El formulario ahora actualiza el registro actual.'
+          : flowAction === 'save-current-user-record' ? 'El formulario ahora guarda los datos de la persona conectada.'
+            : flowAction === 'set-record-field' ? 'El botón ahora cambia el estado del registro actual.'
           : 'El botón ahora elimina el registro actual.')
     }
     void editor.store().catch((cause: unknown) => {
@@ -2552,6 +3100,12 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       FLOW_ACTIVE_LABEL_ATTRIBUTE,
       FLOW_INACTIVE_LABEL_ATTRIBUTE,
       FLOW_FIELD_MAP_ATTRIBUTE,
+      FLOW_FIXED_FIELD_ATTRIBUTE,
+      FLOW_FIXED_VALUE_ATTRIBUTE,
+      FLOW_RECORD_MODE_ATTRIBUTE,
+      FLOW_VALUE_SOURCE_ATTRIBUTE,
+      FLOW_VALUE_INPUT_ATTRIBUTE,
+      FLOW_VALUE_AMOUNT_ATTRIBUTE,
       FLOW_SUCCESS_MESSAGE_ATTRIBUTE,
       FLOW_CONFIRM_MESSAGE_ATTRIBUTE,
     ])
@@ -2739,13 +3293,30 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       'builder-data-list',
       'builder-data-featured',
     ])
+    const interactionComponent = [
+      component,
+      ...component.find(`[${FLOW_ACTION_ATTRIBUTE}],[${INTERACTION_ANIMATION_ATTRIBUTE}]`),
+    ].find((candidate) => {
+      const attributes = candidate.getAttributes()
+      return typeof attributes[FLOW_ACTION_ATTRIBUTE] === 'string'
+        || typeof attributes[INTERACTION_ANIMATION_ATTRIBUTE] === 'string'
+    })
+    const interactionAttributes = Object.fromEntries(Object.entries(
+      interactionComponent?.getAttributes() ?? {},
+    ).filter(([name]) => name.startsWith('data-builder-flow-')
+      || name === INTERACTION_ANIMATION_ATTRIBUTE))
+    const isStandaloneGeneratedRoot = !component.getAttributes()[DATA_COMPONENT_ATTRIBUTE]
+      && component.getClasses().some((className) => generatedClasses.has(className))
     const preservedClasses = component.getClasses().filter((className) => !generatedClasses.has(className))
     const preservedAttributes = Object.fromEntries(Object.entries(component.getAttributes()).filter(([name]) =>
       name !== 'class'
       && name !== 'style'
       && name !== 'aria-label'
       && name !== 'tabindex'
-      && name !== DATA_COMPONENT_ATTRIBUTE))
+      && name !== DATA_COMPONENT_ATTRIBUTE
+      && !name.startsWith('data-builder-flow-')
+      && name !== INTERACTION_ANIMATION_ATTRIBUTE
+      && !(isStandaloneGeneratedRoot && name.startsWith('data-builder-'))))
     const preservedStyles = Object.fromEntries(Object.entries(component.getStyle()).filter(([name]) =>
       !name.startsWith('--builder-data-')))
     const replacements = component.replaceWith(createDataComponentMarkup(templateId, tableId, mapping, options))
@@ -2756,6 +3327,12 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     if (preservedClasses.length) replacement.addClass(preservedClasses)
     if (Object.keys(preservedAttributes).length) replacement.addAttributes(preservedAttributes)
     if (Object.keys(preservedStyles).length) replacement.addStyle(preservedStyles)
+    if (Object.keys(interactionAttributes).length) {
+      const interactionTarget = replacement.getAttributes()[DATA_REPEATER_ATTRIBUTE]
+        ? replacement
+        : replacement.find(`[${DATA_REPEATER_ATTRIBUTE}]`)[0] ?? replacement
+      interactionTarget.addAttributes(interactionAttributes)
+    }
     editor.Css.addRules(dataComponentStyles)
     editor.select(replacement)
     setSelectedElement(summarizeComponent(replacement))
@@ -3050,6 +3627,13 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
               role="tab"
               type="button"
             >Datos</button>
+            <button
+              aria-selected={leftPanel === 'libraries'}
+              className={leftPanel === 'libraries' ? 'active' : ''}
+              onClick={() => setLeftPanel('libraries')}
+              role="tab"
+              type="button"
+            >Librerías</button>
           </div>
 
           <section className={`gjs-sidebar-section gjs-layers-section ${leftPanel === 'layers' ? '' : 'hidden'}`}>
@@ -3071,6 +3655,14 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
               onUpdateDataComponent={updateDataComponent}
               scope="project"
               selectedElement={null}
+            />
+          </div>
+
+          <div className={`gjs-left-libraries-container ${leftPanel === 'libraries' ? '' : 'hidden'}`}>
+            <ExternalLibrariesPanel
+              libraries={availableExternalLibraries}
+              onAddLibrary={addImportedLibrary}
+              onUseFunction={useExternalFunction}
             />
           </div>
 
@@ -3410,13 +4002,38 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
                     onChange={(event) => {
                       const nextAction = event.target.value as 'navigate' | 'toggle-record' | DataActionKind
                       setFlowAction(nextAction)
+                      if (nextAction === 'save-current-user-record') {
+                        const nextTable = singleUserFlowTables.find((candidate) => candidate.id === flowDataSourceTableId)
+                          ?? singleUserFlowTables[0]
+                        setFlowDataSourceTableId(nextTable?.id ?? '')
+                        setFlowOwnerField('user_id')
+                        setFlowFieldMappings((nextTable?.fields ?? []).flatMap((field) =>
+                          flowInputNames.includes(field.name) ? [{ field: field.name, inputName: field.name }] : []))
+                      }
+                      if (nextAction === 'set-record-field') {
+                        const nextMode: DataActionRecordMode = dynamicContextTables.length ? 'context' : 'current_user'
+                        const nextTable = nextMode === 'context' ? dynamicContextTables[0] : dynamicCurrentUserTables[0]
+                        const nextFields = nextTable ? [
+                          ...(nextTable.access === 'public_read' ? ['published'] : []),
+                          ...nextTable.fields.map((field) => field.name),
+                        ] : []
+                        setFlowRecordMode(nextMode)
+                        setFlowDataSourceTableId(nextTable?.id ?? '')
+                        setFlowFixedField(nextFields[0] ?? '')
+                        setFlowFixedValue(nextFields[0] === 'published' ? 'true' : '')
+                        setFlowValueSource('fixed')
+                        setFlowValueInputName(flowInputNames[0] ?? '')
+                        setFlowValueAmount(1)
+                        setDynamicActionDialogOpen(true)
+                      }
                       if ((nextAction === 'create-record' || nextAction === 'update-record')
                         && !flowFieldMappings.length) {
                         setFlowFieldMappings(flowFieldNames.flatMap((field) =>
                           flowInputNames.includes(field) ? [{ field, inputName: field }] : []))
                       }
                       setFlowSuccessMessage(nextAction === 'create-record' ? 'Registro creado.'
-                        : nextAction === 'update-record' ? 'Cambios guardados.'
+                        : nextAction === 'update-record' || nextAction === 'save-current-user-record' ? 'Cambios guardados.'
+                          : nextAction === 'set-record-field' ? 'Estado actualizado.'
                           : nextAction === 'delete-record' ? 'Registro eliminado.' : flowSuccessMessage)
                       if (nextAction === 'delete-record') setFlowConfirmMessage('¿Eliminar este registro?')
                       setFlowNotice('')
@@ -3427,29 +4044,59 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
                     <option value="toggle-record">Guardar o quitar un registro</option>
                     <option disabled={!flowInputNames.length} value="create-record">Crear un registro</option>
                     <option disabled={!flowInputNames.length} value="update-record">Actualizar el registro actual</option>
+                    <option disabled={!singleUserFlowTables.length} value="save-current-user-record">Guardar mis datos</option>
+                    <option disabled={!dynamicContextTables.length && !dynamicCurrentUserTables.length} value="set-record-field">Cambiar información</option>
                     <option value="delete-record">Eliminar el registro actual</option>
                   </select>
                 </label>
 
                 {flowAction === 'navigate' ? (
-                  <label>
-                    Pantalla de destino
-                    <select
-                      aria-label="Pantalla de destino"
-                      disabled={availableFlowPages.length === 0}
-                      onChange={(event) => {
-                        setFlowTargetPageId(event.target.value)
-                        setFlowNotice('')
-                      }}
-                      value={resolvedFlowTargetPageId}
-                    >
-                      {availableFlowPages.length === 0 ? (
-                        <option value="">Añade otra página primero</option>
-                      ) : availableFlowPages.map((page) => (
-                        <option key={page.id} value={page.id}>{page.name}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <>
+                    <label>
+                      Pantalla de destino
+                      <select
+                        aria-label="Pantalla de destino"
+                        disabled={availableFlowPages.length === 0}
+                        onChange={(event) => {
+                          setFlowTargetPageId(event.target.value)
+                          setFlowNotice('')
+                        }}
+                        value={resolvedFlowTargetPageId}
+                      >
+                        {availableFlowPages.length === 0 ? (
+                          <option value="">Añade otra página primero</option>
+                        ) : availableFlowPages.map((page) => (
+                          <option key={page.id} value={page.id}>{page.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {flowNavigationSourceTable && (
+                      <label>
+                        Registro que recibirá {pages.find((page) => page.id === resolvedFlowTargetPageId)?.name ?? 'la otra página'}
+                        <select
+                          aria-label="Datos que abrir en la siguiente pantalla"
+                          onChange={(event) => {
+                            const selected = flowNavigationRelatedRecords.find(({ relation }) =>
+                              relation.id === event.target.value)
+                            setFlowNavigationDataSourceTableId(selected?.target.id ?? '')
+                            setFlowNavigationRecordField(selected?.relation.column ?? '')
+                            setFlowNotice('')
+                          }}
+                          value={resolvedFlowNavigationRecord?.relation.id ?? ''}
+                        >
+                          <option value="">Este registro de {collectionDisplayName(flowNavigationSourceTable)}</option>
+                          {flowNavigationRelatedRecords.map(({ relation, target }) => (
+                            <option key={relation.id} value={relation.id}>
+                              Registro relacionado de {collectionDisplayName(target)}
+                            </option>
+                          ))}
+                        </select>
+                        <small>{resolvedFlowNavigationRecord
+                          ? `Se usará ${resolvedFlowNavigationRecord.relation.column} para abrir el registro correcto de ${collectionDisplayName(resolvedFlowNavigationRecord.target)}.`
+                          : 'La siguiente pantalla recibirá este mismo registro.'}</small>
+                      </label>
+                    )}
+                  </>
                 ) : flowAction === 'toggle-record' ? (
                   <>
                     <div className="gjs-flow-introduction">
@@ -3504,23 +4151,38 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
                   <>
                     <div className="gjs-flow-introduction">
                       <span aria-hidden="true">▦</span>
-                      <div><strong>{flowAction === 'create-record' ? 'Crear información' : flowAction === 'update-record' ? 'Actualizar información' : 'Eliminar información'}</strong><p>{flowAction === 'create-record'
+                      <div><strong>{flowAction === 'create-record' ? 'Crear información' : flowAction === 'update-record' ? 'Actualizar información' : flowAction === 'save-current-user-record' ? 'Guardar mis datos' : flowAction === 'set-record-field' ? 'Cambiar estado' : 'Eliminar información'}</strong><p>{flowAction === 'create-record'
                         ? 'Los valores del formulario crearán un registro nuevo.'
-                        : 'Esta acción usa el registro actual de una lista o página de detalle.'}</p></div>
+                        : flowAction === 'save-current-user-record'
+                          ? 'Carga y guarda el único registro de la persona conectada.'
+                          : flowAction === 'set-record-field'
+                            ? 'El botón cambia un campo del registro actual. Supabase comprueba el permiso real.'
+                          : 'Esta acción usa el registro actual de una lista o página de detalle.'}</p></div>
                     </div>
-                    <label>
+                    {flowAction !== 'set-record-field' && <label>
                       Colección
                       <select aria-label="Colección de la acción" onChange={(event) => {
                         const nextTableId = event.target.value
-                        const nextTable = writableFlowTables.find((candidate) => candidate.id === nextTableId)
+                        const nextTable = recordActionFlowTables.find((candidate) => candidate.id === nextTableId)
                         setFlowDataSourceTableId(nextTableId)
+                        if (/(^|_)roles?($|_)/i.test(nextTable?.name ?? '')) setFlowOwnerField('')
                         setFlowFieldMappings((nextTable?.fields ?? []).flatMap((field) =>
                           flowInputNames.includes(field.name) ? [{ field: field.name, inputName: field.name }] : []))
                       }} value={resolvedFlowDataSourceTableId}>
-                        {writableFlowTables.length === 0 ? <option value="">Crea una colección de datos propios</option> : writableFlowTables.map((table) => <option key={table.id} value={table.id}>{table.displayName ?? table.name}</option>)}
+                        {recordActionFlowTables.length === 0 ? <option value="">{flowAction === 'save-current-user-record' ? 'Configura una colección con un elemento por persona' : 'Crea una colección de datos propios'}</option> : recordActionFlowTables.map((table) => <option key={table.id} value={table.id}>{table.displayName ?? table.name}</option>)}
                       </select>
-                    </label>
-                    {flowAction !== 'delete-record' && <section className="gjs-data-display-options">
+                    </label>}
+                    {(flowAction === 'create-record' || flowAction === 'update-record' || flowAction === 'save-current-user-record') && flowDataSourceTable && <button className="gjs-flow-secondary" onClick={addCurrentUserFormFields} type="button">
+                      Añadir campos de esta colección
+                    </button>}
+                    {flowAction === 'set-record-field' && <section className="gjs-data-display-options">
+                      <strong>Cambio</strong>
+                      <p>{flowDataSourceTable
+                        ? `${flowRecordMode === 'current_user' ? 'Mis datos' : 'Registro actual'} · ${flowDataSourceTable.displayName ?? flowDataSourceTable.name} → ${flowFixedField || 'elige un campo'}`
+                        : 'Configura qué registro y qué información debe cambiar.'}</p>
+                      <button className="gjs-flow-secondary" onClick={() => setDynamicActionDialogOpen(true)} type="button">Configurar cambio</button>
+                    </section>}
+                    {flowAction !== 'delete-record' && flowAction !== 'set-record-field' && <section className="gjs-data-display-options">
                       <strong>Conectar campos</strong>
                       <p>Elige qué campo del formulario llena cada campo de la colección.</p>
                       {flowFieldNames.map((field) => <label key={field}>{field}<select aria-label={`Entrada para ${field}`} onChange={(event) => setFlowFieldMappings((current) => [
@@ -3533,31 +4195,40 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
                       {!flowInputNames.length && <p className="gjs-data-placeholder">Selecciona un formulario o un botón dentro de un formulario.</p>}
                     </section>}
                     {flowAction === 'create-record' && <label>Campo de la persona conectada<select aria-label="Campo automático de la persona" onChange={(event) => setFlowOwnerField(event.target.value)} value={flowOwnerField}><option value="">No guardar automáticamente</option><option value="user_id">user_id</option>{flowFieldNames.filter((field) => field !== 'user_id').map((field) => <option key={field} value={field}>{field}</option>)}</select></label>}
-                    <label>Mensaje al terminar<input aria-label="Mensaje de éxito" maxLength={300} onChange={(event) => setFlowSuccessMessage(event.target.value)} value={flowSuccessMessage} /></label>
+                    {isFlowRoleTable && flowAction === 'create-record' && <p className="gjs-data-safety">Conecta user_id con el identificador de la cuenta y role con el permiso que asignará el administrador.</p>}
+                    {flowAction !== 'set-record-field' && <label>Mensaje al terminar<input aria-label="Mensaje de éxito" maxLength={300} onChange={(event) => setFlowSuccessMessage(event.target.value)} value={flowSuccessMessage} /></label>}
                     {(flowAction === 'delete-record' || flowAction === 'update-record') && <label>Confirmación opcional<input aria-label="Mensaje de confirmación" maxLength={300} onChange={(event) => setFlowConfirmMessage(event.target.value)} placeholder="Déjalo vacío para continuar sin preguntar" value={flowConfirmMessage} /></label>}
                   </>
                 )}
 
-                <button
+                {flowAction !== 'set-record-field' && <button
                   className="gjs-flow-primary"
                   disabled={flowAction === 'navigate'
                     ? !resolvedFlowTargetPageId
                     : flowAction === 'toggle-record'
                       ? !resolvedFlowDataSourceTableId || !flowOwnerField.trim() || !flowRecordField.trim()
-                      : !resolvedFlowDataSourceTableId || ((flowAction === 'create-record' || flowAction === 'update-record') && !resolvedFlowFieldMappings.length)}
+                      : !resolvedFlowDataSourceTableId
+                        || ((flowAction === 'create-record' || flowAction === 'update-record' || flowAction === 'save-current-user-record') && !resolvedFlowFieldMappings.length)}
                   onClick={saveFlowConnection}
                   type="button"
                 >
                   {selectedElement.targetPageId || selectedElement.recordToggle || selectedElement.dataAction
                     ? 'Actualizar conexión'
                     : 'Guardar conexión'}
-                </button>
+                </button>}
 
                 {selectedElement.targetPageId && (
                   <div className="gjs-flow-connected">
                     <span aria-hidden="true">✓</span>
                     <p>
                       Conectado con <strong>{pages.find((page) => page.id === selectedElement.targetPageId)?.name ?? selectedElement.targetPageId}</strong>
+                      {selectedElement.screenFlow?.dataSourceTableId && (
+                        <> usando <strong>{(() => {
+                          const table = supabaseConfig.tables.find((candidate) =>
+                            candidate.id === selectedElement.screenFlow?.dataSourceTableId)
+                          return table ? collectionDisplayName(table) : selectedElement.screenFlow?.dataSourceTableId
+                        })()}</strong></>
+                      )}
                     </p>
                   </div>
                 )}
@@ -3629,6 +4300,26 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           pages={pages}
           presentation={authSettings.presentation}
           tables={supabaseConfig.tables}
+        />
+      )}
+      {dynamicActionDialogOpen && (
+        <DynamicFieldActionDialog
+          contextTables={dynamicContextTables}
+          currentUserTables={dynamicCurrentUserTables}
+          formInputs={flowInputNames}
+          initial={{
+            confirmMessage: flowConfirmMessage,
+            field: flowFixedField,
+            fixedValue: flowFixedValue,
+            recordMode: flowRecordMode,
+            successMessage: flowSuccessMessage || 'Información actualizada.',
+            tableId: resolvedFlowDataSourceTableId,
+            valueAmount: flowValueAmount,
+            valueInputName: flowValueInputName,
+            valueSource: flowValueSource,
+          }}
+          onClose={() => setDynamicActionDialogOpen(false)}
+          onSave={saveDynamicFieldAction}
         />
       )}
       {motionDialogOpen && selectedMotionComponent && (

@@ -1,8 +1,51 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { describe, expect, it, vi } from 'vitest'
-import { saveEditorConnection, verifyEditorTable } from './client'
+import {
+  loadEditorProjectData,
+  saveEditorConnection,
+  saveEditorProjectData,
+  verifyEditorTable,
+} from './client'
+import type { EditorProjectData } from './client'
 
 describe('editor platform function errors', () => {
+  it('persists and reloads imported-library snapshots inside project data', async () => {
+    let stored: EditorProjectData = {}
+    const query = {
+      error: null,
+      eq: vi.fn(() => query),
+      select: vi.fn(() => query),
+      single: vi.fn(async () => ({ data: { project_data: stored }, error: null })),
+      update: vi.fn((payload: { project_data: EditorProjectData }) => {
+        stored = payload.project_data
+        return query
+      }),
+    }
+    const client = { from: vi.fn(() => query) } as unknown as SupabaseClient
+    const projectData: EditorProjectData = {
+      grapesjs: { pages: [] },
+      externalLibraries: [{
+        formatVersion: 1,
+        fileName: 'simple-tools.js',
+        id: 'simple-tools',
+        name: 'Simple Tools',
+        description: 'Imported proof.',
+        functions: [{
+          metadata: {
+            id: 'flatten', name: 'Flatten', description: 'Flattens.',
+            inputs: [{ name: 'matrix', type: 'number[][]', defaultValue: [[1, 2], [3]] }],
+            output: { type: 'number[]' },
+          },
+          implementationSource: 'function flatten(matrix) { return matrix.flat() }',
+        }],
+      }],
+    }
+
+    await saveEditorProjectData('project-id', projectData, client)
+    await expect(loadEditorProjectData('project-id', client)).resolves.toEqual(projectData)
+    expect(query.update).toHaveBeenCalledWith(expect.objectContaining({ project_data: projectData }))
+  })
+
   it('shows the error returned by an Edge Function response', async () => {
     const context = {
       clone: () => context,

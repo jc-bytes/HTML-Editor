@@ -9,6 +9,12 @@ export const FLOW_INACTIVE_LABEL_ATTRIBUTE = 'data-builder-flow-inactive-label'
 export const FLOW_FIELD_MAP_ATTRIBUTE = 'data-builder-flow-field-map'
 export const FLOW_SUCCESS_MESSAGE_ATTRIBUTE = 'data-builder-flow-success-message'
 export const FLOW_CONFIRM_MESSAGE_ATTRIBUTE = 'data-builder-flow-confirm-message'
+export const FLOW_FIXED_FIELD_ATTRIBUTE = 'data-builder-flow-fixed-field'
+export const FLOW_FIXED_VALUE_ATTRIBUTE = 'data-builder-flow-fixed-value'
+export const FLOW_RECORD_MODE_ATTRIBUTE = 'data-builder-flow-record-mode'
+export const FLOW_VALUE_SOURCE_ATTRIBUTE = 'data-builder-flow-value-source'
+export const FLOW_VALUE_INPUT_ATTRIBUTE = 'data-builder-flow-value-input'
+export const FLOW_VALUE_AMOUNT_ATTRIBUTE = 'data-builder-flow-value-amount'
 export const INTERACTION_ANIMATION_ATTRIBUTE = 'data-builder-interaction'
 const FLOW_PREVIEW_MESSAGE_SOURCE = 'builder-screen-flow-preview'
 
@@ -24,6 +30,8 @@ export function readInteractionAnimation(attributes: Record<string, unknown>): I
 
 export interface ScreenFlowConnection {
   action: 'navigate'
+  dataSourceTableId?: string
+  recordField?: string
   targetPageId: string
 }
 
@@ -37,7 +45,9 @@ export interface RecordToggleConnection {
   recordField: string
 }
 
-export type DataActionKind = 'create-record' | 'update-record' | 'delete-record'
+export type DataActionKind = 'create-record' | 'update-record' | 'delete-record' | 'save-current-user-record' | 'set-record-field'
+export type DataActionRecordMode = 'context' | 'current_user'
+export type DataActionValueSource = 'fixed' | 'form' | 'current_user' | 'now' | 'toggle' | 'increment'
 
 export interface DataActionConnection {
   action: DataActionKind
@@ -45,8 +55,14 @@ export interface DataActionConnection {
   contextKey: string
   dataSourceTableId: string
   fieldMappings: Array<{ field: string; inputName: string }>
+  fixedField?: string
+  fixedValue?: string
   ownerField?: string
+  recordMode?: DataActionRecordMode
   successMessage: string
+  valueAmount?: number
+  valueInputName?: string
+  valueSource?: DataActionValueSource
 }
 
 export function readScreenFlowConnection(
@@ -59,13 +75,32 @@ export function readScreenFlowConnection(
     return null
   }
 
-  return { action, targetPageId }
+  const dataSourceTableId = attributes[FLOW_DATA_SOURCE_ATTRIBUTE]
+  const recordField = attributes[FLOW_RECORD_FIELD_ATTRIBUTE]
+  const hasRelatedRecord = typeof dataSourceTableId === 'string' && dataSourceTableId.trim()
+    && typeof recordField === 'string' && recordField.trim()
+
+  return {
+    action,
+    targetPageId,
+    ...(hasRelatedRecord ? {
+      dataSourceTableId: dataSourceTableId.trim(),
+      recordField: recordField.trim(),
+    } : {}),
+  }
 }
 
-export function screenFlowAttributes(targetPageId: string) {
+export function screenFlowAttributes(
+  targetPageId: string,
+  relatedRecord?: { dataSourceTableId: string; recordField: string },
+) {
   return {
     [FLOW_ACTION_ATTRIBUTE]: 'navigate',
     [FLOW_TARGET_ATTRIBUTE]: targetPageId,
+    ...(relatedRecord ? {
+      [FLOW_DATA_SOURCE_ATTRIBUTE]: relatedRecord.dataSourceTableId,
+      [FLOW_RECORD_FIELD_ATTRIBUTE]: relatedRecord.recordField,
+    } : {}),
   } as const
 }
 
@@ -112,7 +147,8 @@ export function readDataActionConnection(
   attributes: Record<string, unknown>,
 ): DataActionConnection | null {
   const action = attributes[FLOW_ACTION_ATTRIBUTE]
-  if (action !== 'create-record' && action !== 'update-record' && action !== 'delete-record') return null
+  if (action !== 'create-record' && action !== 'update-record' && action !== 'delete-record'
+    && action !== 'save-current-user-record' && action !== 'set-record-field') return null
   const dataSourceTableId = attributes[FLOW_DATA_SOURCE_ATTRIBUTE]
   if (typeof dataSourceTableId !== 'string' || !dataSourceTableId.trim()) return null
   let fieldMappings: DataActionConnection['fieldMappings'] = []
@@ -137,6 +173,17 @@ export function readDataActionConnection(
   const ownerField = attributes[FLOW_OWNER_FIELD_ATTRIBUTE]
   const confirmMessage = attributes[FLOW_CONFIRM_MESSAGE_ATTRIBUTE]
   const successMessage = attributes[FLOW_SUCCESS_MESSAGE_ATTRIBUTE]
+  const fixedField = attributes[FLOW_FIXED_FIELD_ATTRIBUTE]
+  const fixedValue = attributes[FLOW_FIXED_VALUE_ATTRIBUTE]
+  const requestedRecordMode = attributes[FLOW_RECORD_MODE_ATTRIBUTE]
+  const requestedValueSource = attributes[FLOW_VALUE_SOURCE_ATTRIBUTE]
+  const valueInputName = attributes[FLOW_VALUE_INPUT_ATTRIBUTE]
+  const requestedAmount = Number(attributes[FLOW_VALUE_AMOUNT_ATTRIBUTE])
+  const recordMode: DataActionRecordMode = requestedRecordMode === 'current_user' ? 'current_user' : 'context'
+  const valueSource: DataActionValueSource = ['fixed', 'form', 'current_user', 'now', 'toggle', 'increment']
+    .includes(requestedValueSource as string)
+    ? requestedValueSource as DataActionValueSource
+    : fixedValue === '$now' ? 'now' : 'fixed'
   return {
     action,
     dataSourceTableId,
@@ -144,12 +191,21 @@ export function readDataActionConnection(
       ? attributes[FLOW_CONTEXT_ATTRIBUTE] as string
       : 'record',
     fieldMappings,
+    ...(typeof fixedField === 'string' && fixedField.trim() ? { fixedField: fixedField.trim() } : {}),
+    ...(typeof fixedValue === 'string' ? { fixedValue } : {}),
     ...(typeof ownerField === 'string' && ownerField.trim() ? { ownerField } : {}),
+    ...(action === 'set-record-field' ? {
+      recordMode,
+      valueSource,
+      ...(typeof valueInputName === 'string' && valueInputName.trim() ? { valueInputName: valueInputName.trim() } : {}),
+      ...(Number.isFinite(requestedAmount) ? { valueAmount: requestedAmount } : {}),
+    } : {}),
     ...(typeof confirmMessage === 'string' && confirmMessage.trim() ? { confirmMessage } : {}),
     successMessage: typeof successMessage === 'string' && successMessage.trim()
       ? successMessage
       : action === 'create-record' ? 'Registro creado.'
-        : action === 'update-record' ? 'Cambios guardados.' : 'Registro eliminado.',
+        : action === 'update-record' || action === 'save-current-user-record' || action === 'set-record-field'
+          ? 'Cambios guardados.' : 'Registro eliminado.',
   }
 }
 
@@ -162,6 +218,12 @@ export function dataActionAttributes(connection: DataActionConnection) {
     [FLOW_SUCCESS_MESSAGE_ATTRIBUTE]: connection.successMessage,
     ...(connection.ownerField ? { [FLOW_OWNER_FIELD_ATTRIBUTE]: connection.ownerField } : {}),
     ...(connection.confirmMessage ? { [FLOW_CONFIRM_MESSAGE_ATTRIBUTE]: connection.confirmMessage } : {}),
+    ...(connection.fixedField ? { [FLOW_FIXED_FIELD_ATTRIBUTE]: connection.fixedField } : {}),
+    ...(connection.fixedValue !== undefined ? { [FLOW_FIXED_VALUE_ATTRIBUTE]: connection.fixedValue } : {}),
+    ...(connection.recordMode ? { [FLOW_RECORD_MODE_ATTRIBUTE]: connection.recordMode } : {}),
+    ...(connection.valueSource ? { [FLOW_VALUE_SOURCE_ATTRIBUTE]: connection.valueSource } : {}),
+    ...(connection.valueInputName ? { [FLOW_VALUE_INPUT_ATTRIBUTE]: connection.valueInputName } : {}),
+    ...(connection.valueAmount !== undefined ? { [FLOW_VALUE_AMOUNT_ATTRIBUTE]: String(connection.valueAmount) } : {}),
   }
 }
 

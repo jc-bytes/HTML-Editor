@@ -21,11 +21,11 @@ describe('ProjectSchema', () => {
     }
     expect(DataRepeaterSchema.safeParse({
       ...base,
-      orderColumn: 'created_at', orderDirection: 'desc',
-      fixedFilters: [{ field: 'difficulty', operator: 'gte', value: '2' }],
-      searchField: 'title',
+      orderColumn: 'related_author.display_name', orderDirection: 'desc',
+      fixedFilters: [{ field: 'related_author.city', operator: 'eq', value: 'Panamá' }],
+      searchField: 'related_author.display_name',
       filterControls: [{ field: 'difficulty', kind: 'number' }],
-      visitorSortFields: ['title', 'created_at'],
+      visitorSortFields: ['title', 'related_author.display_name'],
     }).success).toBe(true)
     expect(DataRepeaterSchema.safeParse({ ...base, searchField: 'title,or(secret)' }).success).toBe(false)
   })
@@ -39,6 +39,14 @@ describe('ProjectSchema', () => {
     expect(DataActionSchema.safeParse(action).success).toBe(true)
     expect(DataActionSchema.safeParse({
       ...action, fieldMappings: [{ field: 'title,secret', inputName: 'project-title' }],
+    }).success).toBe(false)
+    expect(DataActionSchema.safeParse({
+      ...action, action: 'set', fixedField: 'score', recordMode: 'current_user',
+      valueSource: 'increment', valueAmount: -2, fieldMappings: [],
+    }).success).toBe(true)
+    expect(DataActionSchema.safeParse({
+      ...action, action: 'set', fixedField: 'score', valueSource: 'form',
+      valueInputName: 'bad input', fieldMappings: [],
     }).success).toBe(false)
   })
 

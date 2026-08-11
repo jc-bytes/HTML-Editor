@@ -2,12 +2,21 @@ import type { Component, Editor, Plugin } from 'grapesjs'
 import type { MotionActivity } from '../core/project'
 import type { MotionFeatureFrame } from '../core/motion'
 import {
+  LANDMARK_FRAMES_OUTPUT_ID,
+  RUNTIME_OUTPUT_ID_ATTRIBUTE,
+  RUNTIME_OUTPUT_NAME_ATTRIBUTE,
+  RUNTIME_OUTPUT_TYPE_ATTRIBUTE,
+  RUNTIME_SOURCE_ID_ATTRIBUTE,
+  RUNTIME_SOURCE_NAME_ATTRIBUTE,
+} from '../runtime/values/runtime-value-contract'
+import {
   supportsVisionEvaluator,
   visionModelDefinition,
   visionTaskIds,
 } from '../core/vision'
 import type { VisionEvaluatorId, VisionTaskId } from '../core/vision'
 import { createStableElementId } from '../modules/preview'
+import { isGridItem, isPageGrid, layoutRowDefinition, layoutRowFor } from './grid-layout'
 import { supabaseDataSourceId } from './supabase-data'
 import type { SupabaseTableConfig } from './supabase-data'
 
@@ -22,14 +31,14 @@ export const MOTION_RESULTS_BLOCK_ID = 'motion-results'
 
 export type MotionComponentType = 'analyze' | 'reference-view' | 'compare' | 'reference-capture'
 
+const obsoleteMotionComponentTypes = new Set<MotionComponentType>(['compare', 'reference-capture'])
+
 const motionBlockIcons: Record<MotionComponentType, string> = {
   'reference-view': '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="5" y="8" width="38" height="30" rx="5" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="m20 17 11 6.5L20 30V17Z" fill="currentColor"/><path d="M15 43h18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"/></svg>',
   compare: '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="4" y="9" width="17" height="30" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="27" y="9" width="17" height="30" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M17 19h14m-4-4 4 4-4 4M31 29H17m4 4-4-4 4-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"/></svg>',
   analyze: '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="5" y="7" width="38" height="34" rx="5" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M11 31h5l4-12 6 17 5-11 3 6h4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"/><circle cx="20" cy="19" r="2" fill="currentColor"/><circle cx="31" cy="25" r="2" fill="currentColor"/></svg>',
   'reference-capture': '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M17 7H8v9M31 7h9v9M17 41H8v-9m23 9h9v-9" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"/><rect x="13" y="14" width="22" height="20" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="24" cy="24" r="5" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M24 21v6m-3-3h6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"/></svg>',
 }
-
-const motionIcon = motionBlockIcons.analyze
 
 export const motionComponentStyles = `
 .motion-activity{display:grid;align-content:start;gap:1rem;width:100%;height:auto!important;min-width:0;max-width:100%;padding:clamp(1rem,3vw,1.5rem);color:#17211f;background:linear-gradient(145deg,#fff,#f5f8f7);border:1px solid #d8e2e0;border-radius:1rem;box-shadow:0 .8rem 2rem rgba(20,48,44,.08)}
@@ -78,8 +87,13 @@ export const motionComponentStyles = `
 .motion-video-source small{grid-column:1/-1;color:#607080}
 @media(max-width:600px){.motion-video-source{grid-template-columns:1fr 1fr}.motion-video-source label:first-child{grid-column:1/-1}.motion-video-source input[type="number"]{width:100%}}
 .motion-controls button:disabled{cursor:wait;opacity:.65}
+.motion-controls [data-motion-primary][hidden],.motion-controls [data-motion-secondary][hidden]{display:none}
+.motion-controls [data-motion-ready]{flex-basis:100%;display:grid;grid-template-columns:auto 1fr;gap:.25rem .65rem;align-items:center;padding:.7rem;color:#28594e;background:#e9f5f1;border:1px solid #badbd1;border-radius:.55rem}
+.motion-controls [data-motion-ready][hidden]{display:none}
+.motion-controls [data-motion-ready] strong,.motion-controls [data-motion-ready] small{grid-column:2;margin:0}.motion-controls [data-motion-ready] strong{font-size:.9rem}.motion-controls [data-motion-ready] small{color:#4d6e67}
 .motion-controls [role=status]{color:#49615d;font-size:.88rem}
-.motion-results{display:grid;gap:.85rem}
+.motion-results{display:grid;gap:.85rem;margin-top:.25rem;padding:clamp(1rem,2.5vw,1.35rem);background:#fff;border:1px solid #d8e2e0;border-radius:.9rem;box-shadow:0 .65rem 1.5rem rgba(20,48,44,.09)}
+.motion-results::before{content:"Resultados";color:#52706b;font-size:.75rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 .motion-results[hidden]{display:none}
 .motion-results[data-motion-design-preview="true"],.motion-results[data-motion-design-preview="true"] .motion-results__stages{display:grid}
 .motion-results__overall{font-size:clamp(1.6rem,4vw,2.4rem)}
@@ -95,9 +109,16 @@ export const motionComponentStyles = `
 .motion-stage-result strong{font-size:1.15rem}
 .motion-stage-result button{grid-column:1/-1;min-height:2.3rem;color:#17324d;background:#fff;border:1px solid #d6e3df;border-radius:.5rem;font:inherit;font-size:.78rem;font-weight:750;cursor:pointer}
 .motion-results__download{width:max-content;color:#176f69;font-weight:750}
+[data-motion-results-row]:has(.motion-results[hidden]:not([data-motion-design-preview="true"])){display:none!important}
+[data-motion-results-dock]{width:100%;min-width:0}
 `
 
-export function motionInputMarkup() {
+export function motionInputMarkup(type: MotionComponentType = 'analyze') {
+  const placeholderTitle = type === 'analyze' ? 'Video para analizar'
+    : type === 'compare' ? 'Tu intento' : 'Referencia para capturar'
+  const placeholderDescription = type === 'analyze'
+    ? 'Usa la cámara o selecciona un video. MediaPipe publicará los landmarks al finalizar.'
+    : 'La cámara o el video se activa únicamente cuando la persona comienza.'
   return `<div data-motion-part="input" class="motion-input">
     <video data-motion-camera autoplay muted playsinline hidden></video>
     <canvas data-motion-overlay hidden></canvas>
@@ -108,24 +129,29 @@ export function motionInputMarkup() {
       <button data-motion-crop-handle="left" class="motion-crop-handle" type="button" aria-label="Ajustar borde izquierdo"></button>
     </div>
     <div data-motion-placeholder class="motion-input__placeholder">
-      <span class="motion-input__icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M8 6h16a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3Zm8 5v10m-5-5h10" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"/></svg></span>
-      <strong>Entrada de movimiento</strong>
-      <small>La cámara o el video se activa únicamente cuando la persona comienza.</small>
+      <span class="motion-input__icon" aria-hidden="true">${motionBlockIcons[type]}</span>
+      <strong>${placeholderTitle}</strong>
+      <small>${placeholderDescription}</small>
     </div>
   </div>`
 }
 
-export function motionControlsMarkup() {
+export function motionControlsMarkup(type: Exclude<MotionComponentType, 'reference-view'> = 'analyze') {
+  const startLabel = type === 'analyze' ? 'Iniciar captura'
+    : type === 'compare' ? 'Iniciar intento' : 'Iniciar grabación'
+  const stopLabel = type === 'analyze' ? 'Detener y finalizar'
+    : type === 'compare' ? 'Detener y comparar' : 'Detener y guardar'
   return `<div data-motion-part="controls" class="motion-controls">
-    <button data-motion-start type="button">Comenzar</button>
-    <button data-motion-stop type="button" hidden>Detener y guardar</button>
-    <button data-motion-replay type="button" hidden>Reproducir referencia</button>
+    <button data-motion-start data-motion-primary type="button">${startLabel}</button>
+    <button data-motion-stop data-motion-secondary type="button" hidden>${stopLabel}</button>
+    <button data-motion-replay type="button" hidden>${type === 'analyze' ? 'Ver análisis' : 'Reproducir referencia'}</button>
     <span data-motion-status role="status">Configura la actividad en Movimiento.</span>
+    ${type === 'analyze' ? '<div data-motion-ready hidden><span aria-hidden="true">✓</span><strong>Landmark frames disponibles</strong><small>Revisa visualmente los puntos o utiliza la salida en otra operación.</small></div>' : ''}
     <div data-motion-video-source class="motion-video-source" hidden>
-      <label>Video de referencia<input data-motion-file type="file" accept="video/mp4,video/webm,video/quicktime"></label>
-      <label>Desde (s)<input data-motion-segment-start type="number" min="0" step="0.1" value="0"></label>
+      <label><span data-motion-file-label>Archivo de video</span><input data-motion-file type="file" accept="video/mp4,video/webm,video/quicktime"></label>
+      ${type === 'analyze' ? '' : `<label>Desde (s)<input data-motion-segment-start type="number" min="0" step="0.1" value="0"></label>
       <label>Hasta (s)<input data-motion-segment-end type="number" min="0.1" step="0.1" value="10"></label>
-      <div class="motion-crop-actions"><strong>Encuadre</strong><button data-motion-crop-edit type="button">Elegir área</button><button data-motion-crop-reset type="button">Video completo</button></div>
+      <div class="motion-crop-actions"><strong>Encuadre</strong><button data-motion-crop-edit type="button">Elegir área</button><button data-motion-crop-reset type="button">Video completo</button></div>`}
     </div>
   </div>`
 }
@@ -163,7 +189,7 @@ export const motionComponentTypes: Array<{
 }> = [
   { id: 'reference-view', mode: 'analyze', label: 'Ver referencia', description: 'Reproduce una fuente de video y dibuja sus puntos de movimiento.' },
   { id: 'compare', mode: 'compare', label: 'Comparar referencias', description: 'Compara una referencia aprobada con el video que graba la persona.' },
-  { id: 'analyze', mode: 'analyze', label: 'Analizar en vivo', description: 'Ejecuta el modelo continuamente hasta que la persona detiene el análisis.' },
+  { id: 'analyze', mode: 'analyze', label: 'Analizar video', description: 'Convierte una captura de cámara o un video subido en landmark frames reutilizables.' },
   { id: 'reference-capture', mode: 'reference', label: 'Capturar referencia', description: 'Analiza, recorta y guarda una referencia reutilizable.' },
 ]
 
@@ -180,33 +206,34 @@ function motionActivityContents(type: MotionComponentType = 'compare') {
       <canvas data-motion-overlay hidden></canvas>
       <canvas data-motion-reference-preview hidden></canvas>
       <div data-motion-reference-empty data-motion-placeholder class="motion-input__placeholder">
-        <span class="motion-input__icon" aria-hidden="true">${motionIcon}</span>
+        <span class="motion-input__icon" aria-hidden="true">${motionBlockIcons['reference-view']}</span>
         <strong>Referencia visual</strong><small>Selecciona la fuente de video y la plantilla de puntos.</small>
       </div>
     </div>`
-    : motionInputMarkup()
+    : motionInputMarkup(type)
   const controls = type === 'reference-view'
     ? `<div data-motion-part="controls" class="motion-controls">
       <button data-motion-start type="button" hidden>Analizar referencia</button>
       <button data-motion-reference-replay type="button" disabled>Reproducir referencia</button>
       <span data-motion-reference-status data-motion-status role="status">Configura la fuente de referencia.</span>
     </div>`
-    : motionControlsMarkup()
+    : motionControlsMarkup(type)
   return `<header data-motion-part="heading" class="motion-activity__heading">
     <p class="motion-activity__eyebrow">${type === 'reference-view' ? 'Observa' : type === 'compare' ? 'Practica' : 'Análisis temporal'}</p>
     <h2>${definition.label}</h2>
   </header>
   ${input}
   ${controls}
-  ${motionResultsMarkup()}`
+  ${type === 'analyze' ? '' : motionResultsMarkup()}`
 }
 
 export function motionAnalysisMarkup(type: MotionComponentType = 'compare') {
   const definition = componentDefinition(type)
   return `<section ${MOTION_ACTIVITY_ATTRIBUTE}="true"${type === 'reference-view' ? ' data-motion-workspace="true"' : ''}
+    ${type === 'analyze' ? `${RUNTIME_SOURCE_NAME_ATTRIBUTE}="Landmarks de video" ${RUNTIME_OUTPUT_ID_ATTRIBUTE}="${LANDMARK_FRAMES_OUTPUT_ID}" ${RUNTIME_OUTPUT_NAME_ATTRIBUTE}="Landmark frames" ${RUNTIME_OUTPUT_TYPE_ATTRIBUTE}="json"` : ''}
     data-motion-component-type="${type}"
     data-motion-mode="${definition.mode}"
-    data-motion-layout-version="3"
+    data-motion-layout-version="4"
     data-motion-input-source="camera"
     data-motion-input-selector=""
     data-motion-input-url=""
@@ -228,7 +255,7 @@ export function motionAnalysisMarkup(type: MotionComponentType = 'compare') {
     data-motion-reference-save-record-mode="context"
     data-motion-reference-save-record-id=""
     data-motion-reference-save-field="mediapipe_reference"
-    data-motion-duration="3000"
+    data-motion-duration="${type === 'analyze' ? '10000' : '3000'}"
     data-vision-model="holistic-landmarker"
     data-vision-model-url="${visionModelDefinition('holistic-landmarker').defaultModelUrl}"
     data-vision-delegate="auto"
@@ -260,7 +287,66 @@ function namedPart(type: string, name: string) {
   }
 }
 
-function hasValidMotionComposition(component: Component) {
+function hasAttribute(component: Component, name: string) {
+  return Object.prototype.hasOwnProperty.call(component.getAttributes(), name)
+}
+
+function componentTreeRoot(component: Component) {
+  let root = component
+  while (root.parent()) root = root.parent()!
+  return root
+}
+
+function findComponent(component: Component, predicate: (candidate: Component) => boolean): Component | undefined {
+  if (predicate(component)) return component
+  for (const child of component.components().models) {
+    const match = findComponent(child, predicate)
+    if (match) return match
+  }
+}
+
+function motionResultsKey(component: Component) {
+  const existing = component.getAttributes()['data-motion-results-key']
+  if (existing) return existing
+  const key = `motion-results-${component.cid}`
+  component.addAttributes({ 'data-motion-results-key': key })
+  return key
+}
+
+function externalMotionResults(component: Component) {
+  const key = component.getAttributes()['data-motion-results-key']
+  if (key) {
+    const linked = findComponent(componentTreeRoot(component), (candidate) =>
+      candidate.getAttributes()['data-motion-results-for'] === key)
+    if (linked) return linked
+  }
+
+  const activityRow = layoutRowFor(component)
+  const layout = activityRow?.parent()
+  if (!activityRow || !layout || !isPageGrid(layout)) return undefined
+  const candidates: Component[] = []
+  findComponent(layout, (candidate) => {
+    if (candidate !== component
+      && candidate.getAttributes()['data-motion-part'] === 'results'
+      && !candidate.getAttributes()['data-motion-results-for']) candidates.push(candidate)
+    return false
+  })
+  if (candidates.length !== 1) return undefined
+  const result = candidates[0]
+  const dock = result.parent()
+  const resultsRow = layoutRowFor(result)
+  if (!dock || !resultsRow || !isGridItem(dock)) return undefined
+  const adoptedKey = motionResultsKey(component)
+  dock.addAttributes({
+    'data-motion-results-dock': adoptedKey,
+    'aria-label': 'Resultados de la comparación',
+  })
+  resultsRow.addAttributes({ 'data-motion-results-row': adoptedKey })
+  result.addAttributes({ 'data-motion-results-for': adoptedKey })
+  return result
+}
+
+function hasValidMotionComposition(component: Component, componentType: MotionComponentType) {
   const directParts = component.components().models
     .map((child) => child.getAttributes()['data-motion-part'])
     .filter(Boolean)
@@ -271,12 +357,14 @@ function hasValidMotionComposition(component: Component) {
     collect(child)
   })
   collect(component)
-  return allParts.length === 4
-    && directParts.length === 4
-    && directParts[0] === 'heading'
+  const validBase = directParts[0] === 'heading'
     && directParts[1] === 'input'
     && directParts[2] === 'controls'
-    && directParts[3] === 'results'
+  if (componentType === 'analyze') {
+    return allParts.length === 3 && directParts.length === 3 && validBase
+  }
+  return (allParts.length === 4 && directParts.length === 4 && validBase && directParts[3] === 'results')
+    || (allParts.length === 3 && directParts.length === 3 && validBase && Boolean(externalMotionResults(component)))
 }
 
 export function normalizeMotionActivity(component: Component) {
@@ -285,6 +373,7 @@ export function normalizeMotionActivity(component: Component) {
   const componentType = motionComponentTypes.some((item) => item.id === rawType)
     ? rawType as MotionComponentType
     : ({ analyze: 'analyze', reference: 'reference-capture', compare: 'compare' } as const)[component.getAttributes()['data-motion-mode'] as 'analyze' | 'reference' | 'compare'] ?? 'compare'
+  const previousLayoutVersion = component.getAttributes()['data-motion-layout-version']
   component.addAttributes({
     'data-motion-component-type': componentType,
     'data-motion-mode': component.getAttributes()['data-motion-mode'] || 'compare',
@@ -299,9 +388,20 @@ export function normalizeMotionActivity(component: Component) {
     'data-vision-confidence': component.getAttributes()['data-vision-confidence'] || '0.5',
     'data-vision-smoothing': component.getAttributes()['data-vision-smoothing'] || '3',
     'data-vision-checkpoints': component.getAttributes()['data-vision-checkpoints'] || 'true',
-    'data-motion-layout-version': '3',
+    'data-motion-layout-version': '4',
     class: [...new Set(`${component.getAttributes().class ?? ''} motion-activity`.split(/\s+/).filter(Boolean))].join(' '),
   })
+  if (componentType === 'analyze') {
+    component.addAttributes({
+      [RUNTIME_SOURCE_ID_ATTRIBUTE]: component.getAttributes()[RUNTIME_SOURCE_ID_ATTRIBUTE]
+        || `motion-source-${component.cid}`,
+      [RUNTIME_SOURCE_NAME_ATTRIBUTE]: component.getAttributes()[RUNTIME_SOURCE_NAME_ATTRIBUTE]
+        || 'Landmarks de video',
+      [RUNTIME_OUTPUT_ID_ATTRIBUTE]: LANDMARK_FRAMES_OUTPUT_ID,
+      [RUNTIME_OUTPUT_NAME_ATTRIBUTE]: 'Landmark frames',
+      [RUNTIME_OUTPUT_TYPE_ATTRIBUTE]: 'json',
+    })
+  }
   component.set('name', componentDefinition(componentType).label)
   let repairedResponsiveHeight = false
   const currentStyle = component.getStyle()
@@ -309,7 +409,7 @@ export function normalizeMotionActivity(component: Component) {
     component.setStyle({ ...currentStyle, height: 'auto' })
     repairedResponsiveHeight = true
   }
-  if (hasValidMotionComposition(component)) {
+  if (previousLayoutVersion === '4' && hasValidMotionComposition(component, componentType)) {
     setMotionResultsDesignPreview(component, component.getAttributes()['data-motion-show-results'] === 'true')
     return repairedResponsiveHeight
   }
@@ -319,28 +419,70 @@ export function normalizeMotionActivity(component: Component) {
   return true
 }
 
+export function ensureMotionComponentStyles(editor: Editor) {
+  editor.Css.addRules(motionComponentStyles)
+}
+
 export function setMotionResultsDesignPreview(component: Component, visible: boolean) {
-  const results = component.components().models.find((child) =>
-    child.getAttributes()['data-motion-part'] === 'results')
+  let results = component.components().models.find((child) =>
+    child.getAttributes()['data-motion-part'] === 'results') ?? externalMotionResults(component)
   if (!results) return
+
+  if (visible && results.parent() === component) {
+    const activityRow = layoutRowFor(component)
+    const layout = activityRow?.parent()
+    if (activityRow && layout && isPageGrid(layout)) {
+      const key = motionResultsKey(component)
+      let resultsRow = layout.components().models.find((candidate) =>
+        candidate.getAttributes()['data-motion-results-row'] === key)
+      if (!resultsRow) {
+        resultsRow = layout.append(layoutRowDefinition('single'))[0]
+        resultsRow?.addAttributes({ 'data-motion-results-row': key })
+        if (resultsRow) {
+          const activityIndex = layout.components().models.indexOf(activityRow)
+          resultsRow.move(layout, { at: activityIndex + 1 })
+        }
+      }
+      const column = resultsRow?.components().models[0]
+      const dock = column
+      dock?.addAttributes({
+        'data-motion-results-dock': key,
+        'aria-label': 'Resultados de la comparación',
+      })
+      if (dock) {
+        results.addAttributes({ 'data-motion-results-for': key })
+        results.move(dock)
+      }
+    }
+  }
+
+  results = component.components().models.find((child) =>
+    child.getAttributes()['data-motion-part'] === 'results') ?? externalMotionResults(component)
+  if (!results) return
+  const resultsRow = results?.parent()?.parent()?.parent()
   if (visible) results.addAttributes({ 'data-motion-design-preview': 'true' })
   else results.removeAttributes('data-motion-design-preview')
+  if (resultsRow?.getAttributes()['data-motion-results-row']) {
+    if (visible) resultsRow.removeAttributes('hidden')
+    else resultsRow.addAttributes({ hidden: '' })
+  }
 }
 
 export function createMotionAnalysisPlugin(): Plugin {
   return (editor: Editor) => {
+    ensureMotionComponentStyles(editor)
     editor.DomComponents.addType(MOTION_ANALYSIS_BLOCK_ID, {
       isComponent: (element) => element.hasAttribute?.(MOTION_ACTIVITY_ATTRIBUTE),
       model: { defaults: { name: 'Actividad de movimiento', droppable: true, traits: [] } },
     })
     editor.DomComponents.addType(MOTION_INPUT_BLOCK_ID, namedPart('input', 'Entrada de movimiento'))
     editor.DomComponents.addType(MOTION_CONTROLS_BLOCK_ID, namedPart('controls', 'Controles de movimiento'))
-    editor.DomComponents.addType(MOTION_RESULTS_BLOCK_ID, namedPart('results', 'Resultados de movimiento'))
+    editor.DomComponents.addType(MOTION_RESULTS_BLOCK_ID, namedPart('results', 'Tarjeta de resultados'))
+    // Analyze is the reusable landmark producer. Comparison and persistence
+    // are composed separately, so the former all-in-one blocks are obsolete.
     ;[
       { blockId: MOTION_VIEW_REFERENCE_BLOCK_ID, type: 'reference-view' as const },
-      { blockId: MOTION_COMPARE_BLOCK_ID, type: 'compare' as const },
       { blockId: MOTION_ANALYSIS_BLOCK_ID, type: 'analyze' as const },
-      { blockId: MOTION_CAPTURE_REFERENCE_BLOCK_ID, type: 'reference-capture' as const },
     ].forEach(({ blockId, type }) => {
       const definition = componentDefinition(type)
       editor.BlockManager.add(blockId, {
@@ -351,29 +493,57 @@ export function createMotionAnalysisPlugin(): Plugin {
         media: motionBlockIcons[type],
       })
     })
-    const normalizeAll = () => editor.Pages.getAll().forEach((page) => {
+    const normalizeAll = () => {
+      if (!editor.Pages) return
+      const usedRuntimeSourceIds = new Set<string>()
+      editor.Pages.getAll().forEach((page) => {
       const visit = (component: Component, insideActivity = false) => {
         const attributes = component.getAttributes()
         const isActivity = Boolean(attributes[MOTION_ACTIVITY_ATTRIBUTE])
-        const isOrphanPart = Boolean(attributes['data-motion-part']) && !insideActivity
+        const isExternalResults = attributes['data-motion-part'] === 'results'
+          && hasAttribute(component.parent()!, 'data-motion-results-dock')
+        const isOrphanPart = Boolean(attributes['data-motion-part']) && !insideActivity && !isExternalResults
         if (isOrphanPart) {
           component.remove()
           return
         }
-        if (isActivity) normalizeMotionActivity(component)
+        if (isActivity) {
+          const componentType = attributes['data-motion-component-type'] as MotionComponentType | undefined
+          if (componentType && obsoleteMotionComponentTypes.has(componentType)) {
+            layoutRowFor(externalMotionResults(component))?.remove()
+            component.remove()
+            return
+          }
+          normalizeMotionActivity(component)
+          if (component.getAttributes()['data-motion-component-type'] === 'analyze') {
+            let sourceId = String(component.getAttributes()[RUNTIME_SOURCE_ID_ATTRIBUTE] ?? '')
+            if (!sourceId || usedRuntimeSourceIds.has(sourceId)) {
+              sourceId = `motion-source-${component.cid}`
+              component.addAttributes({ [RUNTIME_SOURCE_ID_ATTRIBUTE]: sourceId })
+            }
+            usedRuntimeSourceIds.add(sourceId)
+          }
+        }
         component.components().models.slice().forEach((child) => visit(child, insideActivity || isActivity))
       }
       visit(page.getMainComponent())
-    })
+      })
+    }
     const normalizeLoadedProject = () => {
       // Storage autoload replaces both components and CSS. Normalize the fully
       // loaded project, not the temporary canvas created during editor setup.
-      editor.Css.addRules(motionComponentStyles)
+      ensureMotionComponentStyles(editor)
       normalizeAll()
     }
     editor.on('load', () => requestAnimationFrame(normalizeLoadedProject))
     editor.on('project:loaded', normalizeLoadedProject)
     editor.on('storage:end:load', () => requestAnimationFrame(normalizeLoadedProject))
+    editor.on('page:select', () => requestAnimationFrame(() => ensureMotionComponentStyles(editor)))
+    editor.on('component:add', (component: Component) => {
+      if (component.getAttributes()[MOTION_ACTIVITY_ATTRIBUTE]) {
+        requestAnimationFrame(() => { if (editor.Pages) normalizeAll() })
+      }
+    })
   }
 }
 
@@ -429,6 +599,8 @@ export function readMotionActivities(
         ? { type: 'element', selector: trimmed(element, 'data-motion-input-selector'), durationMs, ...(mode === 'analyze' ? { continuous: true } : {}) }
         : inputSource === 'url' && /^https?:\/\//i.test(trimmed(element, 'data-motion-input-url'))
           ? { type: 'url', url: trimmed(element, 'data-motion-input-url') }
+          : inputSource === 'upload' && mode === 'analyze'
+            ? { type: 'upload' }
           : { type: 'camera', durationMs, facingMode: trimmed(element, 'data-motion-facing-mode') === 'environment' ? 'environment' : 'user', ...(mode === 'analyze' ? { continuous: true } : {}) }
       const referenceSource = trimmed(element, 'data-motion-reference-source', 'data')
       const referenceTableId = trimmed(element, 'data-motion-reference-table')
@@ -523,6 +695,9 @@ export function readMotionActivities(
 
       return {
         id: `${pageId}-motion-${index + 1}`,
+        ...(mode === 'analyze' ? {
+          runtimeSourceId: trimmed(element, RUNTIME_SOURCE_ID_ATTRIBUTE, `${pageId}-motion-${index + 1}`),
+        } : {}),
         pageId,
         elementId: createStableElementId(element, pageId),
         mode,

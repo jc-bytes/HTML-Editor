@@ -8,8 +8,6 @@ import type {
   ProjectAuthentication,
   RecordToggle,
 } from '../core/project'
-import { AUTH_DESTINATION_ATTRIBUTE } from '../core/auth-components'
-
 export type { NavigationContext } from '../core/project'
 
 export interface NavigationRuntimeConnection {
@@ -71,6 +69,7 @@ export function installNavigationRuntime(
   if (!config) return () => undefined
   const runtimeConfig = config
   const contextParameterPrefix = 'context-'
+  const authDestinationAttribute = 'data-builder-auth-destination'
 
   function elementPosition(element: Element) {
     let position = 1
@@ -123,6 +122,7 @@ export function installNavigationRuntime(
   }
 
   const activeContext = contextFromLocation()
+  const repeatedRecordValues = new WeakMap<HTMLElement, Record<string, unknown>>()
 
   type AuthSession = {
     access_token: string
@@ -366,15 +366,26 @@ export function installNavigationRuntime(
     const url = new URL(
       `${source.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(source.table)}`,
     )
-    url.searchParams.set('select', '*')
+    const relatedFilterAliases = new Set([
+      ...(query?.fixedFilters ?? []),
+      ...(query?.controlFilters ?? []),
+      ...(query?.searchField && query.searchTerm ? [{ field: query.searchField }] : []),
+    ].flatMap((filter) => filter.field.includes('.') ? [filter.field.split('.')[0]] : []))
+    const relationSelections = source.relations?.map((relation) =>
+      `${relation.alias}:${relation.table}!${relation.column}${relatedFilterAliases.has(relation.alias) ? '!inner' : ''}(*)`) ?? []
+    url.searchParams.set('select', ['*', ...relationSelections].join(','))
     if (recordId !== undefined) url.searchParams.set('id', `eq.${recordId}`)
     if (source.publishedOnly && !query?.includeUnpublished) url.searchParams.set('published', 'eq.true')
     if (query?.userFilterColumn && session?.user?.id) {
       url.searchParams.set(query.userFilterColumn, `eq.${session.user.id}`)
     }
-    const safeColumn = (value: string | undefined) => value && /^[a-z][a-z0-9_]*$/.test(value)
-      ? value
-      : undefined
+    const safeColumn = (value: string | undefined) => {
+      if (!value || !/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?$/.test(value)) return undefined
+      const [alias] = value.split('.')
+      return value.includes('.') && !source.relations?.some((relation) => relation.alias === alias)
+        ? undefined
+        : value
+    }
     const cleanValue = (value: string) => value.trim().slice(0, 500)
     const addFilter = (field: string, operator: 'eq' | 'contains' | 'gte' | 'lte', rawValue: string) => {
       const column = safeColumn(field)
@@ -393,7 +404,10 @@ export function installNavigationRuntime(
     const orderColumn = safeColumn(query?.orderColumn) ?? source.orderColumn
     const orderDirection = query?.orderColumn ? query.orderDirection : source.orderDirection
     if (orderColumn && recordId === undefined) {
-      url.searchParams.set('order', `${orderColumn}.${orderDirection ?? 'asc'}`)
+      const [relation, field] = orderColumn.split('.')
+      url.searchParams.set('order', field
+        ? `${relation}(${field}).${orderDirection ?? 'asc'}`
+        : `${orderColumn}.${orderDirection ?? 'asc'}`)
     }
     if (range && recordId === undefined) {
       url.searchParams.set('limit', String(range.limit))
@@ -521,8 +535,13 @@ export function installNavigationRuntime(
     if (!storageMatch || !binding.dataSourceId) return undefined
     const source = runtimeConfig.dataSources?.find((candidate) => candidate.id === binding.dataSourceId)
     if (!source || source.type !== 'supabase') return undefined
-    const session = await authSessionPromise
+    const bucketIsPublic = source.storageBuckets?.some((bucket) =>
+      bucket.name === storageMatch[1] && bucket.public)
     const encodedPath = storageMatch[2].split('/').map((segment) => encodeURIComponent(segment)).join('/')
+    if (bucketIsPublic) {
+      return `${source.projectUrl.replace(/\/$/, '')}/storage/v1/object/public/${encodeURIComponent(storageMatch[1])}/${encodedPath}`
+    }
+    const session = await authSessionPromise
     const response = await runtimeWindow.fetch(
       `${source.projectUrl.replace(/\/$/, '')}/storage/v1/object/sign/${encodeURIComponent(storageMatch[1])}/${encodedPath}`,
       {
@@ -547,7 +566,13 @@ export function installNavigationRuntime(
   async function applyBinding(element: HTMLElement, binding: DataBinding, value: string) {
     if (binding.target === 'text') element.textContent = value
     else if (binding.target === 'value' && 'value' in element) {
-      (element as HTMLInputElement).value = value
+      if (element instanceof HTMLInputElement && element.type === 'checkbox') {
+        element.checked = value === 'true' || value === '1'
+      } else if (element instanceof HTMLInputElement && element.type === 'radio') {
+        element.checked = element.value === value
+      } else {
+        (element as HTMLInputElement).value = value
+      }
     } else if (binding.target === 'ariaLabel') element.setAttribute('aria-label', value)
     else if (binding.target === 'src' || binding.target === 'href') {
       const resolvedMedia = binding.target === 'src' ? await resolvedBindingMediaUrl(binding, value) : undefined
@@ -686,6 +711,7 @@ export function installNavigationRuntime(
             clone.dataset.builderRepeaterInstance = repeater.id
             clone.dataset.builderRecordId = String(recordId)
             clone.dataset.builderDataSourceId = repeater.dataSourceId
+            repeatedRecordValues.set(clone, record as Record<string, unknown>)
             await applyRecordToRoot(clone, repeater.itemContext, record)
             anchor.parentNode?.insertBefore(clone, anchor)
           }
@@ -768,7 +794,8 @@ export function installNavigationRuntime(
       const rawValue = fieldValue(record, binding.field) ?? binding.fallback
       if (rawValue === undefined || rawValue === null) continue
       const element = [...runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-element-id]')]
-        .find((candidate) => candidate.dataset.builderElementId === binding.elementId)
+        .find((candidate) => candidate.dataset.builderElementId === binding.elementId
+          && !candidate.closest('[data-builder-repeater-instance]'))
       if (element) await applyBinding(element, binding, String(rawValue))
     }
   }
@@ -1234,7 +1261,7 @@ export function installNavigationRuntime(
             }
             saveSession(session)
             await syncSignupProfileFields(session)
-            const destination = form.getAttribute(AUTH_DESTINATION_ATTRIBUTE)?.trim()
+            const destination = form.getAttribute(authDestinationAttribute)?.trim()
               || storedReturnPage()
               || runtimeConfig.authentication?.afterLoginPage
             saveReturnPage()
@@ -1260,7 +1287,7 @@ export function installNavigationRuntime(
           }
           saveSession()
           saveReturnPage()
-          const destination = button.getAttribute(AUTH_DESTINATION_ATTRIBUTE)?.trim()
+          const destination = button.getAttribute(authDestinationAttribute)?.trim()
             || runtimeConfig.authentication?.afterLogoutPage
           if (destination) navigateToPage(destination, true)
           else runtimeWindow.location.reload()
@@ -1294,10 +1321,18 @@ export function installNavigationRuntime(
     sourceElement?: Element | null,
   ) {
     return Object.fromEntries(Object.entries(connection.context ?? {}).flatMap(([key, value]) => {
-      if (value.recordId !== '$record.id') return [[key, value]]
+      const dynamicField = /^\$record\.([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)$/.exec(value.recordId)?.[1]
+      if (!dynamicField) return [[key, value]]
       const recordRoot = sourceElement?.closest<HTMLElement>('[data-builder-record-id]')
-      const recordId = recordRoot?.dataset.builderRecordId
-      const dataSourceId = recordRoot?.dataset.builderDataSourceId ?? value.dataSourceId
+      const resolvedValue = dynamicField === 'id'
+        ? recordRoot?.dataset.builderRecordId
+        : fieldValue(recordRoot && repeatedRecordValues.get(recordRoot), dynamicField)
+      const recordId = typeof resolvedValue === 'string' || typeof resolvedValue === 'number'
+        ? String(resolvedValue)
+        : undefined
+      const dataSourceId = dynamicField === 'id'
+        ? recordRoot?.dataset.builderDataSourceId ?? value.dataSourceId
+        : value.dataSourceId
       return recordId ? [[key, { dataSourceId, recordId }]] : []
     })) as NavigationContext
   }
@@ -1420,9 +1455,38 @@ export function installNavigationRuntime(
     }
   }
 
-  function dataActionRecordId(action: DataAction, sourceElement: Element) {
-    return sourceElement.closest<HTMLElement>('[data-builder-record-id]')?.dataset.builderRecordId
-      ?? activeContext[action.contextKey]?.recordId
+  function dataActionRecordReference(action: DataAction, sourceElement: Element) {
+    const repeated = sourceElement.closest<HTMLElement>('[data-builder-record-id]')
+    if (repeated?.dataset.builderRecordId) return {
+      recordId: repeated.dataset.builderRecordId,
+      dataSourceId: repeated.dataset.builderDataSourceId,
+    }
+    return activeContext[action.contextKey]
+  }
+
+  function formActionValue(element: HTMLElement, inputName?: string) {
+    if (!inputName) throw new Error('Elige qué respuesta del formulario se utilizará.')
+    const form = element instanceof HTMLFormElement ? element : element.closest('form')
+    if (!form || !form.reportValidity()) throw new Error('Completa los campos requeridos.')
+    const controls = [...form.elements].filter((control): control is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
+      (control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement)
+        && control.name === inputName && !control.disabled)
+    const control = controls.find((candidate) => candidate instanceof HTMLInputElement
+      && candidate.type === 'radio' && candidate.checked) ?? controls[0]
+    if (!control) throw new Error('La respuesta conectada ya no existe en este formulario.')
+    if (control instanceof HTMLInputElement && control.type === 'checkbox') return control.checked
+    if (control instanceof HTMLInputElement && control.type === 'number') {
+      return control.value === '' ? null : control.valueAsNumber
+    }
+    return control.value === '' ? null : control.value
+  }
+
+  function fixedActionValue(value?: string) {
+    if (value === 'true') return true
+    if (value === 'false') return false
+    if (value === 'null') return null
+    if (value !== undefined && /^-?\d+(?:\.\d+)?$/.test(value)) return Number(value)
+    return value
   }
 
   function setDataActionStatus(element: HTMLElement, message: string, isError = false) {
@@ -1452,8 +1516,12 @@ export function installNavigationRuntime(
         || control instanceof HTMLTextAreaElement)
     const values: Record<string, unknown> = {}
     action.fieldMappings.forEach((mapping) => {
-      const control = controls.find((candidate) => candidate.name === mapping.inputName)
+      const matchingControls = controls.filter((candidate) => candidate.name === mapping.inputName)
+      const radio = matchingControls.find((candidate) =>
+        candidate instanceof HTMLInputElement && candidate.type === 'radio' && candidate.checked)
+      const control = radio ?? matchingControls[0]
       if (!control || control.disabled) return
+      if (control instanceof HTMLInputElement && control.type === 'file') return
       if (control instanceof HTMLInputElement && (control.type === 'radio' || control.type === 'checkbox')) {
         if (control.type === 'radio' && !control.checked) return
         values[mapping.field] = control.type === 'checkbox' ? control.checked : control.value
@@ -1468,6 +1536,277 @@ export function installNavigationRuntime(
     return { form, values }
   }
 
+  function fillDataActionForm(action: DataAction, element: HTMLElement, record: Record<string, unknown>) {
+    const form = element instanceof HTMLFormElement ? element : element.closest('form')
+    if (!form) return
+    const controls = [...form.elements].filter((control): control is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
+      control instanceof HTMLInputElement
+        || control instanceof HTMLSelectElement
+        || control instanceof HTMLTextAreaElement)
+    action.fieldMappings.forEach((mapping) => {
+      const value = record[mapping.field]
+      if (value === undefined || value === null) return
+      controls.filter((control) => control.name === mapping.inputName).forEach((control) => {
+        if (control instanceof HTMLInputElement && control.type === 'file') {
+          control.dataset.builderUploadExisting = typeof value === 'string'
+            ? value
+            : JSON.stringify(value)
+          const feedback = control.parentElement?.querySelector<HTMLElement>('[data-builder-upload-feedback]')
+          if (feedback) feedback.textContent = 'Archivo guardado. Elige otro para reemplazarlo.'
+          const clear = control.parentElement?.querySelector<HTMLButtonElement>('[data-builder-upload-clear-control]')
+          if (clear) clear.hidden = false
+        } else if (control instanceof HTMLInputElement && control.type === 'checkbox') {
+          control.checked = Boolean(value)
+        } else if (control instanceof HTMLInputElement && control.type === 'radio') {
+          control.checked = control.value === String(value)
+        } else {
+          control.value = String(value)
+        }
+      })
+    })
+  }
+
+  type StorageAddress = { bucket: string; path: string }
+
+  function storedFileAddresses(value?: string) {
+    if (!value) return []
+    let candidates: unknown[] = [value]
+    if (value.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(value) as unknown
+        if (Array.isArray(parsed)) candidates = parsed
+      } catch {
+        candidates = [value]
+      }
+    }
+    return candidates.flatMap((candidate): StorageAddress[] => {
+      if (typeof candidate !== 'string') return []
+      const match = /^storage:\/\/([^/]+)\/(.+)$/.exec(candidate)
+      return match ? [{ bucket: match[1], path: match[2] }] : []
+    })
+  }
+
+  function uploadKindMatches(file: File, kind: string) {
+    if (kind === 'any') return true
+    if (kind === 'document') return /^(application\/(pdf|msword|vnd\.)|text\/(plain|csv))/.test(file.type)
+    return file.type.startsWith(`${kind}/`)
+  }
+
+  async function deleteStorageFiles(source: Extract<DataSource, { type: 'supabase' }>, session: AuthSession, addresses: StorageAddress[]) {
+    const grouped = new Map<string, string[]>()
+    addresses.forEach(({ bucket, path }) => grouped.set(bucket, [...(grouped.get(bucket) ?? []), path]))
+    for (const [bucket, paths] of grouped) {
+      await runtimeWindow.fetch(
+        `${source.projectUrl.replace(/\/$/, '')}/storage/v1/object/${encodeURIComponent(bucket)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            apikey: source.publishableKey,
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ prefixes: paths }),
+        },
+      ).catch(() => undefined)
+    }
+  }
+
+  async function uploadDataActionFiles(
+    action: DataAction,
+    element: HTMLElement,
+    source: Extract<DataSource, { type: 'supabase' }>,
+    session: AuthSession,
+    userId: string,
+    changes: { values: Record<string, unknown>; uploaded: StorageAddress[]; stale: StorageAddress[] },
+  ) {
+    const form = element instanceof HTMLFormElement ? element : element.closest('form')
+    if (!form) return changes
+    for (const mapping of action.fieldMappings) {
+      const input = [...form.querySelectorAll<HTMLInputElement>('input[type="file"][data-builder-upload-bucket]')]
+        .find((candidate) => candidate.name === mapping.inputName)
+      if (!input || input.disabled) continue
+      const existing = storedFileAddresses(input.dataset.builderUploadExisting)
+      if (input.dataset.builderUploadClear === 'true') {
+        changes.values[mapping.field] = input.multiple ? [] : null
+        changes.stale.push(...existing)
+        continue
+      }
+      const files = [...(input.files ?? [])]
+      if (!files.length) continue
+      const bucket = input.dataset.builderUploadBucket ?? ''
+      const kind = input.dataset.builderUploadKind ?? 'any'
+      const maxBytes = Number(input.dataset.builderUploadMaxBytes) || 10 * 1024 * 1024
+      if (!bucket || !/^[a-z][a-z0-9_]*$/.test(bucket)) throw new Error('La carpeta de archivos no es válida.')
+      const storedValues: string[] = []
+      for (const [index, file] of files.entries()) {
+        if (file.size > maxBytes) throw new Error(`${file.name} supera el tamaño máximo permitido.`)
+        if (!uploadKindMatches(file, kind)) throw new Error(`${file.name} no es un tipo de archivo permitido.`)
+        setDataActionStatus(element, `Subiendo archivo ${index + 1} de ${files.length}…`)
+        const safeName = file.name.normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-100) || 'archivo'
+        const objectId = globalThis.crypto?.randomUUID?.()
+          ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+        const objectPath = `${userId}/${objectId}-${safeName}`
+        const encodedPath = objectPath.split('/').map((segment) => encodeURIComponent(segment)).join('/')
+        const response = await runtimeWindow.fetch(
+          `${source.projectUrl.replace(/\/$/, '')}/storage/v1/object/${encodeURIComponent(bucket)}/${encodedPath}`,
+          {
+            method: 'POST',
+            headers: {
+              apikey: source.publishableKey,
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': file.type || 'application/octet-stream',
+              'cache-control': '3600',
+              'x-upsert': 'false',
+            },
+            body: file,
+          },
+        )
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({})) as Record<string, unknown>
+          throw new Error(typeof result.message === 'string' ? result.message : `No se pudo subir ${file.name}.`)
+        }
+        changes.uploaded.push({ bucket, path: objectPath })
+        storedValues.push(`storage://${bucket}/${objectPath}`)
+      }
+      changes.values[mapping.field] = input.multiple ? storedValues : storedValues[0]
+      changes.stale.push(...existing)
+    }
+    return changes
+  }
+
+  function installUploadFields() {
+    runtimeDocument.querySelectorAll<HTMLInputElement>('input[type="file"][data-builder-upload-bucket]')
+      .forEach((input) => {
+        const feedback = runtimeDocument.createElement('span')
+        feedback.dataset.builderUploadFeedback = 'true'
+        feedback.setAttribute('aria-live', 'polite')
+        const clear = runtimeDocument.createElement('button')
+        clear.type = 'button'
+        clear.textContent = 'Quitar archivo'
+        clear.dataset.builderUploadClearControl = 'true'
+        clear.hidden = true
+        const preview = runtimeDocument.createElement('img')
+        preview.alt = 'Vista previa del archivo seleccionado'
+        preview.hidden = true
+        preview.style.cssText = 'max-width:12rem;max-height:8rem;object-fit:cover;margin-top:.5rem'
+        input.insertAdjacentElement('afterend', feedback)
+        feedback.insertAdjacentElement('afterend', clear)
+        clear.insertAdjacentElement('afterend', preview)
+        const onChange = () => {
+          input.dataset.builderUploadClear = 'false'
+          const files = [...(input.files ?? [])]
+          feedback.textContent = files.length ? files.map((file) => file.name).join(', ') : ''
+          clear.hidden = !files.length && !input.dataset.builderUploadExisting
+          const image = files.find((file) => file.type.startsWith('image/'))
+          if (image) {
+            preview.src = globalThis.URL.createObjectURL(image)
+            preview.hidden = false
+          } else {
+            preview.removeAttribute('src')
+            preview.hidden = true
+          }
+        }
+        const onClear = () => {
+          input.value = ''
+          input.dataset.builderUploadClear = 'true'
+          feedback.textContent = 'El archivo se quitará al guardar.'
+          clear.hidden = true
+          preview.hidden = true
+        }
+        input.addEventListener('change', onChange)
+        clear.addEventListener('click', onClear)
+        dataControlDisposers.push(() => {
+          input.removeEventListener('change', onChange)
+          clear.removeEventListener('click', onClear)
+        })
+      })
+  }
+
+  async function initializeRelationSelects() {
+    const session = await authSessionPromise
+    const selects = [...runtimeDocument.querySelectorAll<HTMLSelectElement>(
+      'select[data-builder-relation-source][data-builder-relation-label][data-builder-relation-value]',
+    )]
+    for (const select of selects) {
+      const sourceId = select.dataset.builderRelationSource
+      const labelField = select.dataset.builderRelationLabel
+      const valueField = select.dataset.builderRelationValue
+      const source = runtimeConfig.dataSources?.find((candidate) => candidate.id === sourceId)
+      if (!source || source.type !== 'supabase'
+        || !labelField || !/^[a-z][a-z0-9_]*$/.test(labelField)
+        || !valueField || !/^[a-z][a-z0-9_]*$/.test(valueField)) continue
+      if (source.requiresAuth && !session) {
+        select.disabled = true
+        continue
+      }
+      select.setAttribute('aria-busy', 'true')
+      try {
+        const url = new URL(`${source.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(source.table)}`)
+        url.searchParams.set('select', `${valueField},${labelField}`)
+        if (source.publishedOnly) url.searchParams.set('published', 'eq.true')
+        url.searchParams.set('order', `${labelField}.asc`)
+        url.searchParams.set('limit', '100')
+        const response = await runtimeWindow.fetch(url.href, {
+          headers: {
+            apikey: source.publishableKey,
+            ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          },
+        })
+        if (!response.ok) throw new Error('No se pudieron cargar las opciones relacionadas.')
+        const records = await response.json() as unknown
+        if (!Array.isArray(records)) continue
+        const emptyLabel = select.options[0]?.textContent ?? 'Selecciona una opción'
+        select.replaceChildren(new Option(emptyLabel, ''))
+        records.forEach((record) => {
+          if (!record || typeof record !== 'object') return
+          const value = (record as Record<string, unknown>)[valueField]
+          const label = (record as Record<string, unknown>)[labelField]
+          if ((typeof value !== 'string' && typeof value !== 'number')
+            || (typeof label !== 'string' && typeof label !== 'number')) return
+          select.add(new Option(String(label), String(value)))
+        })
+      } catch (cause) {
+        const option = new Option(cause instanceof Error ? cause.message : 'No se pudieron cargar las opciones.', '')
+        option.disabled = true
+        select.replaceChildren(option)
+      } finally {
+        select.removeAttribute('aria-busy')
+      }
+    }
+  }
+
+  async function initializeCurrentUserForms() {
+    const session = await authSessionPromise
+    const userId = session?.user?.id
+    if (!session || typeof userId !== 'string') return
+    for (const action of runtimeConfig.dataActions ?? []) {
+      if (action.pageId !== runtimeConfig.currentPage || action.action !== 'upsert' || !action.ownerField) continue
+      const source = runtimeConfig.dataSources?.find((candidate) => candidate.id === action.dataSourceId)
+      const element = [...runtimeDocument.querySelectorAll<HTMLElement>('[data-builder-element-id]')]
+        .find((candidate) => candidate.dataset.builderElementId === action.elementId)
+      if (!source || source.type !== 'supabase' || !element) continue
+      element.setAttribute('aria-busy', 'true')
+      try {
+        const url = new URL(`${source.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(source.table)}`)
+        url.searchParams.set('select', '*')
+        url.searchParams.set(action.ownerField, `eq.${userId}`)
+        url.searchParams.set('limit', '1')
+        const response = await runtimeWindow.fetch(url.href, {
+          headers: { apikey: source.publishableKey, Authorization: `Bearer ${session.access_token}` },
+        })
+        if (!response.ok) throw new Error('No se pudieron cargar tus datos.')
+        const records = await response.json() as unknown
+        if (Array.isArray(records) && records[0] && typeof records[0] === 'object') {
+          fillDataActionForm(action, element, records[0] as Record<string, unknown>)
+        }
+      } catch (cause) {
+        setDataActionStatus(element, cause instanceof Error ? cause.message : 'No se pudieron cargar tus datos.', true)
+      } finally {
+        element.removeAttribute('aria-busy')
+      }
+    }
+  }
+
   async function executeDataAction(action: DataAction, sourceElement: HTMLElement) {
     const source = runtimeConfig.dataSources?.find((candidate) => candidate.id === action.dataSourceId)
     if (!source || source.type !== 'supabase') {
@@ -1480,38 +1819,111 @@ export function installNavigationRuntime(
       setDataActionStatus(sourceElement, 'Inicia sesión para modificar esta información.', true)
       return
     }
+    if (action.action === 'upsert' && !action.ownerField) {
+      setDataActionStatus(sourceElement, 'Esta colección no tiene un campo de propietario configurado.', true)
+      return
+    }
+    if (action.action === 'set' && !action.fixedField) {
+      setDataActionStatus(sourceElement, 'Elige el campo que quieres cambiar.', true)
+      return
+    }
     if (action.confirmMessage && !runtimeWindow.confirm(action.confirmMessage)) return
-    const recordId = action.action === 'create' ? undefined : dataActionRecordId(action, sourceElement)
-    if (action.action !== 'create' && !recordId) {
+    const recordReference = action.action === 'create' || action.action === 'upsert'
+      ? undefined
+      : dataActionRecordReference(action, sourceElement)
+    const usesCurrentUserRecord = action.action === 'set' && action.recordMode === 'current_user'
+    const recordId = usesCurrentUserRecord ? undefined : recordReference?.recordId
+    if (!usesCurrentUserRecord && recordReference?.dataSourceId && recordReference.dataSourceId !== action.dataSourceId) {
+      setDataActionStatus(sourceElement, 'El registro actual pertenece a otra colección.', true)
+      return
+    }
+    if (usesCurrentUserRecord && !action.ownerField) {
+      setDataActionStatus(sourceElement, 'Esta acción necesita el campo de la persona conectada.', true)
+      return
+    }
+    if (action.action !== 'create' && action.action !== 'upsert' && !recordId && !usesCurrentUserRecord) {
       setDataActionStatus(sourceElement, 'No se encontró el registro que quieres modificar.', true)
       return
     }
-    const collected = action.action === 'delete' ? undefined : dataActionValues(action, sourceElement)
-    if (action.action !== 'delete' && !collected) {
+    const collected = action.action === 'delete' || action.action === 'set'
+      ? undefined
+      : dataActionValues(action, sourceElement)
+    if (action.action !== 'delete' && action.action !== 'set' && !collected) {
       setDataActionStatus(sourceElement, 'Completa los campos requeridos.', true)
       return
     }
-    const values = collected?.values ?? {}
-    if (action.ownerField && action.action === 'create') values[action.ownerField] = userId
-    if (action.action !== 'delete' && !Object.keys(values).length) {
-      setDataActionStatus(sourceElement, 'Conecta al menos un campo del formulario.', true)
-      return
+    const fileChanges = {
+      values: {} as Record<string, unknown>,
+      uploaded: [] as StorageAddress[],
+      stale: [] as StorageAddress[],
     }
     const wasDisabled = sourceElement.hasAttribute('disabled')
     sourceElement.setAttribute('aria-busy', 'true')
     sourceElement.setAttribute('disabled', '')
     setDataActionStatus(sourceElement, action.action === 'create' ? 'Creando registro…'
-      : action.action === 'update' ? 'Guardando cambios…' : 'Eliminando registro…')
+      : action.action === 'update' || action.action === 'upsert' || action.action === 'set'
+        ? 'Guardando cambios…' : 'Eliminando registro…')
     try {
+      if (action.action !== 'delete' && action.action !== 'set') {
+        await uploadDataActionFiles(action, sourceElement, source, session, userId, fileChanges)
+      }
       const url = new URL(`${source.projectUrl.replace(/\/$/, '')}/rest/v1/${encodeURIComponent(source.table)}`)
       if (recordId) url.searchParams.set('id', `eq.${recordId}`)
+      if (usesCurrentUserRecord && action.ownerField) url.searchParams.set(action.ownerField, `eq.${userId}`)
+      let dynamicValue: unknown
+      if (action.action === 'set' && action.fixedField) {
+        const valueSource = action.valueSource ?? (action.fixedValue === '$now' ? 'now' : 'fixed')
+        if (valueSource === 'fixed') dynamicValue = fixedActionValue(action.fixedValue)
+        if (valueSource === 'form') dynamicValue = formActionValue(sourceElement, action.valueInputName)
+        if (valueSource === 'current_user') dynamicValue = userId
+        if (valueSource === 'now') {
+          const now = new Date().toISOString()
+          dynamicValue = action.fixedValue === '$today' ? now.slice(0, 10) : now
+        }
+        if (valueSource === 'toggle' || valueSource === 'increment') {
+          const lookup = new URL(url.href)
+          lookup.searchParams.set('select', action.fixedField)
+          lookup.searchParams.set('limit', '1')
+          const currentResponse = await runtimeWindow.fetch(lookup.href, {
+            headers: { apikey: source.publishableKey, Authorization: `Bearer ${session.access_token}` },
+          })
+          if (!currentResponse.ok) throw new Error('No se pudo leer el valor actual.')
+          const records = await currentResponse.json() as unknown
+          const current = Array.isArray(records) && records[0] && typeof records[0] === 'object'
+            ? (records[0] as Record<string, unknown>)[action.fixedField]
+            : undefined
+          if (valueSource === 'toggle') {
+            if (typeof current !== 'boolean') throw new Error('Solo se puede alternar un campo de Sí/No.')
+            dynamicValue = !current
+          } else {
+            const number = typeof current === 'number' ? current : Number(current)
+            if (!Number.isFinite(number)) throw new Error('Solo se puede sumar o restar en un campo numérico.')
+            dynamicValue = number + (action.valueAmount ?? 1)
+          }
+        }
+      }
+      const values: Record<string, unknown> = action.action === 'set' && action.fixedField
+        ? { [action.fixedField]: dynamicValue }
+        : { ...(collected?.values ?? {}), ...fileChanges.values }
+      if (action.ownerField && (action.action === 'create' || action.action === 'upsert')) {
+        values[action.ownerField] = userId
+      }
+      if (action.action !== 'delete' && !Object.keys(values).length) {
+        throw new Error('Conecta al menos un campo del formulario.')
+      }
+      if (action.action === 'upsert' && action.ownerField) {
+        url.searchParams.set('on_conflict', action.ownerField)
+      }
       const response = await runtimeWindow.fetch(url.href, {
-        method: action.action === 'create' ? 'POST' : action.action === 'update' ? 'PATCH' : 'DELETE',
+        method: action.action === 'create' || action.action === 'upsert' ? 'POST'
+          : action.action === 'update' || action.action === 'set' ? 'PATCH' : 'DELETE',
         headers: {
           apikey: source.publishableKey,
           Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
+          Prefer: action.action === 'upsert'
+            ? 'resolution=merge-duplicates,return=minimal'
+            : 'return=minimal',
         },
         ...(action.action === 'delete' ? {} : { body: JSON.stringify(values) }),
       })
@@ -1520,12 +1932,14 @@ export function installNavigationRuntime(
         const detail = result.message ?? result.details ?? result.hint
         throw new Error(typeof detail === 'string' ? detail : 'Supabase rechazó el cambio.')
       }
+      if (fileChanges.stale.length) await deleteStorageFiles(source, session, fileChanges.stale)
       setDataActionStatus(sourceElement, action.successMessage)
       if (action.action === 'create') collected?.form.reset()
       if (action.action === 'delete') {
         sourceElement.closest<HTMLElement>('[data-builder-repeater-instance]')?.remove()
       }
     } catch (cause) {
+      if (fileChanges.uploaded.length) await deleteStorageFiles(source, session, fileChanges.uploaded)
       setDataActionStatus(sourceElement, cause instanceof Error ? cause.message : 'No se pudo completar el cambio.', true)
     } finally {
       sourceElement.removeAttribute('aria-busy')
@@ -1634,7 +2048,10 @@ export function installNavigationRuntime(
   void applyAuthPageGuard().then((allowed) => {
     if (allowed) return applyRoleVisibility()
       .then(() => applyRepeaters())
+      .then(() => installUploadFields())
+      .then(() => initializeRelationSelects())
       .then(() => applyDataBindings())
+      .then(() => initializeCurrentUserForms())
       .then(() => initializeRecordToggles())
     return undefined
   })
