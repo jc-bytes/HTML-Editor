@@ -217,6 +217,7 @@ export function InteractionPanel({
   const [url, setUrl] = useState('https://')
   const existingContextEntry = Object.entries(existingConnection?.context ?? {})[0]
   const [sendRecord, setSendRecord] = useState(Boolean(existingContextEntry))
+  const [clearContext, setClearContext] = useState(Boolean(existingConnection?.clearContext))
   const [contextKey, setContextKey] = useState(existingContextEntry?.[0] ?? 'selectedRecord')
   const [dataSourceId, setDataSourceId] = useState(
     existingContextEntry?.[1].dataSourceId ?? project.dataSources?.[0]?.id ?? '',
@@ -283,6 +284,7 @@ export function InteractionPanel({
     setUrl(existingConnection?.url ?? 'https://')
     const contextEntry = Object.entries(existingConnection?.context ?? {})[0]
     setSendRecord(Boolean(contextEntry))
+    setClearContext(Boolean(existingConnection?.clearContext))
     setContextKey(contextEntry?.[0] ?? 'selectedRecord')
     setDataSourceId(contextEntry?.[1].dataSourceId ?? project.dataSources?.[0]?.id ?? '')
     setRecordId(contextEntry?.[1].recordId ?? '')
@@ -354,6 +356,7 @@ export function InteractionPanel({
       elementId: selection.elementId,
       sourcePage: selection.pageId,
       ...(action === 'navigate' ? { targetPage } : {}),
+      ...(action === 'navigate' && clearContext ? { clearContext: true } : {}),
       ...(action === 'navigate' && sendRecord && dataSourceId && recordId
         ? {
             context: {
@@ -954,6 +957,14 @@ export function InteractionPanel({
                 <select value={targetPage} onChange={(event) => setTargetPage(event.target.value)}>
                   {project.pages.map((page) => <option key={page.id} value={page.id}>{page.name}</option>)}
                 </select>
+              </label>
+              <label className="checkbox-label">
+                <input
+                  checked={clearContext}
+                  onChange={(event) => setClearContext(event.target.checked)}
+                  type="checkbox"
+                />
+                Abrir sin los datos de la pantalla actual
               </label>
               {(project.dataSources?.length ?? 0) > 0 && (
                 <section className="data-context-section" aria-label="Datos enviados">

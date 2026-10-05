@@ -91,6 +91,7 @@ type CollectionTemplate = {
   id: string
   name: string
   recordMode?: 'multiple' | 'single_per_user'
+  tableName?: string
 }
 
 type MediaSample = {
@@ -251,8 +252,9 @@ const collectionTemplates: CollectionTemplate[] = [
     { name: 'nombre', type: 'text' }, { name: 'fecha', type: 'date' },
     { name: 'lugar', type: 'text' }, { name: 'descripcion', type: 'long_text' },
   ] },
-  { id: 'roles', name: 'Roles de usuarios', description: 'Roles seguros para páginas y controles de gestión.', access: 'user_owned', recordMode: 'multiple', fields: [
-    { name: 'role', type: 'text' },
+  { id: 'profiles', name: 'Perfiles', tableName: 'profiles', description: 'Un perfil por persona con nombre, avatar y biografía.', access: 'user_owned', recordMode: 'single_per_user', fields: [
+    { name: 'display_name', type: 'text' }, { name: 'avatar_url', type: 'media' },
+    { name: 'bio', type: 'long_text' },
   ] },
   { id: 'blank', name: 'Desde cero', description: 'Comienza con un campo de título.', fields: [
     { name: 'titulo', type: 'text' },
@@ -433,11 +435,8 @@ function CollectionWizard({ config, onClose, onCreate }: {
     displayName: template.name,
     fields: template.fields.map((field) => ({ ...field, id: crypto.randomUUID() })),
     id: `draft-${crypto.randomUUID()}`,
-    management: template.id === 'roles' ? {
-      actions: ['select', 'insert', 'update', 'delete'],
-      roles: ['admin'],
-    } : undefined,
-    name: safeDatabaseIdentifier(template.name) || `collection_${Date.now()}`,
+    management: undefined,
+    name: template.tableName ?? (safeDatabaseIdentifier(template.name) || `collection_${Date.now()}`),
     recordMode: template.recordMode ?? 'multiple',
     relations: [],
     setupStatus: 'draft',

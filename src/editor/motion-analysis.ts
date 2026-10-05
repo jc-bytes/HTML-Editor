@@ -392,12 +392,17 @@ export function normalizeMotionActivity(component: Component) {
     class: [...new Set(`${component.getAttributes().class ?? ''} motion-activity`.split(/\s+/).filter(Boolean))].join(' '),
   })
   if (componentType === 'analyze') {
+    const sourceName = component.getAttributes()[RUNTIME_SOURCE_NAME_ATTRIBUTE] || 'Landmarks de video'
+    const currentOutputId = component.getAttributes()[RUNTIME_OUTPUT_ID_ATTRIBUTE] || LANDMARK_FRAMES_OUTPUT_ID
+    const migratedOutputId = currentOutputId === LANDMARK_FRAMES_OUTPUT_ID
+      && /^[A-Za-z_][A-Za-z0-9_]*$/.test(sourceName)
+      ? sourceName
+      : currentOutputId
     component.addAttributes({
       [RUNTIME_SOURCE_ID_ATTRIBUTE]: component.getAttributes()[RUNTIME_SOURCE_ID_ATTRIBUTE]
         || `motion-source-${component.cid}`,
-      [RUNTIME_SOURCE_NAME_ATTRIBUTE]: component.getAttributes()[RUNTIME_SOURCE_NAME_ATTRIBUTE]
-        || 'Landmarks de video',
-      [RUNTIME_OUTPUT_ID_ATTRIBUTE]: LANDMARK_FRAMES_OUTPUT_ID,
+      [RUNTIME_SOURCE_NAME_ATTRIBUTE]: sourceName,
+      [RUNTIME_OUTPUT_ID_ATTRIBUTE]: migratedOutputId,
       [RUNTIME_OUTPUT_NAME_ATTRIBUTE]: 'Landmark frames',
       [RUNTIME_OUTPUT_TYPE_ATTRIBUTE]: 'json',
     })
@@ -497,6 +502,7 @@ export function createMotionAnalysisPlugin(): Plugin {
       if (!editor.Pages) return
       const usedRuntimeSourceIds = new Set<string>()
       editor.Pages.getAll().forEach((page) => {
+      const usedRuntimeOutputIds = new Set<string>()
       const visit = (component: Component, insideActivity = false) => {
         const attributes = component.getAttributes()
         const isActivity = Boolean(attributes[MOTION_ACTIVITY_ATTRIBUTE])
@@ -522,6 +528,18 @@ export function createMotionAnalysisPlugin(): Plugin {
               component.addAttributes({ [RUNTIME_SOURCE_ID_ATTRIBUTE]: sourceId })
             }
             usedRuntimeSourceIds.add(sourceId)
+            let outputId = String(component.getAttributes()[RUNTIME_OUTPUT_ID_ATTRIBUTE] || LANDMARK_FRAMES_OUTPUT_ID)
+            if (usedRuntimeOutputIds.has(outputId)) {
+              const base = outputId.replace(/[^A-Za-z0-9_]/g, '_').replace(/^[^A-Za-z_]/, '_') || 'landmark_frames'
+              let suffix = 2
+              while (usedRuntimeOutputIds.has(`${base}_${suffix}`)) suffix += 1
+              outputId = `${base}_${suffix}`
+              component.addAttributes({
+                [RUNTIME_OUTPUT_ID_ATTRIBUTE]: outputId,
+                [RUNTIME_SOURCE_NAME_ATTRIBUTE]: outputId,
+              })
+            }
+            usedRuntimeOutputIds.add(outputId)
           }
         }
         component.components().models.slice().forEach((child) => visit(child, insideActivity || isActivity))
@@ -697,6 +715,7 @@ export function readMotionActivities(
         id: `${pageId}-motion-${index + 1}`,
         ...(mode === 'analyze' ? {
           runtimeSourceId: trimmed(element, RUNTIME_SOURCE_ID_ATTRIBUTE, `${pageId}-motion-${index + 1}`),
+          runtimeOutputId: trimmed(element, RUNTIME_OUTPUT_ID_ATTRIBUTE, LANDMARK_FRAMES_OUTPUT_ID),
         } : {}),
         pageId,
         elementId: createStableElementId(element, pageId),

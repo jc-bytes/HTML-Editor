@@ -129,6 +129,7 @@ export const ConnectionSchema = z.object({
   event: z.literal('click'),
   action: z.enum(['navigate', 'back', 'url']),
   targetPage: z.string().min(1).optional(),
+  clearContext: z.boolean().optional(),
   context: z.record(z.string(), NavigationContextValueSchema).optional(),
   url: z.string().url().refine((value) => {
     const protocol = new URL(value).protocol
@@ -157,7 +158,13 @@ export const DataActionSchema = z.object({
   contextKey: z.string().min(1).max(100).default('record'),
   fieldMappings: z.array(z.object({
     field: z.string().regex(/^[a-z][a-z0-9_]*$/),
-    inputName: z.string().regex(/^[a-z][a-z0-9_-]*$/),
+    inputName: z.string().regex(/^[a-z][a-z0-9_-]*$/).optional(),
+    runtimeValue: z.object({
+      key: z.string().min(1).max(300),
+      path: z.array(z.string().min(1).max(100)).max(20).default([]),
+    }).optional(),
+  }).refine((mapping) => Boolean(mapping.inputName) !== Boolean(mapping.runtimeValue), {
+    message: 'Choose exactly one mapping source.',
   })).max(50).default([]),
   ownerField: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
   fixedField: z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
@@ -277,7 +284,7 @@ const MotionLandmarkSchema = z.object({
 })
 
 const MotionLandmarkFrameSchema = z.object({
-  faceLandmarks: z.array(z.array(MotionLandmarkSchema)),
+  faceLandmarks: z.array(z.array(MotionLandmarkSchema)).optional(),
   height: z.number().positive(),
   leftHandLandmarks: z.array(z.array(MotionLandmarkSchema)),
   poseLandmarks: z.array(z.array(MotionLandmarkSchema)),
@@ -287,11 +294,17 @@ const MotionLandmarkFrameSchema = z.object({
   width: z.number().positive(),
 })
 
-const MotionTemplateSchema = z.object({
+const PythonLandmarkSequencesSchema = z.object({
+  leftHand: z.array(z.array(z.number()).length(63)),
+  pose: z.array(z.array(z.number()).length(99)),
+  rightHand: z.array(z.array(z.number()).length(63)),
+}).refine((sequences) => sequences.pose.length === sequences.leftHand.length
+  && sequences.pose.length === sequences.rightHand.length, 'Python landmark sequences must contain the same number of frames.')
+
+const MotionTemplateBaseSchema = z.object({
   approvedAt: z.string().optional(),
   detectorTask: z.enum(visionTaskIds),
   durationMs: z.number().nonnegative(),
-  frames: z.array(MotionFrameSchema).min(1),
   landmarkFrames: z.array(MotionLandmarkFrameSchema).optional(),
   sourceSegment: z.object({
     endSeconds: z.number().positive(),
@@ -304,8 +317,26 @@ const MotionTemplateSchema = z.object({
     y: z.number().min(0).max(1),
   }).refine((crop) => crop.x + crop.width <= 1.000001
     && crop.y + crop.height <= 1.000001, 'The source crop must stay inside the video.').optional(),
-  version: z.literal(3),
 })
+
+const MotionTemplateSchema = z.union([
+  MotionTemplateBaseSchema.extend({
+    frames: z.array(MotionFrameSchema).min(1),
+    version: z.literal(3),
+  }),
+  MotionTemplateBaseSchema.extend({
+    landmarkFrames: z.array(MotionLandmarkFrameSchema).min(1),
+    pythonSequences: PythonLandmarkSequencesSchema,
+    sequenceProcessor: z.object({
+      engine: z.literal('pyodide'),
+      language: z.literal('python'),
+      library: z.literal('landmark_utils'),
+      version: z.literal(1),
+    }),
+    version: z.literal(4),
+  }).refine((template) => template.landmarkFrames.length === template.pythonSequences.pose.length,
+    'Display landmarks and Python sequences must contain the same number of frames.'),
+])
 
 const MotionReferenceSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('none') }),
@@ -377,6 +408,7 @@ const MotionReferenceOutputSchema = z.discriminatedUnion('type', [
 export const MotionActivitySchema = z.object({
   id: z.string().min(1),
   runtimeSourceId: z.string().min(1).optional(),
+  runtimeOutputId: z.string().min(1).optional(),
   pageId: z.string().min(1),
   elementId: z.string().min(1),
   mode: z.enum(['analyze', 'reference', 'compare']).default('compare'),

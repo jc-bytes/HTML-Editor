@@ -18,6 +18,7 @@ import {
 } from '../../runtime/motion-runtime'
 import { createFunctionBlockRuntimeSource } from '../../runtime/functions/function-block-runtime'
 import { createRuntimeValueStoreSource } from '../../runtime/values/runtime-value-store'
+import { createPythonLabConfigSource, createPythonLabRuntimeSource } from '../../runtime/python/python-lab-runtime'
 
 const textDecoder = new TextDecoder()
 
@@ -237,11 +238,22 @@ export function buildPreviewDocument(
     runtimeScript.textContent = createNavigationRuntimeSource()
     document.body.append(configScript, runtimeScript)
 
-    if (document.querySelector('[data-builder-runtime-source-id],[data-builder-function-id],[data-builder-js-lab]')) {
+    if (document.querySelector('[data-builder-runtime-source-id],[data-builder-function-id],[data-builder-js-lab],[data-builder-python-lab],[data-builder-variable-display]')) {
       const valueRuntime = document.createElement('script')
       valueRuntime.dataset.builderRuntimeValues = 'true'
       valueRuntime.textContent = createRuntimeValueStoreSource()
       document.body.append(valueRuntime)
+    }
+
+    if (document.querySelector('[data-builder-python-lab]')) {
+      const pythonConfig = document.createElement('script')
+      pythonConfig.dataset.builderPythonConfig = 'true'
+      const assetsBase = new URL(`${import.meta.env.BASE_URL}pyodide/`, window.location.origin).href
+      pythonConfig.textContent = createPythonLabConfigSource(assetsBase)
+      const pythonRuntime = document.createElement('script')
+      pythonRuntime.dataset.builderPythonRuntime = 'true'
+      pythonRuntime.textContent = createPythonLabRuntimeSource()
+      document.body.append(pythonConfig, pythonRuntime)
     }
 
     if (document.querySelector('[data-builder-function-id],[data-builder-js-lab]')) {

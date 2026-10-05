@@ -152,6 +152,36 @@ describe('motion editor contract', () => {
     container.remove()
   })
 
+  it('serializes the configured Analyze output variable', () => {
+    const [activity] = readMotionActivities(documentWith(`
+      <section data-motion-activity="true" data-motion-mode="analyze"
+        data-builder-runtime-source-id="reference-source"
+        data-builder-runtime-output-id="reference_landmarks"></section>
+    `), 'motion', [])
+
+    expect(activity).toEqual(expect.objectContaining({
+      runtimeSourceId: 'reference-source',
+      runtimeOutputId: 'reference_landmarks',
+    }))
+  })
+
+  it('prevents two Analyze components on the same page from silently sharing an output variable', () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const editor = grapesjs.init({ container, headless: true, plugins: [createMotionAnalysisPlugin()] })
+    editor.setComponents(`${motionAnalysisMarkup('analyze')}${motionAnalysisMarkup('analyze')}`)
+    editor.trigger('project:loaded', { initial: false, options: {}, project: editor.getProjectData() })
+
+    const outputs = editor.getWrapper()!.components().models.map((component) =>
+      component.getAttributes()['data-builder-runtime-output-id'])
+    expect(new Set(outputs).size).toBe(2)
+    expect(outputs[0]).toBe('landmark-frames')
+    expect(outputs[1]).toBe('landmark_frames_2')
+
+    editor.destroy()
+    container.remove()
+  })
+
   it('exports direct Supabase reference storage separately from comparison results', () => {
     const activities = readMotionActivities(documentWith(`
       <section data-motion-activity="true" data-motion-mode="reference"

@@ -165,6 +165,31 @@ describe('SupabaseDataPanel user data controls', () => {
     }))
   })
 
+  it('offers a one-profile-per-user collection template', () => {
+    const onChange = vi.fn()
+    render(<SupabaseDataPanel {...baseProps} onChange={onChange} selectedElement={null} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Crear' }))
+    fireEvent.click(screen.getByRole('button', { name: /Usar una plantilla/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
+    fireEvent.click(screen.getByRole('button', { name: /Perfiles/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Usar esta plantilla' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Crear colección' }))
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      tables: expect.arrayContaining([expect.objectContaining({
+        name: 'profiles',
+        access: 'user_owned',
+        recordMode: 'single_per_user',
+        fields: expect.arrayContaining([
+          expect.objectContaining({ name: 'display_name', type: 'text' }),
+          expect.objectContaining({ name: 'avatar_url', type: 'media' }),
+          expect.objectContaining({ name: 'bio', type: 'long_text' }),
+        ]),
+      })]),
+    }))
+  })
+
   it('opens the responsive data-component wizard from the Add library request', () => {
     const onInsertDataComponent = vi.fn()
     const { rerender } = render(<SupabaseDataPanel {...baseProps} dataComponentRequest={0} onInsertDataComponent={onInsertDataComponent} selectedElement={null} />)

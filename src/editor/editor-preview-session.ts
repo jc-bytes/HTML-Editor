@@ -16,6 +16,11 @@ export interface EditorPreviewTransition {
   session: EditorPreviewSession
 }
 
+export interface EditorPreviewContextRequirement {
+  contextKey: string
+  dataSourceId: string
+}
+
 export type EditorPreviewPageAccess = 'public' | 'authenticated' | 'guestOnly' | 'role'
 
 export function editorPreviewPath(page: ProjectPage) {
@@ -44,17 +49,83 @@ export function editorPreviewPageAccess(
   return page.id === authentication.loginPage ? 'guestOnly' : 'authenticated'
 }
 
-export function createEditorPreviewSession(bundle: ProjectBundle, requestedPageId?: string) {
+export function createEditorPreviewSession(
+  bundle: ProjectBundle,
+  requestedPageId?: string,
+  context: NavigationContext = {},
+) {
   const pageId = bundle.manifest.pages.some((page) => page.id === requestedPageId)
     ? requestedPageId!
     : bundle.manifest.startPage
-  const destination = { pageId, context: {} }
+  const destination = { pageId, context }
 
   return {
     bundle,
     ...destination,
     history: [destination],
   } satisfies EditorPreviewSession
+}
+
+export function editorPreviewContextRequirements(
+  bundle: ProjectBundle,
+  pageId: string,
+) {
+  const requirements = new Map<string, EditorPreviewContextRequirement>()
+
+  for (const connection of bundle.manifest.connections) {
+    if (connection.action !== 'navigate' || connection.targetPage !== pageId) continue
+    for (const [contextKey, value] of Object.entries(connection.context ?? {})) {
+      if (!requirements.has(contextKey)) {
+        requirements.set(contextKey, { contextKey, dataSourceId: value.dataSourceId })
+      }
+    }
+  }
+
+  return [...requirements.values()]
+}
+
+export async function resolveEditorPreviewContext(
+  bundle: ProjectBundle,
+  pageId: string,
+  currentContext: NavigationContext,
+  request: typeof fetch = fetch,
+) {
+  const resolved = { ...currentContext }
+  const requirements = editorPreviewContextRequirements(bundle, pageId)
+
+  for (const requirement of requirements) {
+    if (resolved[requirement.contextKey]) continue
+    const source = bundle.manifest.dataSources?.find((candidate) =>
+      candidate.id === requirement.dataSourceId)
+    if (!source || source.type !== 'supabase') continue
+
+    const url = new URL(`/rest/v1/${encodeURIComponent(source.table)}`, source.projectUrl)
+    url.searchParams.set('select', 'id')
+    url.searchParams.set('limit', '1')
+    if (source.publishedOnly) url.searchParams.set('published', 'eq.true')
+    if (source.orderColumn) {
+      url.searchParams.set('order', `${source.orderColumn}.${source.orderDirection ?? 'asc'}`)
+    }
+
+    try {
+      const response = await request(url.href, { headers: {
+        apikey: source.publishableKey,
+        Authorization: `Bearer ${source.publishableKey}`,
+      } })
+      if (!response.ok) continue
+      const records = await response.json() as Array<{ id?: unknown }>
+      const recordId = records[0]?.id
+      if (typeof recordId !== 'string' && typeof recordId !== 'number') continue
+      resolved[requirement.contextKey] = {
+        dataSourceId: source.id,
+        recordId: String(recordId),
+      }
+    } catch {
+      // A preview remains usable without fallback data when a source is offline.
+    }
+  }
+
+  return resolved
 }
 
 export function applyEditorPreviewAction(

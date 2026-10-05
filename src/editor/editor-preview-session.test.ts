@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ProjectBundle } from '../core/project'
 import {
   applyEditorPreviewAction,
   createEditorPreviewSession,
+  editorPreviewContextRequirements,
   editorPreviewPageAccess,
   editorPreviewPath,
+  resolveEditorPreviewContext,
   resolveEditorPreviewPath,
 } from './editor-preview-session'
 
@@ -30,6 +32,85 @@ describe('editor preview session', () => {
     expect(session.pageId).toBe('detail')
     expect(session.context).toEqual({})
     expect(session.history).toEqual([{ pageId: 'detail', context: {} }])
+  })
+
+  it('discovers and loads a missing record context for a directly opened detail preview', async () => {
+    const contextualBundle: ProjectBundle = {
+      ...bundle,
+      manifest: {
+        ...bundle.manifest,
+        dataSources: [{
+          id: 'supabase-practices',
+          name: 'practices',
+          type: 'supabase',
+          projectUrl: 'https://school.supabase.co',
+          publishableKey: 'sb_publishable_test_key_123456789',
+          table: 'practices',
+          publishedOnly: true,
+          orderColumn: 'sort_order',
+          orderDirection: 'asc',
+        }],
+        connections: [{
+          id: 'open-detail',
+          sourcePage: 'catalog',
+          elementId: 'catalog::article:1',
+          event: 'click',
+          action: 'navigate',
+          targetPage: 'detail',
+          context: {
+            record: { dataSourceId: 'supabase-practices', recordId: '$record.id' },
+          },
+        }],
+      },
+    }
+    const request = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ id: 'practice-7' }],
+    })
+
+    expect(editorPreviewContextRequirements(contextualBundle, 'detail')).toEqual([{
+      contextKey: 'record',
+      dataSourceId: 'supabase-practices',
+    }])
+    await expect(resolveEditorPreviewContext(
+      contextualBundle,
+      'detail',
+      {},
+      request as typeof fetch,
+    )).resolves.toEqual({
+      record: { dataSourceId: 'supabase-practices', recordId: 'practice-7' },
+    })
+    expect(request).toHaveBeenCalledWith(
+      'https://school.supabase.co/rest/v1/practices?select=id&limit=1&published=eq.true&order=sort_order.asc',
+      { headers: {
+        apikey: 'sb_publishable_test_key_123456789',
+        Authorization: 'Bearer sb_publishable_test_key_123456789',
+      } },
+    )
+  })
+
+  it('keeps an existing selected record instead of replacing it', async () => {
+    const contextualBundle: ProjectBundle = {
+      ...bundle,
+      manifest: {
+        ...bundle.manifest,
+        connections: [{
+          id: 'open-detail', sourcePage: 'catalog', elementId: 'catalog::article:1',
+          event: 'click', action: 'navigate', targetPage: 'detail',
+          context: { record: { dataSourceId: 'supabase-practices', recordId: '$record.id' } },
+        }],
+      },
+    }
+    const request = vi.fn()
+    const context = { record: { dataSourceId: 'supabase-practices', recordId: 'chosen' } }
+
+    await expect(resolveEditorPreviewContext(
+      contextualBundle,
+      'detail',
+      context,
+      request as typeof fetch,
+    )).resolves.toEqual(context)
+    expect(request).not.toHaveBeenCalled()
   })
 
   it('carries the clicked record context to the destination and restores it on back', () => {

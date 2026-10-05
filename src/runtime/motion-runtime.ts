@@ -41,15 +41,16 @@ export interface MotionReferenceRuntimeMessage {
     approvedAt?: string
     detectorTask: MotionActivity['detector']['task']
     durationMs: number
-    frames: MotionFeatureFrame[]
+    frames?: MotionFeatureFrame[]
     landmarkFrames?: RuntimeLandmarkFrame[]
+    pythonSequences?: PythonLandmarkSequences
     requiredHand?: RuntimeRequiredHand
     stages?: MotionStageDefinition[]
     sourceCrop?: { height: number; width: number; x: number; y: number }
     sourceSegment?: { endSeconds: number; startSeconds: number }
     storedClip?: boolean
     storedClipDurationMs?: number
-    version: 3
+    version: 3 | 4
   }
 }
 
@@ -59,8 +60,8 @@ export function isMotionReferenceRuntimeMessage(value: unknown): value is Motion
   return message.source === 'motion-analysis-runtime'
     && message.action === 'reference'
     && typeof message.activityId === 'string'
-    && message.template?.version === 3
-    && Array.isArray(message.template.frames)
+    && (message.template?.version === 3 || message.template?.version === 4)
+    && (Array.isArray(message.template.frames) || Array.isArray(message.template.landmarkFrames))
 }
 
 declare global {
@@ -72,7 +73,7 @@ declare global {
 export type RuntimeLandmark = { x: number; y: number; z?: number; visibility?: number }
 type RuntimeResult = Partial<VisionFrameResult> & Record<string, unknown>
 export type RuntimeLandmarkFrame = Record<string, unknown> & {
-  faceLandmarks: RuntimeLandmark[][]
+  faceLandmarks?: RuntimeLandmark[][]
   height: number
   leftHandLandmarks: RuntimeLandmark[][]
   poseLandmarks: RuntimeLandmark[][]
@@ -84,6 +85,11 @@ export type RuntimeLandmarkFrame = Record<string, unknown> & {
 type RuntimeFeatures = { face: boolean; hands: boolean; pose: boolean }
 type RuntimeSourceCrop = { height: number; width: number; x: number; y: number }
 export type RuntimeRequiredHand = 'left' | 'right' | 'both' | 'either'
+export type PythonLandmarkSequences = {
+  leftHand: number[][]
+  pose: number[][]
+  rightHand: number[][]
+}
 type MotionRuntimeHelpers = {
   compareMotionStages: typeof compareMotionStages
   compareMotionSequences: typeof compareMotionSequences
@@ -110,11 +116,145 @@ export function installMotionRuntime(
   const detectors = new Map<string, Promise<VisionDetector>>()
   let mediaPipeTimestamp = 0
 
+  function prepareReferenceSequencesWithPython(
+    landmarkFrames: RuntimeLandmarkFrame[],
+    onStatus: (message: string) => void,
+  ) {
+    const validSequences = (value: PythonLandmarkSequences | undefined) => {
+      const valid = (frames: number[][] | undefined, width: number) => Array.isArray(frames)
+        && frames.length === landmarkFrames.length
+        && frames.every((frame) => Array.isArray(frame)
+          && frame.length === width
+          && frame.every(Number.isFinite))
+      return valid(value?.pose, 99)
+        && valid(value?.leftHand, 63)
+        && valid(value?.rightHand, 63)
+    }
+    const adapterSource = String.raw`
+import json
+from types import SimpleNamespace
+
+def _builder_landmark_list(groups):
+    points = groups[0] if isinstance(groups, list) and groups and isinstance(groups[0], list) else groups
+    if not points:
+        return None
+    return SimpleNamespace(landmark=[SimpleNamespace(
+        x=point.get("x"), y=point.get("y"), z=point.get("z", 0)
+    ) for point in points])
+
+def _builder_video_results(frames):
+    return [SimpleNamespace(
+        pose_landmarks=_builder_landmark_list(frame.get("poseLandmarks")),
+        left_hand_landmarks=_builder_landmark_list(frame.get("leftHandLandmarks")),
+        right_hand_landmarks=_builder_landmark_list(frame.get("rightHandLandmarks"))
+    ) for frame in frames]
+
+video_results = _builder_video_results(json.loads(__builder_landmark_frames_json))
+`
+    const librarySource = String.raw`
+import numpy as np
+
+
+def landmark_to_array(mp_landmark_list):
+    """Convert a MediaPipe landmark list to a NumPy array of shape (n, 3)."""
+    keypoints = []
+
+    for landmark in mp_landmark_list.landmark:
+        keypoints.append([
+            landmark.x,
+            landmark.y,
+            landmark.z
+        ])
+
+    return np.nan_to_num(keypoints)
+
+
+def extract_landmarks(results):
+    pose = landmark_to_array(
+        results.pose_landmarks
+    ).reshape(99).tolist()
+
+    left_hand = np.zeros(63).tolist()
+
+    if results.left_hand_landmarks:
+        left_hand = landmark_to_array(
+            results.left_hand_landmarks
+        ).reshape(63).tolist()
+
+    right_hand = np.zeros(63).tolist()
+
+    if results.right_hand_landmarks:
+        right_hand = landmark_to_array(
+            results.right_hand_landmarks
+        ).reshape(63).tolist()
+
+    return pose, left_hand, right_hand
+`
+    const usageSource = String.raw`
+pose_sequence = []
+left_hand_sequence = []
+right_hand_sequence = []
+
+for results in video_results:
+    pose, left_hand, right_hand = extract_landmarks(results)
+    pose_sequence.append(pose)
+    left_hand_sequence.append(left_hand)
+    right_hand_sequence.append(right_hand)
+
+import json as _builder_json
+_builder_result_json = _builder_json.dumps({
+    "pose": pose_sequence,
+    "leftHand": left_hand_sequence,
+    "rightHand": right_hand_sequence
+}, allow_nan=False)
+`
+    const workerSource = `
+self.onmessage = async (event) => {
+  try {
+    self.postMessage({ kind: "status", message: "Cargando Python y NumPy…" });
+    const module = await import(new URL("pyodide.mjs", event.data.assetsBase).href);
+    const pyodide = await module.loadPyodide({ indexURL: event.data.assetsBase });
+    await pyodide.loadPackage("numpy");
+    pyodide.globals.set("__builder_landmark_frames_json", JSON.stringify(event.data.frames));
+    self.postMessage({ kind: "status", message: "Preparando secuencias con Python…" });
+    pyodide.runPython(${JSON.stringify(adapterSource)});
+    await pyodide.runPythonAsync(${JSON.stringify(librarySource)});
+    await pyodide.runPythonAsync(${JSON.stringify(usageSource)});
+    self.postMessage({ kind: "result", value: JSON.parse(pyodide.globals.get("_builder_result_json")) });
+  } catch (error) {
+    self.postMessage({ kind: "error", message: error instanceof Error ? error.message : String(error) });
+  }
+};`
+    const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }))
+    const worker = new Worker(workerUrl, { type: 'module' })
+    const assetsBase = new URL('../pyodide/', runtimeDocument.baseURI).href
+    return new Promise<PythonLandmarkSequences>((resolve, reject) => {
+      const finish = () => {
+        worker.terminate()
+        URL.revokeObjectURL(workerUrl)
+      }
+      worker.onmessage = (event: MessageEvent<{ kind: string; message?: string; value?: PythonLandmarkSequences }>) => {
+        if (event.data.kind === 'status') {
+          onStatus(event.data.message ?? '')
+          return
+        }
+        finish()
+        if (event.data.kind === 'result' && event.data.value && validSequences(event.data.value)) resolve(event.data.value)
+        else reject(new Error(event.data.message ?? 'Python no pudo preparar las secuencias.'))
+      }
+      worker.onerror = () => {
+        finish()
+        reject(new Error('Python no pudo preparar las secuencias.'))
+      }
+      worker.postMessage({ assetsBase, frames: landmarkFrames })
+    })
+  }
+
   function publishAnalyzeLandmarks(activity: MotionActivity, landmarkFrames: RuntimeLandmarkFrame[]) {
     if (activity.mode !== 'analyze' || !activity.runtimeSourceId) return
     const detail = {
       sourceId: activity.runtimeSourceId,
-      outputId: runtimeHelpers.landmarkFramesOutputId,
+      outputId: activity.runtimeOutputId || runtimeHelpers.landmarkFramesOutputId,
       type: 'json' as const,
       value: landmarkFrames,
     }
@@ -676,9 +816,10 @@ export function installMotionRuntime(
       const parsed = typeof value === 'string' ? JSON.parse(value) as unknown : value
       if (!parsed || typeof parsed !== 'object') return undefined
       const record = parsed as Record<string, unknown>
-      if (record.version !== 3 || typeof record.detectorTask !== 'string') return undefined
-      const frames = record.frames
-      if (!Array.isArray(frames) || !frames.length) return undefined
+      const legacyVersion = record.version === 2
+      if (!legacyVersion && record.version !== 3 && record.version !== 4) return undefined
+      if (!legacyVersion && typeof record.detectorTask !== 'string') return undefined
+      const frames = Array.isArray(record.frames) ? record.frames as MotionFeatureFrame[] : []
       const landmarkFrames = Array.isArray(record.landmarkFrames)
         ? record.landmarkFrames.filter((frame): frame is RuntimeLandmarkFrame => Boolean(
             frame && typeof frame === 'object'
@@ -687,6 +828,21 @@ export function installMotionRuntime(
             && Number.isFinite((frame as RuntimeLandmarkFrame).height),
           ))
         : []
+      const sequences = record.pythonSequences && typeof record.pythonSequences === 'object'
+        ? record.pythonSequences as Partial<PythonLandmarkSequences>
+        : undefined
+      const validSequence = (values: number[][] | undefined, width: number) => Array.isArray(values)
+        && values.length === landmarkFrames.length
+        && values.every((frame) => Array.isArray(frame)
+          && frame.length === width
+          && frame.every(Number.isFinite))
+      const pythonSequences = validSequence(sequences?.pose, 99)
+        && validSequence(sequences?.leftHand, 63)
+        && validSequence(sequences?.rightHand, 63)
+        ? sequences as PythonLandmarkSequences
+        : undefined
+      if ((legacyVersion || record.version === 3) && !frames.length) return undefined
+      if (record.version === 4 && (!landmarkFrames.length || !pythonSequences)) return undefined
       const sourceSegment = record.sourceSegment && typeof record.sourceSegment === 'object'
         && Number.isFinite((record.sourceSegment as { startSeconds?: unknown }).startSeconds)
         && Number.isFinite((record.sourceSegment as { endSeconds?: unknown }).endSeconds)
@@ -721,10 +877,16 @@ export function installMotionRuntime(
       return {
         durationMs: Number.isFinite(record.durationMs)
           ? Number(record.durationMs)
-          : (frames as MotionFeatureFrame[]).at(-1)?.t ?? 0,
-        frames: frames as MotionFeatureFrame[],
-        detectorTask: record.detectorTask as MotionActivity['detector']['task'],
+          : frames.at(-1)?.t ?? landmarkFrames.at(-1)?.t ?? 0,
+        frames,
+        // Version 2 references predate detectorTask and were produced only by
+        // the holistic landmarker. Preserve them as readable references so
+        // their stored landmarkFrames remain visible after project upgrades.
+        detectorTask: legacyVersion
+          ? 'holistic-landmarker'
+          : record.detectorTask as MotionActivity['detector']['task'],
         landmarkFrames,
+        pythonSequences,
         requiredHand,
         sourceCrop,
         sourceSegment,
@@ -733,7 +895,13 @@ export function installMotionRuntime(
           ? Number(record.storedClipDurationMs)
           : undefined,
         stages,
-        version: 3 as const,
+        sequenceProcessor: pythonSequences ? {
+          engine: 'pyodide' as const,
+          language: 'python' as const,
+          library: 'landmark_utils' as const,
+          version: 1 as const,
+        } : undefined,
+        version: record.version as 2 | 3 | 4,
       }
     } catch {
       return undefined
@@ -855,10 +1023,13 @@ export function installMotionRuntime(
       }
     }
     if (activity.reference.type === 'template') {
+      const frames = 'frames' in activity.reference.template
+        ? activity.reference.template.frames
+        : []
       return {
-        frames: activity.reference.template.frames,
+        frames,
         requiredHand: 'either' as const,
-        stages: runtimeHelpers.suggestMotionStages(activity.reference.template.frames),
+        stages: runtimeHelpers.suggestMotionStages(frames),
       }
     }
     if (activity.reference.url.toLowerCase().endsWith('.json')) {
@@ -1103,6 +1274,40 @@ export function installMotionRuntime(
       ? 'Ver mi intento'
       : activity.mode === 'analyze' ? 'Ver análisis' : 'Reproducir referencia'
     const analyzesUploadedVideo = activity.mode === 'analyze' && activity.input.type === 'upload'
+    const autoAnalyzesReferenceUpload = activity.mode === 'reference'
+      && (root.dataset.motionAutoAnalyze === 'true'
+        || runtimeConfig.currentPage === 'editor-practica')
+    if (autoAnalyzesReferenceUpload) {
+      const referenceSection = root.closest<HTMLElement>('.movement-reference-required')
+      const optionsBar = referenceSection?.querySelector<HTMLElement>('[data-motion-source-choice]')
+        ?.closest<HTMLElement>('.reference-options-bar')
+      if (optionsBar) optionsBar.style.display = 'none'
+      const requiredHandField = referenceSection?.querySelector<HTMLElement>('[data-motion-required-hand]')?.closest<HTMLElement>('label')
+      if (requiredHandField) requiredHandField.style.display = 'none'
+      const manualStages = referenceSection?.querySelector<HTMLElement>('[data-motion-stage-editor]')
+      if (manualStages) manualStages.style.display = 'none'
+      const heading = referenceSection?.closest<HTMLElement>('[data-practice-step="reference"]')
+        ?.querySelector<HTMLElement>('#movement-reference-title')
+      if (heading) heading.textContent = 'Video de referencia'
+      const badge = heading?.parentElement?.querySelector<HTMLElement>('.required-badge')
+      if (badge) badge.textContent = 'Requerido'
+      const formStatus = referenceSection?.closest('form')
+        ?.querySelector<HTMLElement>('[data-builder-mutation-status]')
+      if (formStatus && !storedTemplateField?.value.trim()) formStatus.textContent = 'Sube un video antes de guardar.'
+      const placeholderTitle = placeholder?.querySelector<HTMLElement>('strong')
+      const placeholderHelp = placeholder?.querySelector<HTMLElement>('small')
+      if (placeholderTitle) placeholderTitle.textContent = 'Sube el video de referencia'
+      if (placeholderHelp) placeholderHelp.textContent = 'El movimiento se analizará automáticamente y quedará listo para comparar.'
+      if (videoSourceControls) {
+        videoSourceControls.hidden = false
+        videoSourceControls.style.display = 'block'
+        videoSourceControls.style.paddingTop = '0'
+        videoSourceControls.style.borderTop = '0'
+        videoSourceControls.querySelectorAll<HTMLElement>('label:not(:first-child), .motion-crop-actions')
+          .forEach((element) => { element.style.display = 'none' })
+      }
+      button.hidden = true
+    }
     if (videoSourceControls) videoSourceControls.hidden = activity.mode !== 'reference' && !analyzesUploadedVideo
     if (fileInputLabel) fileInputLabel.textContent = analyzesUploadedVideo ? 'Video para analizar' : 'Video de referencia'
     if (analyzesUploadedVideo) button.hidden = !fileInput?.files?.[0]
@@ -1146,7 +1351,9 @@ export function installMotionRuntime(
     let cropInteraction: 'draw' | 'move' | 'top' | 'right' | 'bottom' | 'left' | undefined
     let editableStages: MotionStageDefinition[] = []
     let timelineCursorProgress = 0
-    let referenceSourceMode: 'existing' | 'camera' | 'video' = 'camera'
+    let referenceSourceMode: 'existing' | 'camera' | 'video' = autoAnalyzesReferenceUpload
+      ? 'video'
+      : 'camera'
     let displayedReferenceFrame: RuntimeLandmarkFrame | undefined
     const preparedClipInput = fileInput as (HTMLInputElement & {
       __motionReferenceClip?: File
@@ -1330,6 +1537,14 @@ export function installMotionRuntime(
       selectedStageId?: string,
     ) => {
       if (!stageEditor || !stageList) return
+      if (autoAnalyzesReferenceUpload) {
+        editableStages = []
+        stageEditor.hidden = true
+        stageEditor.style.display = 'none'
+        stageList.replaceChildren()
+        motionInput?.querySelector('[data-motion-stage-overlay]')?.remove()
+        return
+      }
       editableStages = stages
         .map((stage) => ({
           id: stage.id,
@@ -2002,15 +2217,25 @@ export function installMotionRuntime(
           previewVideoUrl = resolvedVideo?.url
           previewVideoObjectUrl = resolvedVideo?.revoke ? resolvedVideo.url : undefined
         } else if (activity.reference.type === 'template') {
+          const frames = 'frames' in activity.reference.template
+            ? activity.reference.template.frames
+            : []
           previewTemplate = {
             ...activity.reference.template,
-            landmarkFrames: [],
+            frames,
+            landmarkFrames: activity.reference.template.landmarkFrames ?? [],
+            pythonSequences: 'pythonSequences' in activity.reference.template
+              ? activity.reference.template.pythonSequences
+              : undefined,
             requiredHand: 'either',
             sourceCrop: undefined,
             sourceSegment: undefined,
             storedClip: false,
             storedClipDurationMs: undefined,
-            stages: runtimeHelpers.suggestMotionStages(activity.reference.template.frames)
+            sequenceProcessor: 'sequenceProcessor' in activity.reference.template
+              ? activity.reference.template.sequenceProcessor
+              : undefined,
+            stages: runtimeHelpers.suggestMotionStages(frames)
               .map((stage) => ({ ...stage, scored: stage.scored !== false })),
           }
         } else if (activity.reference.type === 'url') {
@@ -2021,6 +2246,9 @@ export function installMotionRuntime(
           } else {
             previewVideoUrl = activity.reference.url
           }
+        }
+        if (activity.componentType === 'reference-view' && previewTemplate?.landmarkFrames.length) {
+          publishAnalyzeLandmarks(activity, previewTemplate.landmarkFrames)
         }
         if (referenceVideo && previewVideoUrl && (showVideo || showFrame)) {
           referenceVideo.src = previewVideoUrl
@@ -2409,21 +2637,26 @@ export function installMotionRuntime(
       video.muted = true
       video.hidden = false
       if (placeholder) placeholder.hidden = true
-      button.textContent = 'Analizar tramo del video'
+      button.textContent = autoAnalyzesReferenceUpload ? 'Analizar nuevamente' : 'Analizar tramo del video'
       if (analyzesUploadedVideo) {
         button.textContent = 'Analizar video'
         setAnalyzeState('awaiting-input')
       }
-      button.hidden = false
+      button.hidden = autoAnalyzesReferenceUpload
       status.textContent = 'Cargando video…'
       try {
         if (video.readyState < 1) await waitFor(video, 'loadedmetadata')
         if (segmentStart) segmentStart.value = '0'
-        if (segmentEnd) segmentEnd.value = String(Math.min(10, video.duration).toFixed(1))
+        if (segmentEnd) segmentEnd.value = String((autoAnalyzesReferenceUpload
+          ? video.duration
+          : Math.min(10, video.duration)).toFixed(1))
         setReferenceSourceMode('video', true)
-        status.textContent = analyzesUploadedVideo
+        status.textContent = autoAnalyzesReferenceUpload
+          ? `Preparando el video completo · ${video.duration.toFixed(1)} s…`
+          : analyzesUploadedVideo
           ? `Video listo · ${video.duration.toFixed(1)} s. Presiona Analizar video.`
           : `Video listo · ${video.duration.toFixed(1)} s. Elige el tramo.`
+        if (autoAnalyzesReferenceUpload) await start()
       } catch {
         status.textContent = 'No se pudo abrir ese archivo de video.'
       }
@@ -2450,10 +2683,13 @@ export function installMotionRuntime(
       if (videoSourceControls) videoSourceControls.hidden = mode !== 'video'
       button!.hidden = mode === 'existing'
         || (mode === 'video' && !fileInput?.files?.[0])
+        || autoAnalyzesReferenceUpload
       if (replayButton) replayButton.hidden = mode !== 'existing'
         || !recordedLandmarkFrames.length
       if (mode === 'camera') button!.textContent = 'Iniciar grabación'
-      if (mode === 'video' && fileInput?.files?.[0]) button!.textContent = 'Analizar tramo'
+      if (mode === 'video' && fileInput?.files?.[0]) {
+        button!.textContent = autoAnalyzesReferenceUpload ? 'Analizar nuevamente' : 'Analizar tramo'
+      }
       if (!preserveStatus) status!.textContent = mode === 'existing'
         ? 'Referencia lista.'
         : mode === 'camera'
@@ -2539,13 +2775,14 @@ export function installMotionRuntime(
             replayButton.textContent = 'Ver análisis'
             replayButton.hidden = false
           }
-          status.textContent = `${captured.landmarkFrames.length} frames del video analizados y disponibles en “${runtimeHelpers.landmarkFramesOutputId}”.`
+          const outputId = activity.runtimeOutputId || runtimeHelpers.landmarkFramesOutputId
+          status.textContent = `${captured.landmarkFrames.length} frames del video analizados y disponibles en “${outputId}”.`
           root.dispatchEvent(new CustomEvent('motion:analysis', {
             bubbles: true,
             detail: {
               frameCount: captured.landmarkFrames.length,
               landmarkFrames: captured.landmarkFrames,
-              outputId: runtimeHelpers.landmarkFramesOutputId,
+              outputId,
               sourceId: activity.runtimeSourceId,
             },
           }))
@@ -2603,24 +2840,48 @@ export function installMotionRuntime(
           }
           let preparedClip: File | undefined
           if (fileInput?.files?.[0] && captured.sourceSegment) {
-            status.textContent = 'Preparando solamente el tramo y encuadre seleccionados…'
-            preparedClip = await createSelectedVideoClip(
-              video,
-              captured.sourceCrop,
-              captured.sourceSegment,
-            )
+            status.textContent = autoAnalyzesReferenceUpload
+              ? 'Terminando la preparación automática…'
+              : 'Preparando solamente el tramo y encuadre seleccionados…'
+            preparedClip = autoAnalyzesReferenceUpload
+              ? fileInput.files[0]
+              : await createSelectedVideoClip(video, captured.sourceCrop, captured.sourceSegment)
             if (preparedClipInput) preparedClipInput.__motionReferenceClip = preparedClip
           }
+          const storedSourceSegment = autoAnalyzesReferenceUpload
+            ? undefined
+            : captured.sourceSegment
+          const pythonSequences = autoAnalyzesReferenceUpload
+            ? await prepareReferenceSequencesWithPython(recordedLandmarkFrames, (message) => {
+                status.textContent = message
+              })
+            : undefined
           const template = {
-            version: 3 as const,
+            version: autoAnalyzesReferenceUpload ? 4 as const : 3 as const,
             detectorTask: activity.detector.task,
             durationMs: captured.durationMs,
-            frames: preparedInput,
-            landmarkFrames: recordedLandmarkFrames,
+            frames: autoAnalyzesReferenceUpload ? undefined : preparedInput,
+            landmarkFrames: autoAnalyzesReferenceUpload
+              ? recordedLandmarkFrames.map((frame) => ({
+                  t: frame.t,
+                  width: frame.width,
+                  height: frame.height,
+                  poseLandmarks: frame.poseLandmarks,
+                  leftHandLandmarks: frame.leftHandLandmarks,
+                  rightHandLandmarks: frame.rightHandLandmarks,
+                }))
+              : recordedLandmarkFrames,
             requiredHand,
-            stages: runtimeHelpers.suggestMotionStages(preparedInput),
-            sourceCrop: captured.sourceCrop,
-            sourceSegment: captured.sourceSegment,
+            stages: autoAnalyzesReferenceUpload ? [] : runtimeHelpers.suggestMotionStages(preparedInput),
+            sourceCrop: autoAnalyzesReferenceUpload ? undefined : captured.sourceCrop,
+            sourceSegment: storedSourceSegment,
+            pythonSequences,
+            sequenceProcessor: pythonSequences ? {
+              engine: 'pyodide',
+              language: 'python',
+              library: 'landmark_utils',
+              version: 1,
+            } : undefined,
             storedClip: Boolean(preparedClip),
             storedClipDurationMs: preparedClip ? captured.durationMs : undefined,
             approvedAt: new Date().toISOString(),
@@ -2633,13 +2894,15 @@ export function installMotionRuntime(
             templateField.dispatchEvent(new Event('input', { bubbles: true }))
             templateField.dispatchEvent(new Event('change', { bubbles: true }))
           }
-          renderStageEditor(template.stages)
+          if (!autoAnalyzesReferenceUpload) renderStageEditor(template.stages)
           overall.textContent = 'Referencia lista'
           scores.replaceChildren()
           const segmentLabel = captured.sourceSegment
             ? ` · tramo ${captured.sourceSegment.startSeconds.toFixed(1)}–${captured.sourceSegment.endSeconds.toFixed(1)} s`
             : ''
-          feedback.textContent = `${preparedInput.length} puntos clave · ${averageQuality}% de calidad de seguimiento${segmentLabel}. Revisa y guarda esta plantilla como referencia aprobada.`
+          feedback.textContent = autoAnalyzesReferenceUpload
+            ? `${preparedInput.length} muestras de movimiento · ${averageQuality}% de calidad. La referencia está lista para guardar.`
+            : `${preparedInput.length} puntos clave · ${averageQuality}% de calidad de seguimiento${segmentLabel}. Revisa y guarda esta plantilla como referencia aprobada.`
           if (download && activity.referenceOutput.type === 'download') {
             if (downloadUrl) URL.revokeObjectURL(downloadUrl)
             downloadUrl = URL.createObjectURL(new Blob([JSON.stringify(template)], { type: 'application/json' }))
@@ -2651,7 +2914,9 @@ export function installMotionRuntime(
           }
           results.hidden = !showResults
           if (replayButton && recordedLandmarkFrames.length) replayButton.hidden = false
-          status.textContent = 'Plantilla compilada localmente.'
+          status.textContent = autoAnalyzesReferenceUpload
+            ? 'Video procesado. Ya puedes guardar o publicar.'
+            : 'Plantilla compilada localmente.'
           root.dispatchEvent(new CustomEvent('motion:reference', { bubbles: true, detail: template }))
           if (runtimeWindow.parent && runtimeWindow.parent !== runtimeWindow) {
             runtimeWindow.parent.postMessage({

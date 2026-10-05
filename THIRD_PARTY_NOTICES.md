@@ -1,5 +1,17 @@
 # Third-party notices
 
+## Pyodide and NumPy
+
+Python Lab runs locally in the browser with Pyodide `314.0.3` and its pinned
+NumPy `2.4.3` WebAssembly wheel. Runtime files are bundled with preview/export;
+no CDN is required after the project is built.
+
+- Pyodide: <https://github.com/pyodide/pyodide>, Mozilla Public License 2.0
+- NumPy: <https://github.com/numpy/numpy>, BSD-3-Clause license
+
+Python Lab uses a Web Worker to avoid blocking the page. This is an isolation
+and responsiveness boundary, not a security sandbox for untrusted code.
+
 ## Sign-Language-Recognition--MediaPipe-DTW
 
 The Sign Movement Tools method is adapted from:

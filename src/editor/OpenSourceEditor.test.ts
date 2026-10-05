@@ -321,6 +321,8 @@ describe('editor canvas layout guards', () => {
     expect(editorDocument.head.querySelector('style[data-builder-editor-layout-guards]')?.textContent)
       .toContain('.lsp-page')
     expect(editorDocument.head.querySelector('style[data-builder-editor-layout-guards]')?.textContent)
+      .toContain('.builder-page-layout')
+    expect(editorDocument.head.querySelector('style[data-builder-editor-layout-guards]')?.textContent)
       .toContain('grid-template-columns: repeat(var(--builder-data-cols-desktop, 4)')
   })
 

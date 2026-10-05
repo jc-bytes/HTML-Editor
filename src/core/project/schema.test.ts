@@ -38,6 +38,20 @@ describe('ProjectSchema', () => {
     }
     expect(DataActionSchema.safeParse(action).success).toBe(true)
     expect(DataActionSchema.safeParse({
+      ...action,
+      fieldMappings: [{
+        field: 'pose_error',
+        runtimeValue: { key: 'js-lab::variables', path: ['error_pose'] },
+      }],
+    }).success).toBe(true)
+    expect(DataActionSchema.safeParse({
+      ...action,
+      fieldMappings: [{
+        field: 'pose_error', inputName: 'pose_error',
+        runtimeValue: { key: 'js-lab::variables', path: ['error_pose'] },
+      }],
+    }).success).toBe(false)
+    expect(DataActionSchema.safeParse({
       ...action, fieldMappings: [{ field: 'title,secret', inputName: 'project-title' }],
     }).success).toBe(false)
     expect(DataActionSchema.safeParse({
@@ -210,5 +224,51 @@ describe('ProjectSchema', () => {
         },
       }],
     }).success).toBe(false)
+  })
+
+  it('accepts compact version 4 references with display landmarks and Python DTW sequences', () => {
+    const point = { x: 0.5, y: 0.5, z: 0 }
+    const activity = {
+      id: 'practice-motion-v4',
+      pageId: 'practice',
+      elementId: 'practice::section:1',
+      input: { type: 'camera' as const, durationMs: 3000 },
+      reference: {
+        type: 'template' as const,
+        template: {
+          version: 4 as const,
+          detectorTask: 'holistic-landmarker' as const,
+          durationMs: 100,
+          landmarkFrames: [{
+            t: 0,
+            width: 1280,
+            height: 720,
+            poseLandmarks: [Array(33).fill(point)],
+            leftHandLandmarks: [],
+            rightHandLandmarks: [],
+          }],
+          pythonSequences: {
+            pose: [Array(99).fill(0)],
+            leftHand: [Array(63).fill(0)],
+            rightHand: [Array(63).fill(0)],
+          },
+          sequenceProcessor: {
+            engine: 'pyodide' as const,
+            language: 'python' as const,
+            library: 'landmark_utils' as const,
+            version: 1 as const,
+          },
+        },
+      },
+      detector: {
+        provider: 'mediapipe' as const,
+        task: 'holistic-landmarker' as const,
+        modelUrl: 'https://models.example/holistic.task',
+        landmarks: { hands: true, pose: true, face: false },
+      },
+      evaluator: { type: 'sequence' as const, passingScore: 75 },
+    }
+    expect(ProjectSchema.safeParse({ ...validProject, motionActivities: [activity] }).success)
+      .toBe(true)
   })
 })

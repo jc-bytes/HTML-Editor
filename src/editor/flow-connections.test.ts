@@ -89,6 +89,27 @@ describe('screen flow connections', () => {
     })
   })
 
+  it('serializes runtime variables as data-action field sources', () => {
+    const attributes = dataActionAttributes({
+      action: 'create-record',
+      dataSourceTableId: 'practice-attempts',
+      contextKey: 'record',
+      ownerField: 'user_id',
+      fieldMappings: [{
+        field: 'pose_error',
+        runtimeValue: { key: 'js-lab::variables', path: ['error_pose'] },
+      }],
+      successMessage: 'Resultado guardado.',
+    })
+
+    expect(readDataActionConnection(attributes)).toMatchObject({
+      fieldMappings: [{
+        field: 'pose_error',
+        runtimeValue: { key: 'js-lab::variables', path: ['error_pose'] },
+      }],
+    })
+  })
+
   it('serializes the current-user save action', () => {
     const attributes = dataActionAttributes({
       action: 'save-current-user-record',

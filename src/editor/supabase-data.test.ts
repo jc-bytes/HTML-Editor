@@ -266,14 +266,9 @@ describe('Supabase editor data helpers', () => {
     const imported = importSupabaseSchemaSql(sql, { ...config, tables: [] })
 
     expect(imported.tables.map((table) => table.name)).toEqual([
-      'profiles',
-      'user_roles',
       'practices',
       'practice_attempts',
-      'practice_progress',
-      'favorite_practices',
     ])
-    expect(imported.tables.find((table) => table.name === 'user_roles')?.access).toBe('private')
     expect(imported.tables.find((table) => table.name === 'practices')).toEqual(expect.objectContaining({
       access: 'public_read',
       fields: expect.arrayContaining([

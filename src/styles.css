@@ -430,6 +430,28 @@ body {
   overflow-wrap: anywhere;
 }
 .gjs-js-lab-values code small { color: #8d9aa5; font: 9px/1.35 Inter,ui-sans-serif,system-ui,sans-serif; }
+.gjs-library-language { display:inline-grid;place-items:center;min-width:24px;padding:2px 4px;border-radius:4px;font-size:9px;letter-spacing:.04em; }
+.gjs-library-language.javascript { color:#f4dc78;background:#3a3217; }
+.gjs-library-language.python { color:#9ed8ca;background:#173832; }
+.gjs-library-add-actions { display:grid;gap:6px;padding-top:8px; }
+.gjs-python-import-backdrop { position:fixed;z-index:1200;inset:0;display:grid;place-items:center;padding:24px;background:rgba(4,8,12,.72); }
+.gjs-python-import-dialog { display:grid;gap:12px;width:min(680px,calc(100vw - 48px));max-height:calc(100vh - 48px);overflow:auto;padding:18px;color:#e8edf2;background:#141920;border:1px solid #3a4653;border-radius:12px;box-shadow:0 24px 80px rgba(0,0,0,.55); }
+.gjs-python-import-dialog header { display:flex;justify-content:space-between;gap:16px;align-items:start; }
+.gjs-python-import-dialog header div { display:grid;gap:3px; }
+.gjs-python-import-dialog header strong { font-size:15px; }
+.gjs-python-import-dialog header small,.gjs-python-import-dialog p { margin:0;color:#9ba8b4;font-size:11px;line-height:1.45; }
+.gjs-python-import-dialog header button { color:#ccd5dc;background:transparent;border:0;font-size:22px;cursor:pointer; }
+.gjs-python-import-dialog label { display:grid;gap:5px;color:#c8d2da;font-size:11px;font-weight:700; }
+.gjs-python-import-dialog input,.gjs-python-import-dialog textarea,.gjs-python-import-dialog select { width:100%;box-sizing:border-box;padding:9px 10px;color:#eef2f5;background:#0b0f14;border:1px solid #3a4653;border-radius:7px;font:500 12px/1.45 Inter,ui-sans-serif,system-ui,sans-serif; }
+.gjs-python-import-dialog textarea { resize:vertical; }
+.gjs-python-import-dialog textarea.code { font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; }
+.gjs-python-import-dialog fieldset { display:grid;gap:8px;margin:0;padding:10px;border:1px solid #3a4653;border-radius:7px; }
+.gjs-python-import-dialog legend { padding:0 4px;color:#c8d2da;font-size:11px;font-weight:700; }
+.gjs-library-input-row { display:grid;grid-template-columns:minmax(0,1fr) 112px 34px;gap:6px;align-items:center; }
+.gjs-library-input-row button,.gjs-python-import-dialog fieldset>button { min-height:34px;padding:0 10px;color:#dce5eb;background:#222a33;border:1px solid #465360;border-radius:7px;font-weight:700;cursor:pointer; }
+.gjs-python-import-dialog footer { display:flex;justify-content:flex-end;gap:8px; }
+.gjs-python-import-dialog footer button { min-height:36px;padding:0 14px;border:1px solid #465360;border-radius:7px;color:#dce5eb;background:#222a33;font-weight:700;cursor:pointer; }
+.gjs-python-import-dialog footer button:last-child { color:#0b1513;background:#7dd3c2;border-color:#7dd3c2; }
 .gjs-library {
   color: var(--ve-muted);
   border-bottom: 1px solid var(--ve-border);

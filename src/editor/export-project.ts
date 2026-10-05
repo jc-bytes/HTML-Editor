@@ -18,7 +18,10 @@ import {
   EXTERNAL_FUNCTION_ATTRIBUTE,
 } from '../runtime/functions/function-block-runtime'
 import type { ExternalFunctionRegistration } from '../runtime/functions/external-function-registry'
+import type { RawJavaScriptRuntimeLibrary } from '../runtime/functions/js-lab-runtime'
 import { JS_LAB_ATTRIBUTE, JS_LAB_PUBLIC_ATTRIBUTE } from './external-function-blocks'
+import { PYTHON_LAB_ATTRIBUTE, PYTHON_LAB_PUBLIC_ATTRIBUTE } from './python-lab-blocks'
+import { createPythonLabRuntimeSource } from '../runtime/python/python-lab-runtime'
 import {
   FLOW_ACTION_ATTRIBUTE,
   FLOW_ACTIVE_LABEL_ATTRIBUTE,
@@ -115,10 +118,14 @@ function pageDocument(page: EditorExportPage) {
     '.builder-data-featured',
   ].join(',')))
   const usesJsLab = Boolean(parsed.querySelector(`[${JS_LAB_ATTRIBUTE}]`))
+  const usesPythonLab = Boolean(parsed.querySelector(`[${PYTHON_LAB_ATTRIBUTE}]`))
   const jsLabVisibilityStyles = usesJsLab
     ? `[${JS_LAB_ATTRIBUTE}][${JS_LAB_PUBLIC_ATTRIBUTE}="false"] { display: none !important; }`
     : ''
-  const pageStyles = [page.css ?? '', usesDataComponents ? dataComponentStyles : '', jsLabVisibilityStyles]
+  const pythonLabVisibilityStyles = usesPythonLab
+    ? `[${PYTHON_LAB_ATTRIBUTE}][${PYTHON_LAB_PUBLIC_ATTRIBUTE}="false"] { display: none !important; }`
+    : ''
+  const pageStyles = [page.css ?? '', usesDataComponents ? dataComponentStyles : '', jsLabVisibilityStyles, pythonLabVisibilityStyles]
     .filter(Boolean)
     .join('\n')
   const title = document.createElement('div')
@@ -279,8 +286,12 @@ export function buildEditorProjectBundle(
       ))
       if (!connection) return
       const safeField = (value: string) => /^[a-z][a-z0-9_]*$/.test(value)
-      const fieldMappings = connection.fieldMappings.filter((mapping) =>
-        safeField(mapping.field) && /^[a-z][a-z0-9_-]*$/.test(mapping.inputName))
+      const fieldMappings = connection.fieldMappings.filter((mapping) => safeField(mapping.field) && (
+        ('inputName' in mapping && typeof mapping.inputName === 'string'
+          && /^[a-z][a-z0-9_-]*$/.test(mapping.inputName))
+        || ('runtimeValue' in mapping && Boolean(mapping.runtimeValue?.key)
+          && (mapping.runtimeValue?.path ?? []).every((part) => typeof part === 'string' && Boolean(part)))
+      ))
       dataActions.push({
         id: `${page.id}-data-action-${index + 1}`,
         pageId: page.id,
@@ -523,22 +534,25 @@ export function buildEditorProjectBundle(
 export function addProjectFunctionRuntime(
   bundle: ProjectBundle,
   registrations: ExternalFunctionRegistration[],
+  rawLibraries: RawJavaScriptRuntimeLibrary[] = [],
 ) {
   const filesByPath = new Map(bundle.files.map((file) => [file.path, file]))
   const decoder = new TextDecoder()
   const usedFunctionIds = new Set<string>()
   let usesJsLab = false
+  let usesPythonLab = false
   bundle.manifest.pages.forEach((page) => {
     const file = filesByPath.get(page.file)
     if (!file) return
     const document = new DOMParser().parseFromString(decoder.decode(file.bytes), 'text/html')
     if (document.querySelector(`[${JS_LAB_ATTRIBUTE}]`)) usesJsLab = true
+    if (document.querySelector(`[${PYTHON_LAB_ATTRIBUTE}]`)) usesPythonLab = true
     document.querySelectorAll<HTMLElement>(`[${EXTERNAL_FUNCTION_ATTRIBUTE}]`).forEach((element) => {
       const id = element.getAttribute(EXTERNAL_FUNCTION_ATTRIBUTE)?.trim()
       if (id) usedFunctionIds.add(id)
     })
   })
-  if (!usedFunctionIds.size && !usesJsLab) return bundle
+  if (!usedFunctionIds.size && !usesJsLab && !usesPythonLab) return bundle
 
   const registrationsById = new Map(registrations.map((registration) => [
     registration.metadata.id,
@@ -550,13 +564,22 @@ export function addProjectFunctionRuntime(
     return registration
   }))
   const runtimeFile: ProjectFile = {
-    bytes: new TextEncoder().encode(createFunctionBlockRuntimeSource(usedRegistrations)),
+    bytes: new TextEncoder().encode(createFunctionBlockRuntimeSource(usedRegistrations, usesJsLab ? rawLibraries : [])),
     mediaType: 'text/javascript',
     path: 'builder-runtime/functions.js',
   }
+  const pythonRuntimeFile: ProjectFile = {
+    bytes: new TextEncoder().encode(createPythonLabRuntimeSource()),
+    mediaType: 'text/javascript',
+    path: 'builder-runtime/python.js',
+  }
   return {
     ...bundle,
-    files: [...bundle.files.filter((file) => file.path !== runtimeFile.path), runtimeFile],
+    files: [
+      ...bundle.files.filter((file) => file.path !== runtimeFile.path && file.path !== pythonRuntimeFile.path),
+      ...((usedFunctionIds.size || usesJsLab) ? [runtimeFile] : []),
+      ...(usesPythonLab ? [pythonRuntimeFile] : []),
+    ],
   }
 }
 
@@ -564,6 +587,7 @@ export function editorProjectBundle(
   editor: Editor,
   supabaseConfig?: SupabaseEditorConfig,
   functionRegistrations: ExternalFunctionRegistration[] = externalFunctionRegistrations,
+  rawLibraries: RawJavaScriptRuntimeLibrary[] = [],
 ) {
   const pages = editor.Pages.getAll().map((page) => {
     const component = page.getMainComponent()
@@ -594,16 +618,17 @@ export function editorProjectBundle(
     pages.find((page) => page.isStartPage)?.id ?? pages[0]?.id ?? '',
     'Sitio creado con Visual Builder',
     supabaseConfig,
-  ), functionRegistrations)
+  ), functionRegistrations, rawLibraries)
 }
 
 export async function exportEditorProject(
   editor: Editor,
   supabaseConfig?: SupabaseEditorConfig,
   functionRegistrations: ExternalFunctionRegistration[] = externalFunctionRegistrations,
+  rawLibraries: RawJavaScriptRuntimeLibrary[] = [],
 ) {
   await editor.store()
-  const bundle = editorProjectBundle(editor, supabaseConfig, functionRegistrations)
+  const bundle = editorProjectBundle(editor, supabaseConfig, functionRegistrations, rawLibraries)
   const blob = await zipProjectExporter.export(bundle)
   const validation = await validateStaticArchive(blob)
   if (!validation.valid) {

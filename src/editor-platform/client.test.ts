@@ -39,6 +39,15 @@ describe('editor platform function errors', () => {
           implementationSource: 'function flatten(matrix) { return matrix.flat() }',
         }],
       }],
+      pythonLibraries: [{
+        description: 'Student Python utilities.',
+        functions: [{
+          description: 'Doubles a number.', id: 'source', inputs: 'value: number',
+          name: 'Python Tools', outputType: 'number', usage: '# Use Python Tools',
+        }],
+        id: 'python-python-tools', language: 'python', moduleName: 'python_python_tools',
+        name: 'Python Tools', provenance: 'imported', source: 'def double(value):\n    return value * 2',
+      }],
     }
 
     await saveEditorProjectData('project-id', projectData, client)

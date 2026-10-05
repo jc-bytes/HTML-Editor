@@ -132,7 +132,10 @@ describe('editable JS Lab function experience', () => {
       data-builder-runtime-output-type="json"></section>`)
     const sources = jsLabRuntimeSourceOptions(editor)
     const call = externalFunctionCallStatement(
-      registration('sign-movement-tools', 'extract-left-hand-xyz').metadata,
+      {
+        description: 'Consumes landmark JSON.', id: 'extract-landmarks',
+        inputs: [{ name: 'landmark-frames', type: 'json' }], name: 'Extract landmarks', output: { type: 'number[][]' },
+      },
       '',
       sources,
     )
@@ -142,7 +145,7 @@ describe('editable JS Lab function experience', () => {
       key: 'reference-video::landmark-frames',
       type: 'json',
     })])
-    expect(call.statement).toContain('extractLeftHandXyz(runtimeValues.landmarksDeReferencia)')
+    expect(call.statement).toContain('extractLandmarks(runtimeValues.landmarksDeReferencia)')
     editor.destroy()
     container.remove()
   })

@@ -28,8 +28,28 @@ export interface PersistedImportedLibrary {
   fileName: string
   formatVersion: 1
   functions: PersistedImportedFunction[]
+  globalApis?: PersistedRawJavaScriptApi[]
   id: string
+  kind?: 'functions' | 'raw-global'
   name: string
+  source?: string
+}
+
+export interface PersistedRawJavaScriptApi {
+  description: string
+  name: string
+  usage: string
+}
+
+export interface RegisteredRawJavaScriptLibrary {
+  description: string
+  functions: []
+  globalApis: PersistedRawJavaScriptApi[]
+  id: string
+  kind: 'raw-global'
+  name: string
+  provenance: 'imported'
+  source: string
 }
 
 export type ImportedLibraryResult<T> =
@@ -168,6 +188,56 @@ export function restorePersistedImportedLibrary(
       functions,
       id: persisted.id,
       name: persisted.name,
+    },
+  }
+}
+
+export function normalizePersistedRawJavaScriptLibrary(
+  persisted: PersistedImportedLibrary,
+): ImportedLibraryResult<RegisteredRawJavaScriptLibrary> {
+  const identifier = /^[a-z][a-z0-9-]*$/
+  const javascriptIdentifier = /^[A-Za-z_$][\w$]*$/
+  if (!persisted || typeof persisted !== 'object' || persisted.formatVersion !== 1
+    || persisted.kind !== 'raw-global' || typeof persisted.id !== 'string'
+    || !identifier.test(persisted.id) || typeof persisted.name !== 'string' || !persisted.name.trim()
+    || typeof persisted.description !== 'string' || typeof persisted.fileName !== 'string'
+    || !persisted.fileName || typeof persisted.source !== 'string' || !persisted.source.trim()
+    || new TextEncoder().encode(persisted.source).length > MAX_IMPORTED_LIBRARY_BYTES
+    || !Array.isArray(persisted.globalApis) || persisted.globalApis.length === 0
+    || persisted.globalApis.some((api) => !api || typeof api !== 'object'
+      || typeof api.name !== 'string' || !javascriptIdentifier.test(api.name)
+      || typeof api.description !== 'string' || !api.description.trim()
+      || typeof api.usage !== 'string' || !api.usage.trim())) {
+    return { error: 'La biblioteca global guardada no tiene un formato compatible.', ok: false }
+  }
+  if (new Set(persisted.globalApis.map((api) => api.name)).size !== persisted.globalApis.length) {
+    return { error: 'Cada API global necesita un nombre JavaScript único.', ok: false }
+  }
+  if (/(?:^|[;\n\r])\s*import\s*(?:\(|["'{*]|[A-Za-z_$])/m.test(persisted.source)
+    || /\bimport\s*\(/.test(persisted.source) || /\bexport\s+/.test(persisted.source)) {
+    return { error: 'La biblioteca global debe ser independiente y no puede usar import o export.', ok: false }
+  }
+  try {
+    Function(persisted.source)
+  } catch (cause) {
+    return {
+      error: cause instanceof Error
+        ? `El código de la biblioteca global no es válido: ${cause.message}`
+        : 'El código de la biblioteca global no es válido.',
+      ok: false,
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      description: persisted.description,
+      functions: [],
+      globalApis: persisted.globalApis.map((api) => ({ ...api })),
+      id: persisted.id,
+      kind: 'raw-global',
+      name: persisted.name,
+      provenance: 'imported',
+      source: persisted.source,
     },
   }
 }

@@ -43,6 +43,40 @@ describe('navigation runtime', () => {
     document.body.innerHTML = ''
   })
 
+  it('uses declarative flow attributes when a saved element identifier is stale', () => {
+    document.body.innerHTML = `
+      <nav>
+        <button data-builder-flow-action="navigate" data-builder-flow-target="gestion">Crear</button>
+      </nav>`
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'catalogo',
+      pageUrls: {},
+      transport: 'message',
+      connections: [{
+        action: 'navigate',
+        elementId: 'catalogo::nav:1/button:5',
+        event: 'click',
+        sourcePage: 'catalogo',
+        targetPage: 'gestion',
+      }],
+    }
+    const postMessage = vi.spyOn(window, 'postMessage').mockImplementation(() => undefined)
+    const dispose = installNavigationRuntime(window, document)
+
+    document.querySelector<HTMLButtonElement>('button')?.click()
+
+    expect(postMessage).toHaveBeenCalledWith({
+      action: 'navigate',
+      source: 'builder-navigation-runtime',
+      targetPage: 'gestion',
+    }, '*')
+
+    dispose()
+    postMessage.mockRestore()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
   it('creates standalone and safely serialized script sources', () => {
     const configSource = createNavigationConfigSource({
       currentPage: 'home',
@@ -226,6 +260,41 @@ describe('navigation runtime', () => {
       context: { record: { dataSourceId: 'practices', recordId: 'practice-1' } },
       source: 'builder-navigation-runtime',
       targetPage: 'camera',
+    }, '*')
+
+    dispose()
+    postMessage.mockRestore()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('clears record context for a context-free destination', () => {
+    document.body.innerHTML = '<main><button>New practice</button></main>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'manage',
+      pageUrls: {},
+      transport: 'message',
+      currentContext: {
+        record: { dataSourceId: 'practices', recordId: 'practice-1' },
+      },
+      connections: [{
+        action: 'navigate',
+        clearContext: true,
+        elementId: 'manage::main:1/button:1',
+        event: 'click',
+        sourcePage: 'manage',
+        targetPage: 'practice-editor',
+      }],
+    }
+    const postMessage = vi.spyOn(window, 'postMessage').mockImplementation(() => undefined)
+    const dispose = installNavigationRuntime(window, document)
+
+    document.querySelector('button')?.click()
+
+    expect(postMessage).toHaveBeenCalledWith({
+      action: 'navigate',
+      source: 'builder-navigation-runtime',
+      targetPage: 'practice-editor',
     }, '*')
 
     dispose()
@@ -561,6 +630,56 @@ describe('navigation runtime', () => {
     })
     expect(document.querySelector('[data-builder-data-action-status]')).toHaveTextContent('Created.')
     expect(input).toHaveValue('')
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('creates a record from selected runtime variables', async () => {
+    document.body.innerHTML = '<button type="button">Guardar resultado</button>'
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'practice', pageUrls: {}, transport: 'message', connections: [],
+      dataSources: [{
+        id: 'attempts', name: 'practice_attempts', type: 'supabase', projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key', table: 'practice_attempts', publishedOnly: false, requiresAuth: true,
+      }],
+      dataActions: [{
+        id: 'save-result', pageId: 'practice', elementId: 'practice::button:1', dataSourceId: 'attempts',
+        action: 'create', contextKey: 'record', ownerField: 'user_id',
+        fieldMappings: [{
+          field: 'pose_error',
+          runtimeValue: { key: 'js-lab::variables', path: ['error_pose'] },
+        }],
+        successMessage: 'Resultado guardado.',
+      }],
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'user-token', refresh_token: 'refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'user-1' },
+      })), setItem: vi.fn(), removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 201 }))
+    const runtimeWindow = Object.create(window) as Window & Record<string, unknown>
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+    Object.defineProperty(runtimeWindow, '__BUILDER_RUNTIME_VALUE_STORE__', { value: {
+      read: (key: string) => key === 'js-lab::variables'
+        ? { value: { error_pose: 0.0096 } }
+        : undefined,
+    } })
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+
+    document.querySelector('button')!.click()
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ pose_error: 0.0096, user_id: 'user-1' }),
+      headers: expect.objectContaining({ Authorization: 'Bearer user-token' }),
+    })
+    expect(document.querySelector('[data-builder-data-action-status]')).toHaveTextContent('Resultado guardado.')
 
     dispose()
     delete window.__BUILDER_NAVIGATION__
@@ -1511,6 +1630,49 @@ describe('navigation runtime', () => {
         Authorization: 'Bearer teacher-access-token',
       } },
     )
+
+    dispose()
+    delete window.__BUILDER_NAVIGATION__
+    document.body.innerHTML = ''
+  })
+
+  it('reads roles from protected app_metadata and lets admins use teacher controls', async () => {
+    document.body.innerHTML = `<nav>
+      <button data-builder-role-visible="teacher">Docente</button>
+      <button data-builder-role-visible="admin">Administración</button>
+    </nav>`
+    window.__BUILDER_NAVIGATION__ = {
+      currentPage: 'home', pageUrls: {}, transport: 'message', dataSources: [], connections: [],
+      authentication: {
+        provider: 'supabase',
+        projectUrl: 'https://school.supabase.co',
+        publishableKey: 'sb_publishable_test_key',
+        loginPage: 'access',
+        afterLoginPage: 'home',
+        afterLogoutPage: 'access',
+      },
+    }
+    const storage = {
+      getItem: vi.fn(() => JSON.stringify({
+        access_token: 'teacher-access-token',
+        refresh_token: 'teacher-refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        user: { id: 'user-1', app_metadata: { role: 'admin' } },
+      })),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    }
+    const fetchMock = vi.fn()
+    const runtimeWindow = Object.create(window) as Window
+    Object.defineProperty(runtimeWindow, 'localStorage', { value: storage })
+    Object.defineProperty(runtimeWindow, 'fetch', { value: fetchMock })
+
+    const dispose = installNavigationRuntime(runtimeWindow, document)
+
+    await vi.waitFor(() => expect(document.querySelector('[data-builder-role-visible="teacher"]'))
+      .not.toHaveAttribute('hidden'))
+    expect(document.querySelector('[data-builder-role-visible="admin"]')).not.toHaveAttribute('hidden')
+    expect(fetchMock).not.toHaveBeenCalled()
 
     dispose()
     delete window.__BUILDER_NAVIGATION__

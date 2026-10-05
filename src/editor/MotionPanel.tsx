@@ -82,6 +82,8 @@ function Section({ children, description, open = false, title }: {
 
 export function MotionPanel({ asWizard = false, component, config, notice, onOpenData, onWizardClose, onWizardSave, tables }: MotionPanelProps) {
   const [, setRevision] = useState(0)
+  const [outputIdError, setOutputIdError] = useState('')
+  const [outputIdDraft, setOutputIdDraft] = useState('')
   const [wizardStep, setWizardStep] = useState(0)
   const [recordOptions, setRecordOptions] = useState<Array<{ id: string; label: string }>>([])
   const [recordSearch, setRecordSearch] = useState('')
@@ -179,7 +181,11 @@ export function MotionPanel({ asWizard = false, component, config, notice, onOpe
     return () => controller.abort()
   }, [config.projectUrl, config.publishableKey, referenceRecordMode, referenceSource, referenceTable])
 
-  useEffect(() => { setWizardStep(0) }, [component])
+  useEffect(() => {
+    setWizardStep(0)
+    setOutputIdError('')
+    setOutputIdDraft(component?.getAttributes()[RUNTIME_OUTPUT_ID_ATTRIBUTE] || 'landmark-frames')
+  }, [component])
 
   if (!component) return <div className="gjs-motion-empty">
     <span aria-hidden="true">◎</span>
@@ -190,6 +196,17 @@ export function MotionPanel({ asWizard = false, component, config, notice, onOpe
   function write(name: string, value: string) {
     component?.addAttributes({ [name]: value })
     setRevision((revision) => revision + 1)
+  }
+
+  function writeAnalyzeOutputId(value: string) {
+    setOutputIdDraft(value)
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+      setOutputIdError('Usa letras, números y guion bajo; no puede comenzar con un número.')
+      return
+    }
+    setOutputIdError('')
+    write(RUNTIME_OUTPUT_ID_ATTRIBUTE, value)
+    write(RUNTIME_SOURCE_NAME_ATTRIBUTE, value)
   }
 
   function toggle(name: string, checked: boolean) {
@@ -350,8 +367,8 @@ export function MotionPanel({ asWizard = false, component, config, notice, onOpe
     </Section>}
 
     {mode === 'analyze' && showStep('output') && <Section description="Publica los landmarks como un valor reutilizable del sitio." open title="Salida">
-      <label className="gjs-motion-field"><span>Nombre de la salida</span><input value={attributes[RUNTIME_SOURCE_NAME_ATTRIBUTE] || 'Landmarks de video'} onChange={(event) => write(RUNTIME_SOURCE_NAME_ATTRIBUTE, event.target.value)} /><small>Usa nombres como “Landmarks de referencia” y “Landmarks del estudiante” para distinguir dos análisis.</small></label>
-      <div className="gjs-motion-output-summary"><span><small>Variable</small><strong>{attributes[RUNTIME_OUTPUT_ID_ATTRIBUTE] || 'landmark-frames'}</strong></span><span><small>Tipo</small><strong>{attributes[RUNTIME_OUTPUT_TYPE_ATTRIBUTE] || 'json'}</strong></span><p>Disponible durante esta sesión de la página. La persona puede revisar el video temporal con sus landmarks. Analizar otro video reemplaza ambos.</p></div>
+      <label className="gjs-motion-field"><span>Variable de salida</span><input aria-invalid={Boolean(outputIdError)} value={outputIdDraft} onChange={(event) => writeAnalyzeOutputId(event.target.value)} /><small>Usa identificadores distintos, como <code>reference_landmarks</code> y <code>learner_landmarks</code>, cuando haya dos análisis.</small>{outputIdError && <small role="alert">{outputIdError}</small>}</label>
+      <div className="gjs-motion-output-summary"><span><small>Variable</small><strong>{attributes[RUNTIME_OUTPUT_ID_ATTRIBUTE] || 'landmark-frames'}</strong></span><span><small>Tipo</small><strong>{attributes[RUNTIME_OUTPUT_TYPE_ATTRIBUTE] || 'json'}</strong></span><p>Disponible durante esta sesión de la página. Cada componente Analizar publica su propia secuencia; analizar de nuevo reemplaza solamente la variable de ese componente.</p></div>
     </Section>}
 
     {mode === 'compare' && !isReferenceView && showStep('result') && <Section description="Define la evaluación y lo que verá la persona." open={asWizard} title="Resultado">

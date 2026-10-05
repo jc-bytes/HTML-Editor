@@ -49,12 +49,21 @@ export type DataActionKind = 'create-record' | 'update-record' | 'delete-record'
 export type DataActionRecordMode = 'context' | 'current_user'
 export type DataActionValueSource = 'fixed' | 'form' | 'current_user' | 'now' | 'toggle' | 'increment'
 
+export interface RuntimeValueReference {
+  key: string
+  path: string[]
+}
+
+export type DataActionFieldMapping = {
+  field: string
+} & ({ inputName: string; runtimeValue?: never } | { inputName?: never; runtimeValue: RuntimeValueReference })
+
 export interface DataActionConnection {
   action: DataActionKind
   confirmMessage?: string
   contextKey: string
   dataSourceTableId: string
-  fieldMappings: Array<{ field: string; inputName: string }>
+  fieldMappings: DataActionFieldMapping[]
   fixedField?: string
   fixedValue?: string
   ownerField?: string
@@ -157,14 +166,26 @@ export function readDataActionConnection(
     try {
       const parsed = JSON.parse(encodedMappings) as unknown
       if (Array.isArray(parsed)) {
-        fieldMappings = parsed.flatMap((mapping) => {
-          if (!mapping || typeof mapping !== 'object') return []
+        const validMappings: DataActionConnection['fieldMappings'] = []
+        parsed.forEach((mapping) => {
+          if (!mapping || typeof mapping !== 'object') return
           const field = (mapping as Record<string, unknown>).field
           const inputName = (mapping as Record<string, unknown>).inputName
-          return typeof field === 'string' && typeof inputName === 'string' && field && inputName
-            ? [{ field, inputName }]
-            : []
+          const runtimeValue = (mapping as Record<string, unknown>).runtimeValue
+          if (typeof field !== 'string' || !field) return
+          if (typeof inputName === 'string' && inputName) {
+            validMappings.push({ field, inputName })
+            return
+          }
+          if (!runtimeValue || typeof runtimeValue !== 'object') return
+          const key = (runtimeValue as Record<string, unknown>).key
+          const path = (runtimeValue as Record<string, unknown>).path
+          if (typeof key === 'string' && key && Array.isArray(path)
+            && path.every((part) => typeof part === 'string' && part)) {
+            validMappings.push({ field, runtimeValue: { key, path } })
+          }
         })
+        fieldMappings = validMappings
       }
     } catch {
       fieldMappings = []

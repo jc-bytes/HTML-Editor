@@ -58,6 +58,7 @@ import {
   INTERACTION_ANIMATION_ATTRIBUTE,
   type InteractionAnimation,
   type DataActionConnection,
+  type DataActionFieldMapping,
   type DataActionKind,
   type DataActionRecordMode,
   type DataActionValueSource,
@@ -149,6 +150,23 @@ import {
   JS_LAB_BLOCK_ID,
 } from './external-function-blocks'
 import { ExternalLibrariesPanel } from './ExternalLibrariesPanel'
+import { prepareJavaScriptCodeDraft, prepareRawJavaScriptLibraryDraft, type JavaScriptCodeImportDraft, type PythonCodeImportDraft } from './ExternalLibrariesPanel'
+import type { LibraryCatalogEntry, RegisteredPythonLibrary } from '../python-libraries/types'
+import {
+  createPythonLabPlugin,
+  ensurePythonLab,
+  findPythonLab,
+  PYTHON_LAB_BLOCK_ID,
+  PYTHON_LAB_CODE_EDITOR_ATTRIBUTE,
+  updatePythonLabCode,
+  usePythonLibrary,
+} from './python-lab-blocks'
+import {
+  createVariableDisplayPlugin,
+  variableDisplayOptions,
+  VARIABLE_DISPLAY_ATTRIBUTE,
+  VARIABLE_DISPLAY_BLOCK_ID,
+} from './variable-display-block'
 import {
   loadPreparedImportedLibrary,
   type PreparedImportedLibraryFile,
@@ -332,6 +350,7 @@ export function reorderedPageIndex(
 }
 
 const DATA_COMPONENT_BLOCK_ID = 'builder-data-component'
+const SUPABASE_SAVE_BLOCK_ID = 'builder-supabase-save-values'
 const GUEST_PROJECT_STORAGE_KEY = 'builder-editor-guest-project-v1'
 const BLANK_PAGE = { id: 'page-1', name: 'Página 1', component: '' } as const
 const EMPTY_SUPABASE_CONFIG: SupabaseEditorConfig = {
@@ -1203,7 +1222,7 @@ export function installEditorCanvasLayoutGuards(
     body {
       min-height: var(--builder-editor-viewport-height) !important;
     }
-    :where(.demo-page, .screen, .tpl-wrap, .tpl-dash-side, .builder-auth-page, .builder-auth-brand, .builder-auth-content, .lsp-page) {
+    :where(.demo-page, .screen, .tpl-wrap, .tpl-dash-side, .builder-auth-page, .builder-auth-brand, .builder-auth-content, .builder-page-layout, .lsp-page) {
       min-height: var(--builder-editor-viewport-height) !important;
     }
     [${EDITOR_VIEWPORT_GUARD_ATTRIBUTE}] {
@@ -1362,6 +1381,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const initialSupabaseConfigRef = useRef(EMPTY_SUPABASE_CONFIG)
   const supabaseConfigRef = useRef(initialSupabaseConfigRef.current)
   const projectExternalLibrariesRef = useRef<ProjectExternalLibraries | null>(null)
+  const pythonLibrariesRef = useRef<RegisteredPythonLibrary[]>([])
   const jsLabSaveTimerRef = useRef<number | null>(null)
   const jsLabStoreQueueRef = useRef<Promise<void>>(Promise.resolve())
   if (!projectExternalLibrariesRef.current) {
@@ -1412,7 +1432,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
   const [flowRecordField, setFlowRecordField] = useState('practice_id')
   const [flowActiveLabel, setFlowActiveLabel] = useState('★ Guardado')
   const [flowInactiveLabel, setFlowInactiveLabel] = useState('☆ Guardar')
-  const [flowFieldMappings, setFlowFieldMappings] = useState<Array<{ field: string; inputName: string }>>([])
+  const [flowFieldMappings, setFlowFieldMappings] = useState<DataActionFieldMapping[]>([])
   const [flowSuccessMessage, setFlowSuccessMessage] = useState('Registro creado.')
   const [flowConfirmMessage, setFlowConfirmMessage] = useState('')
   const [flowFixedField, setFlowFixedField] = useState('')
@@ -1433,16 +1453,20 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     width: '100%',
   })
   const [supabaseConfig, setSupabaseConfig] = useState(initialSupabaseConfigRef.current)
-  const [availableExternalLibraries, setAvailableExternalLibraries] = useState(
-    () => projectExternalLibrariesRef.current!.listLibraries(),
+  const [availableExternalLibraries, setAvailableExternalLibraries] = useState<LibraryCatalogEntry[]>(
+    () => [
+      ...projectExternalLibrariesRef.current!.listLibraries().map((library) => ({ ...library, language: 'javascript' as const })),
+    ],
   )
 
   async function persistProjectSnapshot(
     grapesjsData: Record<string, unknown>,
     libraries: ProjectExternalLibraries = projectExternalLibrariesRef.current!,
+    pythonLibraries: RegisteredPythonLibrary[] = pythonLibrariesRef.current,
   ) {
     const projectData: EditorProjectData = {
       externalLibraries: libraries.imported,
+      pythonLibraries,
       grapesjs: grapesjsData,
       supabaseConfig: supabaseConfigRef.current as unknown as Record<string, unknown>,
     }
@@ -1450,12 +1474,12 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     else await saveEditorProjectData(editorProjectId, projectData)
   }
 
-  async function addImportedLibrary(prepared: PreparedImportedLibraryFile) {
+  async function addImportedLibrary(prepared: PreparedImportedLibraryFile, replaceLibraryId?: string) {
     const loaded = await loadPreparedImportedLibrary(prepared)
     if (!loaded.ok) throw new Error(loaded.error)
 
     const next = createProjectExternalLibraries([
-      ...projectExternalLibrariesRef.current!.imported,
+      ...projectExternalLibrariesRef.current!.imported.filter((library) => library.id !== replaceLibraryId),
       loaded.value,
     ])
     if (!next.ok) throw new Error(next.error)
@@ -1473,14 +1497,61 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       projectExternalLibrariesRef.current = previousLibraries
       throw cause
     }
-    setAvailableExternalLibraries(next.value.listLibraries())
+    setAvailableExternalLibraries([
+      ...next.value.listLibraries().map((library) => ({ ...library, language: 'javascript' as const })),
+      ...pythonLibrariesRef.current,
+    ])
+  }
+
+  async function addJavaScriptLibrary(draft: JavaScriptCodeImportDraft) {
+    if (draft.mode === 'raw-global') {
+      const persisted = prepareRawJavaScriptLibraryDraft(draft)
+      const next = createProjectExternalLibraries([
+        ...projectExternalLibrariesRef.current!.imported.filter((library) => library.id !== draft.libraryId),
+        persisted,
+      ])
+      if (!next.ok) throw new Error(next.error)
+      const editor = editorRef.current
+      if (!editor) throw new Error('El editor todavía no está listo para añadir bibliotecas.')
+      await persistProjectSnapshot(editor.getProjectData() as Record<string, unknown>, next.value)
+      projectExternalLibrariesRef.current = next.value
+      setAvailableExternalLibraries([
+        ...next.value.listLibraries().map((library) => ({ ...library, language: 'javascript' as const })),
+        ...pythonLibrariesRef.current,
+      ])
+      return
+    }
+    await addImportedLibrary(prepareJavaScriptCodeDraft(draft), draft.libraryId)
   }
 
   async function useExternalFunction(libraryId: string, functionId: string) {
     const editor = editorRef.current
     if (!editor) throw new Error('El editor todavía no está listo para usar funciones.')
+    const pythonLibrary = pythonLibrariesRef.current.find((candidate) => candidate.id === libraryId)
+    if (pythonLibrary) {
+      const metadata = pythonLibrary.functions.find((candidate) => candidate.id === functionId)
+      if (!metadata) throw new Error('El código Python seleccionado ya no está disponible.')
+      const lab = ensurePythonLab(editor).component
+      usePythonLibrary(lab, pythonLibrary, functionId)
+      editor.select(lab)
+      setLeftPanel('libraries')
+      await queueJsLabStore(editor)
+      return
+    }
     const library = projectExternalLibrariesRef.current!.listLibraries()
       .find((candidate) => candidate.id === libraryId)
+    if (library && 'kind' in library && library.kind === 'raw-global') {
+      const api = library.globalApis.find((candidate) => candidate.name === functionId)
+      if (!api) throw new Error('La API global seleccionada ya no está disponible.')
+      const lab = ensureJsLab(editor).component
+      const current = readJsLabSettings(lab)
+      const existingCode = current.code === DEFAULT_JS_LAB_CODE ? '' : current.code.trimEnd()
+      updateJsLabScript(lab, { code: `${existingCode ? `${existingCode}\n` : ''}${api.usage}` })
+      editor.select(lab)
+      setLeftPanel('libraries')
+      await queueJsLabStore(editor)
+      return
+    }
     const registration = library?.functions.find(({ metadata }) => metadata.id === functionId)
     if (!library || !registration) throw new Error('La función seleccionada ya no está disponible.')
 
@@ -1489,7 +1560,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     const existingCode = current.code === DEFAULT_JS_LAB_CODE ? '' : current.code.trimEnd()
     const runtimeSources = jsLabRuntimeSourceOptions(editor)
     const call = externalFunctionCallStatement(registration.metadata, existingCode, runtimeSources)
-    const code = `${existingCode ? `${existingCode}\n` : ''}${call.statement}`
+    const statement = registration.metadata.usage?.trim() || call.statement
+    const code = `${existingCode ? `${existingCode}\n` : ''}${statement}`
     updateJsLabScript(lab, { code })
     editor.select(lab)
     setLeftPanel('libraries')
@@ -1498,6 +1570,56 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       jsLabSaveTimerRef.current = null
     }
     await queueJsLabStore(editor)
+  }
+
+  function pythonLibraryId(name: string) {
+    const slug = name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    return `python-${slug || 'library'}`
+  }
+
+  async function addPythonLibrary(draft: PythonCodeImportDraft) {
+    const editor = editorRef.current
+    if (!editor) throw new Error('El editor todavía no está listo para añadir bibliotecas Python.')
+    const id = pythonLibraryId(draft.name)
+    if (pythonLibrariesRef.current.some((library) => library.id === id && library.id !== draft.libraryId)) {
+      throw new Error('Ya existe una biblioteca Python con ese nombre.')
+    }
+    const moduleName = id.replace(/-/g, '_')
+    const library: RegisteredPythonLibrary = {
+      description: draft.description,
+      functions: [{
+        description: draft.description,
+        id: 'source',
+        inputs: draft.inputs,
+        name: draft.name,
+        outputType: draft.outputType,
+        usage: draft.usage,
+      }],
+      id,
+      language: 'python',
+      moduleName,
+      name: draft.name,
+      provenance: 'imported',
+      source: draft.source,
+    }
+    const nextPythonLibraries = draft.libraryId
+      ? pythonLibrariesRef.current.map((candidate) => candidate.id === draft.libraryId ? library : candidate)
+      : [...pythonLibrariesRef.current, library]
+    if (draft.libraryId && !pythonLibrariesRef.current.some((candidate) => candidate.id === draft.libraryId)) {
+      throw new Error('La biblioteca Python que intentas editar ya no existe.')
+    }
+    await persistProjectSnapshot(
+      editor.getProjectData() as Record<string, unknown>,
+      projectExternalLibrariesRef.current!,
+      nextPythonLibraries,
+    )
+    pythonLibrariesRef.current = nextPythonLibraries
+    setAvailableExternalLibraries([
+      ...projectExternalLibrariesRef.current!.listLibraries().map((item) => ({ ...item, language: 'javascript' as const })),
+      ...nextPythonLibraries,
+    ])
+    setLeftPanel('libraries')
   }
 
   function scheduleJsLabSave(editor: Editor) {
@@ -1557,7 +1679,13 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
                 setError(`No se pudieron restaurar las bibliotecas: ${restoredLibraries.error}`)
               } else {
                 projectExternalLibrariesRef.current = restoredLibraries.value
-                setAvailableExternalLibraries(restoredLibraries.value.listLibraries())
+                pythonLibrariesRef.current = Array.isArray(projectData.pythonLibraries)
+                  ? projectData.pythonLibraries.filter((library) => library?.language === 'python')
+                  : []
+                setAvailableExternalLibraries([
+                  ...restoredLibraries.value.listLibraries().map((library) => ({ ...library, language: 'javascript' as const })),
+                  ...pythonLibrariesRef.current,
+                ])
               }
               if (projectData.supabaseConfig) {
                 const nextConfig = normalizedSupabaseConfig(
@@ -1644,6 +1772,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           createSectionLayoutPlugin,
           createMotionAnalysisPlugin(),
           createExternalFunctionBlocksPlugin(),
+          createPythonLabPlugin(),
+          createVariableDisplayPlugin(),
           presetWebpage,
           blocksBasic,
           pluginForms,
@@ -1838,6 +1968,15 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           setDataComponentRequest((current) => current + 1)
         },
       })
+      editor.BlockManager.add(SUPABASE_SAVE_BLOCK_ID, {
+        label: 'Guardar variables',
+        category: 'Supabase',
+        attributes: {
+          title: 'Guardar variables publicadas por Analizar, Python Lab o JS Lab en una colección',
+        },
+        content: `<button data-gjs-name="Guardar variables" type="button" style="${authButtonStyle}">Guardar resultado</button>`,
+        media: SUPABASE_BLOCK_ICONS.data,
+      })
       configureStarterBlocks(editor)
 
       const previewController = createPreviewController({
@@ -1847,6 +1986,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
               editor,
               supabaseConfigRef.current,
               projectExternalLibrariesRef.current!.listFunctionRegistrations(),
+              projectExternalLibrariesRef.current!.listRawLibraries(),
             )
             const selectedPageId = editor.Pages.getSelected()?.getId()
             setBlocksOpen(false)
@@ -1881,6 +2021,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
               editor,
               supabaseConfigRef.current,
               projectExternalLibrariesRef.current!.listFunctionRegistrations(),
+              projectExternalLibrariesRef.current!.listRawLibraries(),
             )
           } catch (cause) {
             setError(cause instanceof Error ? cause.message : 'No se pudo exportar el sitio.')
@@ -2187,6 +2328,14 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           } else return
           scheduleJsLabSave(editor)
         }, true)
+        canvasDocument.addEventListener('input', (event) => {
+          const target = event.target as HTMLTextAreaElement | null
+          const labElement = target?.closest?.('[data-builder-python-lab]')
+          const lab = labElement ? findPythonLab(editor) : undefined
+          if (!target || !lab || !target.hasAttribute(PYTHON_LAB_CODE_EDITOR_ATTRIBUTE)) return
+          updatePythonLabCode(lab, target.value)
+          scheduleJsLabSave(editor)
+        }, true)
       }
       const handleCanvasBodyLoad = () => {
         stabilizeEditorCanvas()
@@ -2364,6 +2513,9 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
           }
         }
         syncSelectedElement(component)
+        if (Object.prototype.hasOwnProperty.call(component.getAttributes(), VARIABLE_DISPLAY_ATTRIBUTE)) {
+          setRightPanel('properties')
+        }
         showSelectedAuthCanvasTab(component)
         requestAnimationFrame(() => {
           const toolbar = editor.Canvas.getToolsEl()?.querySelector('.gjs-toolbar') as HTMLElement | null
@@ -2407,8 +2559,24 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       }))
       const completeBlockInsertion = (component: Component, block: Block) => {
         setBlocksOpen(false)
-        if (block.getId() === JS_LAB_BLOCK_ID) {
-          const existingLab = findJsLab(editor)
+        if (block.getId() === VARIABLE_DISPLAY_BLOCK_ID) {
+          editor.select(component)
+          setRightPanel('properties')
+        }
+        if (block.getId() === SUPABASE_SAVE_BLOCK_ID) {
+          editor.select(component)
+          setFlowAction('create-record')
+          setFlowDataSourceTableId('')
+          setFlowFieldMappings([])
+          setFlowOwnerField('user_id')
+          setFlowSuccessMessage('Resultado guardado.')
+          setFlowConfirmMessage('')
+          setRightPanel('flow')
+        }
+        if ([JS_LAB_BLOCK_ID, PYTHON_LAB_BLOCK_ID].includes(block.getId())) {
+          const existingLab = block.getId() === JS_LAB_BLOCK_ID
+            ? findJsLab(editor)
+            : findPythonLab(editor)
           if (existingLab && existingLab !== component) {
             component.remove()
             editor.select(existingLab)
@@ -2438,13 +2606,14 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
       editor.on('block:click', (block: Block) => {
         draggedBlockRef.current = null
         setBlockDropActive(false)
-        if (block.getId() === JS_LAB_BLOCK_ID) {
-          const lab = ensureJsLab(editor).component
+        if ([JS_LAB_BLOCK_ID, PYTHON_LAB_BLOCK_ID].includes(block.getId())) {
+          const isPythonLab = block.getId() === PYTHON_LAB_BLOCK_ID
+          const lab = isPythonLab ? ensurePythonLab(editor).component : ensureJsLab(editor).component
           editor.select(lab)
           setBlocksOpen(false)
           setRightPanel('properties')
           void editor.store().catch((cause: unknown) => {
-            setError(cause instanceof Error ? cause.message : 'No se pudo guardar JS Lab.')
+            setError(cause instanceof Error ? cause.message : `No se pudo guardar ${isPythonLab ? 'Python Lab' : 'JS Lab'}.`)
           })
           return
         }
@@ -2570,13 +2739,14 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     draggedBlockRef.current = null
     setBlockDropActive(false)
     if (!editor || !block) return
-    if (block.getId() === JS_LAB_BLOCK_ID) {
-      const lab = ensureJsLab(editor).component
+    if ([JS_LAB_BLOCK_ID, PYTHON_LAB_BLOCK_ID].includes(block.getId())) {
+      const isPythonLab = block.getId() === PYTHON_LAB_BLOCK_ID
+      const lab = isPythonLab ? ensurePythonLab(editor).component : ensureJsLab(editor).component
       editor.select(lab)
       setBlocksOpen(false)
       setRightPanel('properties')
       void editor.store().catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : 'No se pudo guardar JS Lab.')
+        setError(cause instanceof Error ? cause.message : `No se pudo guardar ${isPythonLab ? 'Python Lab' : 'JS Lab'}.`)
       })
       return
     }
@@ -2852,8 +3022,47 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
     ...(flowDataSourceTable?.verifiedSchema?.fields.map((field) => field.name) ?? []),
   ])]
   const flowInputNames = formInputNames(editorRef.current?.getSelected())
+  const flowRuntimeValueOptions = (editorRef.current ? variableDisplayOptions(editorRef.current) : []).flatMap((option) => {
+    try {
+      const reference = JSON.parse(option.id) as { key?: unknown; path?: unknown }
+      return typeof reference.key === 'string' && Array.isArray(reference.path)
+        && reference.path.every((part) => typeof part === 'string')
+        ? [{ label: option.name, reference: { key: reference.key, path: reference.path as string[] } }]
+        : []
+    } catch {
+      return []
+    }
+  })
+  const runtimeReferenceValue = (reference: { key: string; path: string[] }) =>
+    `runtime:${JSON.stringify(reference)}`
+  const fieldMappingValue = (mapping?: DataActionFieldMapping) => {
+    if (!mapping) return ''
+    return mapping.runtimeValue
+      ? runtimeReferenceValue(mapping.runtimeValue)
+      : `form:${mapping.inputName}`
+  }
+  const fieldMappingFromValue = (field: string, value: string): DataActionFieldMapping | undefined => {
+    if (value.startsWith('form:')) {
+      const inputName = value.slice('form:'.length)
+      return inputName ? { field, inputName } : undefined
+    }
+    if (!value.startsWith('runtime:')) return undefined
+    try {
+      const reference = JSON.parse(value.slice('runtime:'.length)) as { key?: unknown; path?: unknown }
+      return typeof reference.key === 'string' && Array.isArray(reference.path)
+        && reference.path.every((part) => typeof part === 'string')
+        ? { field, runtimeValue: { key: reference.key, path: reference.path as string[] } }
+        : undefined
+    } catch {
+      return undefined
+    }
+  }
+  const availableRuntimeReferences = new Set(flowRuntimeValueOptions.map((option) =>
+    runtimeReferenceValue(option.reference)))
   const resolvedFlowFieldMappings = flowFieldMappings.filter((mapping) =>
-    flowFieldNames.includes(mapping.field) && flowInputNames.includes(mapping.inputName))
+    flowFieldNames.includes(mapping.field) && (mapping.runtimeValue
+      ? availableRuntimeReferences.has(runtimeReferenceValue(mapping.runtimeValue))
+      : flowInputNames.includes(mapping.inputName)))
   const isRecordDataAction = flowAction === 'create-record'
     || flowAction === 'update-record'
     || flowAction === 'delete-record'
@@ -3662,6 +3871,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
             <ExternalLibrariesPanel
               libraries={availableExternalLibraries}
               onAddLibrary={addImportedLibrary}
+              onAddJavaScriptCode={addJavaScriptLibrary}
+              onAddPythonCode={addPythonLibrary}
               onUseFunction={useExternalFunction}
             />
           </div>
@@ -4042,8 +4253,8 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
                   >
                     <option value="navigate">Ir a otra pantalla</option>
                     <option value="toggle-record">Guardar o quitar un registro</option>
-                    <option disabled={!flowInputNames.length} value="create-record">Crear un registro</option>
-                    <option disabled={!flowInputNames.length} value="update-record">Actualizar el registro actual</option>
+                    <option disabled={!flowInputNames.length && !flowRuntimeValueOptions.length} value="create-record">Crear un registro</option>
+                    <option disabled={!flowInputNames.length && !flowRuntimeValueOptions.length} value="update-record">Actualizar el registro actual</option>
                     <option disabled={!singleUserFlowTables.length} value="save-current-user-record">Guardar mis datos</option>
                     <option disabled={!dynamicContextTables.length && !dynamicCurrentUserTables.length} value="set-record-field">Cambiar información</option>
                     <option value="delete-record">Eliminar el registro actual</option>
@@ -4152,7 +4363,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
                     <div className="gjs-flow-introduction">
                       <span aria-hidden="true">▦</span>
                       <div><strong>{flowAction === 'create-record' ? 'Crear información' : flowAction === 'update-record' ? 'Actualizar información' : flowAction === 'save-current-user-record' ? 'Guardar mis datos' : flowAction === 'set-record-field' ? 'Cambiar estado' : 'Eliminar información'}</strong><p>{flowAction === 'create-record'
-                        ? 'Los valores del formulario crearán un registro nuevo.'
+                        ? 'Los campos y variables seleccionados crearán un registro nuevo.'
                         : flowAction === 'save-current-user-record'
                           ? 'Carga y guarda el único registro de la persona conectada.'
                           : flowAction === 'set-record-field'
@@ -4172,7 +4383,7 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
                         {recordActionFlowTables.length === 0 ? <option value="">{flowAction === 'save-current-user-record' ? 'Configura una colección con un elemento por persona' : 'Crea una colección de datos propios'}</option> : recordActionFlowTables.map((table) => <option key={table.id} value={table.id}>{table.displayName ?? table.name}</option>)}
                       </select>
                     </label>}
-                    {(flowAction === 'create-record' || flowAction === 'update-record' || flowAction === 'save-current-user-record') && flowDataSourceTable && <button className="gjs-flow-secondary" onClick={addCurrentUserFormFields} type="button">
+                    {(flowAction === 'create-record' || flowAction === 'update-record' || flowAction === 'save-current-user-record') && flowDataSourceTable && flowInputNames.length > 0 && <button className="gjs-flow-secondary" onClick={addCurrentUserFormFields} type="button">
                       Añadir campos de esta colección
                     </button>}
                     {flowAction === 'set-record-field' && <section className="gjs-data-display-options">
@@ -4183,16 +4394,24 @@ export function OpenSourceEditor({ accountEmail, editorProjectId, isGuest = fals
                       <button className="gjs-flow-secondary" onClick={() => setDynamicActionDialogOpen(true)} type="button">Configurar cambio</button>
                     </section>}
                     {flowAction !== 'delete-record' && flowAction !== 'set-record-field' && <section className="gjs-data-display-options">
-                      <strong>Conectar campos</strong>
-                      <p>Elige qué campo del formulario llena cada campo de la colección.</p>
-                      {flowFieldNames.map((field) => <label key={field}>{field}<select aria-label={`Entrada para ${field}`} onChange={(event) => setFlowFieldMappings((current) => [
-                        ...current.filter((mapping) => mapping.field !== field),
-                        ...(event.target.value ? [{ field, inputName: event.target.value }] : []),
-                      ])} value={flowFieldMappings.find((mapping) => mapping.field === field)?.inputName ?? ''}>
+                      <strong>Conectar información</strong>
+                      <p>Elige qué campo del formulario o qué variable llena cada campo de la colección.</p>
+                      {flowFieldNames.map((field) => <label key={field}>{field}<select aria-label={`Fuente para ${field}`} onChange={(event) => setFlowFieldMappings((current) => {
+                        const next = fieldMappingFromValue(field, event.target.value)
+                        return [
+                          ...current.filter((mapping) => mapping.field !== field),
+                          ...(next ? [next] : []),
+                        ]
+                      })} value={fieldMappingValue(flowFieldMappings.find((mapping) => mapping.field === field))}>
                         <option value="">No enviar</option>
-                        {flowInputNames.map((inputName) => <option key={inputName} value={inputName}>{inputName}</option>)}
+                        {flowInputNames.length > 0 && <optgroup label="Campos del formulario">
+                          {flowInputNames.map((inputName) => <option key={inputName} value={`form:${inputName}`}>{inputName}</option>)}
+                        </optgroup>}
+                        {flowRuntimeValueOptions.length > 0 && <optgroup label="Variables">
+                          {flowRuntimeValueOptions.map((option) => <option key={runtimeReferenceValue(option.reference)} value={runtimeReferenceValue(option.reference)}>{option.label}</option>)}
+                        </optgroup>}
                       </select></label>)}
-                      {!flowInputNames.length && <p className="gjs-data-placeholder">Selecciona un formulario o un botón dentro de un formulario.</p>}
+                      {!flowInputNames.length && !flowRuntimeValueOptions.length && <p className="gjs-data-placeholder">Añade un formulario o una fuente como Analizar, Python Lab o JS Lab.</p>}
                     </section>}
                     {flowAction === 'create-record' && <label>Campo de la persona conectada<select aria-label="Campo automático de la persona" onChange={(event) => setFlowOwnerField(event.target.value)} value={flowOwnerField}><option value="">No guardar automáticamente</option><option value="user_id">user_id</option>{flowFieldNames.filter((field) => field !== 'user_id').map((field) => <option key={field} value={field}>{field}</option>)}</select></label>}
                     {isFlowRoleTable && flowAction === 'create-record' && <p className="gjs-data-safety">Conecta user_id con el identificador de la cuenta y role con el permiso que asignará el administrador.</p>}

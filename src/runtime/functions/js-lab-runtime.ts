@@ -16,6 +16,12 @@ import {
 
 export const MAX_JS_LAB_CODE_CHARACTERS = 100_000
 
+export interface RawJavaScriptRuntimeLibrary {
+  globalApis: Array<{ name: string }>
+  id: string
+  source: string
+}
+
 export function jsLabDeclaredVariableNames(code: string) {
   const names: string[] = []
   const declaration = /(?:^|[;\n\r])\s*(?:let|const|var)\s+([A-Za-z_$][\w$]*)\s*(?==|;|,|\n|\r|$)/g
@@ -49,6 +55,7 @@ function installJsLabRuntime(
   runtimeWindow: Window,
   runtimeDocument: Document,
   registrations: ExternalFunctionRegistration[],
+  rawLibraries: RawJavaScriptRuntimeLibrary[],
   registryFactory: ExternalFunctionRegistryFactory,
   runtimeValueStoreInstaller: RuntimeValueStoreInstaller,
   maxCodeCharacters: number,
@@ -73,9 +80,23 @@ function installJsLabRuntime(
     implementation: registration.implementation as (...inputs: unknown[]) => unknown,
     name: identifierFactory(registration.metadata.id, 'externalFunction'),
   }))
-  const duplicateFunctionName = functionBindings.find((binding, index) => (
-    functionBindings.findIndex((candidate) => candidate.name === binding.name) !== index
-  ))?.name
+  const rawBindings: Array<{ name: string; value: unknown }> = []
+  const rawLibraryErrors: string[] = []
+  rawLibraries.forEach((library) => {
+    try {
+      const loader = Function(library.source) as () => unknown
+      loader.call(runtimeWindow)
+      library.globalApis.forEach((api) => {
+        const value = (runtimeWindow as unknown as Record<string, unknown>)[api.name]
+        if (value === undefined) throw new Error(`no expuso “${api.name}”`)
+        rawBindings.push({ name: api.name, value })
+      })
+    } catch (cause) {
+      rawLibraryErrors.push(`${library.id}: ${cause instanceof Error ? cause.message : 'no se pudo cargar'}`)
+    }
+  })
+  const allBindingNames = [...functionBindings.map((binding) => binding.name), ...rawBindings.map((binding) => binding.name)]
+  const duplicateFunctionName = allBindingNames.find((name, index) => allBindingNames.indexOf(name) !== index)
 
   const setStatus = (root: HTMLElement, message: string, isError = false) => {
     const status = root.querySelector<HTMLElement>('[data-builder-js-lab-status]')
@@ -191,6 +212,10 @@ function installJsLabRuntime(
   }
 
   const execute = async (root: HTMLElement) => {
+    if (rawLibraryErrors.length) {
+      setStatus(root, `No se pudo cargar una biblioteca global: ${rawLibraryErrors[0]}.`, true)
+      return
+    }
     if (duplicateFunctionName) {
       setStatus(root, `Dos funciones producen el mismo nombre JavaScript: ${duplicateFunctionName}.`, true)
       return
@@ -217,6 +242,7 @@ function installJsLabRuntime(
       const runtimeValues = runtimeValuesFor(root)
       const runner = new AsyncFunction(
         ...functionBindings.map((binding) => binding.name),
+        ...rawBindings.map((binding) => binding.name),
         'runtimeValues',
         `"use strict";\n${code}\nreturn Object.fromEntries([${variableNames.map((name) => (
           `[${JSON.stringify(name)}, typeof ${name} === "undefined" ? undefined : ${name}]`
@@ -224,6 +250,7 @@ function installJsLabRuntime(
       )
       const value = await runner(
         ...functionBindings.map((binding) => binding.implementation),
+        ...rawBindings.map((binding) => binding.value),
         runtimeValues,
       )
       const validator = registryFactory()
@@ -317,11 +344,13 @@ export function installExternalJsLabRuntime(
   runtimeWindow: Window = window,
   runtimeDocument: Document = document,
   registrations: ExternalFunctionRegistration[] = [],
+  rawLibraries: RawJavaScriptRuntimeLibrary[] = [],
 ) {
   return installJsLabRuntime(
     runtimeWindow,
     runtimeDocument,
     registrations,
+    rawLibraries,
     createExternalFunctionRegistry,
     installRuntimeValueStore,
     MAX_JS_LAB_CODE_CHARACTERS,
@@ -339,5 +368,5 @@ export function installExternalJsLabRuntime(
 }
 
 export function createJsLabRuntimeInstallationSource() {
-  return `(${installJsLabRuntime.toString()})(window, document, externalFunctionRegistrations, createExternalFunctionRegistry, installRuntimeValueStore, ${MAX_JS_LAB_CODE_CHARACTERS}, ${JSON.stringify(RUNTIME_VALUE_STORE_PROPERTY)}, ${JSON.stringify(RUNTIME_VALUE_EVENT)}, ${javascriptIdentifier.toString()}, ${JSON.stringify(RUNTIME_SOURCE_ID_ATTRIBUTE)}, ${JSON.stringify(RUNTIME_OUTPUT_ID_ATTRIBUTE)}, ${JSON.stringify(RUNTIME_SOURCE_NAME_ATTRIBUTE)}, ${JSON.stringify(RUNTIME_OUTPUT_NAME_ATTRIBUTE)}, ${JSON.stringify(RUNTIME_OUTPUT_TYPE_ATTRIBUTE)}, ${JSON.stringify(FUNCTION_RESULT_OUTPUT_ID)}, ${jsLabDeclaredVariableNames.toString()});`
+  return `(${installJsLabRuntime.toString()})(window, document, externalFunctionRegistrations, rawJavaScriptLibraries, createExternalFunctionRegistry, installRuntimeValueStore, ${MAX_JS_LAB_CODE_CHARACTERS}, ${JSON.stringify(RUNTIME_VALUE_STORE_PROPERTY)}, ${JSON.stringify(RUNTIME_VALUE_EVENT)}, ${javascriptIdentifier.toString()}, ${JSON.stringify(RUNTIME_SOURCE_ID_ATTRIBUTE)}, ${JSON.stringify(RUNTIME_OUTPUT_ID_ATTRIBUTE)}, ${JSON.stringify(RUNTIME_SOURCE_NAME_ATTRIBUTE)}, ${JSON.stringify(RUNTIME_OUTPUT_NAME_ATTRIBUTE)}, ${JSON.stringify(RUNTIME_OUTPUT_TYPE_ATTRIBUTE)}, ${JSON.stringify(FUNCTION_RESULT_OUTPUT_ID)}, ${jsLabDeclaredVariableNames.toString()});`
 }

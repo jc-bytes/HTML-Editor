@@ -16,6 +16,7 @@ export interface NavigationRuntimeConnection {
   event: 'click'
   sourcePage: string
   targetPage?: string
+  clearContext?: boolean
   url?: string
   context?: NavigationContext
 }
@@ -64,6 +65,7 @@ declare global {
 export function installNavigationRuntime(
   runtimeWindow: Window = window,
   runtimeDocument: Document = document,
+  runtimeValueStoreProperty = '__BUILDER_RUNTIME_VALUE_STORE__',
 ) {
   const config = runtimeWindow.__BUILDER_NAVIGATION__
   if (!config) return () => undefined
@@ -241,6 +243,21 @@ export function installNavigationRuntime(
     userRolesPromise = (async () => {
       const session = await authSessionPromise
       if (!session) return new Set<string>()
+      const appMetadata = session.user?.app_metadata
+      if (appMetadata && typeof appMetadata === 'object' && !Array.isArray(appMetadata)) {
+        const metadata = appMetadata as Record<string, unknown>
+        const roles = [
+          ...(typeof metadata.role === 'string' ? [metadata.role] : []),
+          ...(Array.isArray(metadata.roles)
+            ? metadata.roles.filter((role): role is string => typeof role === 'string')
+            : []),
+        ]
+        if (roles.length > 0) {
+          const roleSet = new Set(roles)
+          if (roleSet.has('admin')) roleSet.add('teacher')
+          return roleSet
+        }
+      }
       const source = runtimeConfig.dataSources?.find((candidate) =>
         /(^|_)roles?($|_)/i.test(candidate.name)
         || (candidate.type === 'supabase' && /(^|_)roles?($|_)/i.test(candidate.table)))
@@ -1118,7 +1135,7 @@ export function installNavigationRuntime(
           const selectedVideo = videoInput?.files?.[0]
           const preparedReferenceClip = videoInput?.__motionReferenceClip
           if (selectedVideo && source.table === 'practices' && !preparedReferenceClip) {
-            setMutationStatus(form, 'Analiza nuevamente el tramo del video antes de guardar.', true)
+            setMutationStatus(form, 'Espera a que termine el procesamiento del video antes de guardar.', true)
             return
           }
           if (!Object.keys(values).length) {
@@ -1166,7 +1183,7 @@ export function installNavigationRuntime(
               if (typeof practiceId !== 'string') {
                 throw new Error('Supabase no devolvió el identificador de la práctica.')
               }
-              setMutationStatus(form, 'Subiendo solamente el tramo seleccionado…')
+              setMutationStatus(form, 'Subiendo el video de referencia…')
               const mediaUrl = await uploadPracticeReferenceVideo(
                 source,
                 session,
@@ -1503,19 +1520,37 @@ export function installNavigationRuntime(
     status.setAttribute('role', isError ? 'alert' : 'status')
   }
 
+  function runtimeDataActionValue(reference: { key: string; path: string[] }) {
+    const store = (runtimeWindow as Window & Record<string, unknown>)[runtimeValueStoreProperty] as {
+      read?: (key: string) => { value: unknown } | undefined
+    } | undefined
+    const stored = store?.read?.(reference.key)
+    if (!stored) throw new Error('La variable seleccionada todavía no tiene datos.')
+    const value = reference.path.reduce<unknown>((current, part) => (
+      current && typeof current === 'object' ? (current as Record<string, unknown>)[part] : undefined
+    ), stored.value)
+    if (value === undefined) throw new Error('La variable seleccionada no existe en la salida actual.')
+    return value
+  }
+
   function dataActionValues(action: DataAction, element: HTMLElement) {
     const form = element instanceof HTMLFormElement ? element : element.closest('form')
-    if (!form) return null
-    if (!form.checkValidity()) {
+    const formMappings = action.fieldMappings.filter((mapping) => Boolean(mapping.inputName))
+    if (formMappings.length && !form) throw new Error('La acción necesita un formulario para leer sus campos.')
+    if (form && formMappings.length && !form.checkValidity()) {
       form.reportValidity()
       return null
     }
-    const controls = [...form.elements].filter((control): control is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
+    const controls = [...(form?.elements ?? [])].filter((control): control is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
       control instanceof HTMLInputElement
         || control instanceof HTMLSelectElement
         || control instanceof HTMLTextAreaElement)
     const values: Record<string, unknown> = {}
     action.fieldMappings.forEach((mapping) => {
+      if (mapping.runtimeValue) {
+        values[mapping.field] = runtimeDataActionValue(mapping.runtimeValue)
+        return
+      }
       const matchingControls = controls.filter((candidate) => candidate.name === mapping.inputName)
       const radio = matchingControls.find((candidate) =>
         candidate instanceof HTMLInputElement && candidate.type === 'radio' && candidate.checked)
@@ -1533,7 +1568,7 @@ export function installNavigationRuntime(
       }
       values[mapping.field] = control.value === '' ? null : control.value
     })
-    return { form, values }
+    return { form: form ?? undefined, values }
   }
 
   function fillDataActionForm(action: DataAction, element: HTMLElement, record: Record<string, unknown>) {
@@ -1544,6 +1579,7 @@ export function installNavigationRuntime(
         || control instanceof HTMLSelectElement
         || control instanceof HTMLTextAreaElement)
     action.fieldMappings.forEach((mapping) => {
+      if (!mapping.inputName) return
       const value = record[mapping.field]
       if (value === undefined || value === null) return
       controls.filter((control) => control.name === mapping.inputName).forEach((control) => {
@@ -1622,6 +1658,7 @@ export function installNavigationRuntime(
     const form = element instanceof HTMLFormElement ? element : element.closest('form')
     if (!form) return changes
     for (const mapping of action.fieldMappings) {
+      if (!mapping.inputName) continue
       const input = [...form.querySelectorAll<HTMLInputElement>('input[type="file"][data-builder-upload-bucket]')]
         .find((candidate) => candidate.name === mapping.inputName)
       if (!input || input.disabled) continue
@@ -1845,9 +1882,15 @@ export function installNavigationRuntime(
       setDataActionStatus(sourceElement, 'No se encontró el registro que quieres modificar.', true)
       return
     }
-    const collected = action.action === 'delete' || action.action === 'set'
-      ? undefined
-      : dataActionValues(action, sourceElement)
+    let collected: ReturnType<typeof dataActionValues> | undefined
+    try {
+      collected = action.action === 'delete' || action.action === 'set'
+        ? undefined
+        : dataActionValues(action, sourceElement)
+    } catch (cause) {
+      setDataActionStatus(sourceElement, cause instanceof Error ? cause.message : 'No se pudieron leer las variables.', true)
+      return
+    }
     if (action.action !== 'delete' && action.action !== 'set' && !collected) {
       setDataActionStatus(sourceElement, 'Completa los campos requeridos.', true)
       return
@@ -1909,7 +1952,7 @@ export function installNavigationRuntime(
         values[action.ownerField] = userId
       }
       if (action.action !== 'delete' && !Object.keys(values).length) {
-        throw new Error('Conecta al menos un campo del formulario.')
+        throw new Error('Conecta al menos un campo o una variable.')
       }
       if (action.action === 'upsert' && action.ownerField) {
         url.searchParams.set('on_conflict', action.ownerField)
@@ -1934,7 +1977,7 @@ export function installNavigationRuntime(
       }
       if (fileChanges.stale.length) await deleteStorageFiles(source, session, fileChanges.stale)
       setDataActionStatus(sourceElement, action.successMessage)
-      if (action.action === 'create') collected?.form.reset()
+      if (action.action === 'create') collected?.form?.reset()
       if (action.action === 'delete') {
         sourceElement.closest<HTMLElement>('[data-builder-repeater-instance]')?.remove()
       }
@@ -1960,8 +2003,12 @@ export function installNavigationRuntime(
 
   function execute(connection: NavigationRuntimeConnection, sourceElement?: Element | null) {
     // Keep the selected record while a multi-page activity advances. A later
-    // connection may add or replace context keys without losing the rest.
-    const context = { ...activeContext, ...resolvedConnectionContext(connection, sourceElement) }
+    // connection may add or replace context keys without losing the rest. A
+    // context-free destination can explicitly discard the current record.
+    const context = {
+      ...(connection.clearContext ? {} : activeContext),
+      ...resolvedConnectionContext(connection, sourceElement),
+    }
     if (runtimeConfig.transport === 'message') {
       sendMessage(connection, context)
       return
@@ -2010,6 +2057,23 @@ export function installNavigationRuntime(
       dataAction = runtimeConfig.dataActions?.find((candidate) =>
         candidate.pageId === runtimeConfig.currentPage
           && candidate.elementId === elementId)
+      if (!connection) {
+        const declaredAction = element.getAttribute('data-builder-flow-action')
+        const targetPage = element.getAttribute('data-builder-flow-target') || undefined
+        const url = element.getAttribute('data-builder-flow-url') || undefined
+        if ((declaredAction === 'navigate' && targetPage)
+          || declaredAction === 'back'
+          || (declaredAction === 'url' && url)) {
+          connection = {
+            action: declaredAction,
+            elementId: elementId || '',
+            event: 'click',
+            sourcePage: runtimeConfig.currentPage,
+            ...(targetPage ? { targetPage } : {}),
+            ...(url ? { url } : {}),
+          }
+        }
+      }
       if (connection || recordToggle || dataAction) break
       element = element.parentElement
     }
@@ -2066,7 +2130,7 @@ export function installNavigationRuntime(
 }
 
 export function createNavigationRuntimeSource() {
-  return `(${installNavigationRuntime.toString()})();\n`
+  return `(${installNavigationRuntime.toString()})(window, document, '__BUILDER_RUNTIME_VALUE_STORE__');\n`
 }
 
 export function createNavigationConfigSource(config: NavigationRuntimeConfig) {

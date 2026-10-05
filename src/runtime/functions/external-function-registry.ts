@@ -24,11 +24,14 @@ export type ExternalFunctionInputMetadata =
 
 export interface ExternalFunctionMetadata {
   description: string
+  exposedFunction?: string
   id: string
   inputs: ExternalFunctionInputMetadata[]
   library?: ExternalFunctionLibraryIdentity
   name: string
   output: { type: ExternalFunctionValueType }
+  source?: string
+  usage?: string
 }
 
 export type ExternalFunctionImplementation = (...inputs: never[]) => unknown | Promise<unknown>
@@ -181,6 +184,16 @@ export function createExternalFunctionRegistry() {
       return 'La función necesita un nombre.'
     }
     if (typeof metadata.description !== 'string') return 'La descripción de la función no es válida.'
+    if (metadata.exposedFunction !== undefined
+      && (typeof metadata.exposedFunction !== 'string' || !/^[A-Za-z_$][\w$]*$/.test(metadata.exposedFunction))) {
+      return 'La función expuesta no es válida.'
+    }
+    if (metadata.source !== undefined && (typeof metadata.source !== 'string' || !metadata.source.trim())) {
+      return 'El código fuente documentado no es válido.'
+    }
+    if (metadata.usage !== undefined && (typeof metadata.usage !== 'string' || !metadata.usage.trim())) {
+      return 'El ejemplo de uso de la función no es válido.'
+    }
     if (metadata.library && (
       typeof metadata.library !== 'object'
       || typeof metadata.library.id !== 'string' || !identifier.test(metadata.library.id)

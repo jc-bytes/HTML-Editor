@@ -8,6 +8,8 @@ import {
   MAX_EXTERNAL_FUNCTION_JSON_INPUT_CHARACTERS,
 } from './function-block-runtime'
 import { RUNTIME_VALUE_EVENT } from '../values/runtime-value-contract'
+import { signMovementToolsLibrary } from '../../external-libraries/sign-movement-tools'
+import { mediaPipeDataLibrary } from '../../external-libraries/mediapipe-data'
 
 function functionForm(functionId = 'double-number') {
   document.body.innerHTML = `<form data-builder-function-id="${functionId}">
@@ -322,7 +324,11 @@ describe('external function block runtime', () => {
       { leftHandLandmarks: [[]] },
       { leftHandLandmarks: [landmarks] },
     ]
-    const dispose = installExternalFunctionBlockRuntime(window, document)
+    const dispose = installExternalFunctionBlockRuntime(window, document, [
+      ...externalFunctionRegistrations,
+      ...signMovementToolsLibrary.functions,
+      ...mediaPipeDataLibrary.functions,
+    ])
     document.dispatchEvent(new CustomEvent(RUNTIME_VALUE_EVENT, { detail: {
       sourceId: 'motion-source', outputId: 'landmark-frames', type: 'json', value: frames,
     } }))

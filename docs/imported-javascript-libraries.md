@@ -30,6 +30,33 @@ but that size limit is not a security sandbox. Only run code you understand.
 
 Visual Builder projects can import a local, self-contained `.js` file from the **Librerías** panel. Importing JavaScript executes code. Only import a file whose contents and source you trust.
 
+The JavaScript documentation dialog has two modes:
+
+- **Función compatible** describes an ordinary typed function and keeps the existing
+  metadata-driven inputs, output validation, and graphical-function behavior.
+- **Biblioteca global** preserves a self-contained browser library unchanged and
+  declares the global API it exposes, such as `DynamicTimeWarping`. It does not invent
+  typed inputs or an output for a constructor. The source loads before JS Lab executes
+  and is embedded in Test Preview and the static ZIP; no CDN or package installation is
+  required. This mode asks only for name, description, type, usage example, and code;
+  the exposed API name is detected from the source and shown for confirmation. Choosing
+  **Usar** inserts the documented usage example into JS Lab.
+
+Raw global-library source is persisted with the project and remains limited to 256 KiB.
+It may not contain `import` or `export`. Its declared API must be a valid JavaScript
+identifier and must actually be exposed when the page runtime loads. Because loading
+the library executes its top-level code, it has the same executable-code security
+warning as other imported JavaScript.
+
+JS Lab publishes every declared top-level variable as JSON. Constructor instances and
+functions are not JSON values, so use a constructor inline when only its final result
+should be published. For example:
+
+```js
+let distance = new DynamicTimeWarping(referenceSequence, learnerSequence, manhattan)
+  .getDistance()
+```
+
 The file must be an ES module with one default export matching the existing external-library model:
 
 ```js

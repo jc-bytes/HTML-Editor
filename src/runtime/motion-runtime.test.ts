@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMotionConfigSource, createMotionRuntimeSource } from './motion-runtime'
+
+afterEach(() => {
+  document.body.innerHTML = ''
+  delete window.__MOTION_ANALYSIS__
+  delete window.__BUILDER_RUNTIME_VALUE_STORE__
+  vi.restoreAllMocks()
+})
 
 describe('motion runtime source', () => {
   it('serializes a self-contained runtime that can start with no activities', () => {
@@ -30,6 +37,16 @@ describe('motion runtime source', () => {
     expect(source).toContain('Grabando movimiento…')
     expect(source).toContain('Capturando landmarks…')
     expect(source).toContain('Analizando todos los frames…')
+    expect(source).toContain('np.nan_to_num(keypoints)')
+    expect(source).toContain('results.pose_landmarks')
+    expect(source).toContain('left_hand = np.zeros(63).tolist()')
+    expect(source).toContain('right_hand = np.zeros(63).tolist()')
+    expect(source).toContain('prepareReferenceSequencesWithPython')
+    expect(source).toContain('pythonSequences')
+    expect(source).toContain('autoAnalyzesReferenceUpload ? 4 : 3')
+    expect(source).toContain('frames: autoAnalyzesReferenceUpload ? undefined : preparedInput')
+    expect(source).toContain('poseLandmarks: frame.poseLandmarks')
+    expect(source).toContain('library: "landmark_utils"')
     expect(source).toContain('requestVideoFrameCallback')
     expect(source).not.toContain('Math.min(48')
     expect(source).toContain('Cancelar análisis')
@@ -37,6 +54,7 @@ describe('motion runtime source', () => {
     expect(source).not.toContain('motion:live-result')
     expect(source).toContain('builder:runtime-value')
     expect(source).toContain('publishAnalyzeLandmarks(activity, captured.landmarkFrames)')
+    expect(source).toContain('activity.runtimeOutputId || runtimeHelpers.landmarkFramesOutputId')
     expect(source).toContain('activity.mode !== "analyze"')
     expect(source).toContain('landmark-frames')
     expect(source).toContain('Number.POSITIVE_INFINITY')
@@ -105,6 +123,8 @@ describe('motion runtime source', () => {
     expect(source).toContain('drawReferenceFrame')
     expect(source).toContain('referencePreview.style.left')
     expect(source).toContain('Puntos de referencia listos')
+    expect(source).toContain('const legacyVersion = record.version === 2')
+    expect(source).toContain('detectorTask: legacyVersion ? "holistic-landmarker"')
     expect(source).toContain('/storage/v1/object/authenticated/')
     expect(source).toContain('storageAddress')
     expect(source).toContain('Detener y comparar')
@@ -124,6 +144,8 @@ describe('motion runtime source', () => {
     expect(source).toContain('suggestMotionStages')
     expect(source).toContain('compareMotionStages')
     expect(source).toContain('data-motion-stage-editor')
+    expect(source).toContain('if (autoAnalyzesReferenceUpload) {')
+    expect(source).toContain('motionInput?.querySelector("[data-motion-stage-overlay]")?.remove()')
     expect(source).toContain('motion-stage-timeline')
     expect(source).toContain('previewStageProgress')
     expect(source).toContain('setPointerCapture')
@@ -137,7 +159,96 @@ describe('motion runtime source', () => {
     expect(source).toContain('method: "PATCH"')
     expect(source).toContain('classList.toggle("is-mirrored"')
     expect(source).toContain('classList.remove("is-mirrored")')
-    expect(source).not.toContain('new Worker')
+    expect(source).toContain('new Worker')
+    expect(source).toContain('pyodide.loadPackage("numpy")')
+  })
+
+  it('renders stored landmarks from a legacy version 2 data reference', async () => {
+    const landmarkFrame = {
+      t: 0,
+      width: 640,
+      height: 480,
+      poseLandmarks: [[{ x: 0.5, y: 0.5, z: 0 }]],
+      leftHandLandmarks: [],
+      rightHandLandmarks: [],
+    }
+    document.body.innerHTML = `<section data-motion-activity data-motion-workspace
+      data-builder-element-id="legacy-reference">
+      <button data-motion-start></button>
+      <video data-motion-camera></video>
+      <span data-motion-status></span>
+      <video data-motion-reference-video hidden></video>
+      <canvas data-motion-reference-preview hidden></canvas>
+      <p data-motion-reference-empty></p>
+      <button data-motion-reference-replay disabled></button>
+      <span data-motion-reference-status></span>
+    </section>`
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+    const publish = vi.fn(() => true)
+    window.__BUILDER_RUNTIME_VALUE_STORE__ = {
+      has: vi.fn(() => false),
+      list: vi.fn(() => []),
+      publish,
+      read: vi.fn(() => undefined),
+    }
+
+    const config = {
+      currentPage: 'legacy-page',
+      dataSources: [{
+        id: 'legacy-practices',
+        name: 'Practices',
+        type: 'static',
+        records: [{
+          id: 'legacy-practice',
+          media_url: 'https://example.test/reference.mp4',
+          mediapipe_reference: {
+            version: 2,
+            durationMs: 1_000,
+            frames: [{
+              t: 0, handShape: [], location: [], orientation: [],
+              trajectory: [], facePosture: [], quality: 1,
+            }],
+            landmarkFrames: [landmarkFrame],
+          },
+        }],
+      }],
+      activities: [{
+        id: 'legacy-view',
+        runtimeSourceId: 'reference-view',
+        runtimeOutputId: 'reference_video_results',
+        pageId: 'legacy-page',
+        elementId: 'legacy-reference',
+        mode: 'analyze',
+        componentType: 'reference-view',
+        input: { type: 'camera', durationMs: 3_000, facingMode: 'user' },
+        reference: {
+          type: 'data', dataSourceId: 'legacy-practices', contextKey: 'record',
+          recordMode: 'first', templateField: 'mediapipe_reference', videoField: 'media_url',
+        },
+        referenceOutput: { type: 'download' },
+        detector: {
+          provider: 'mediapipe', task: 'holistic-landmarker',
+          modelUrl: 'https://example.test/holistic.task', minConfidence: 0.5,
+          delegate: 'auto', landmarks: { hands: true, pose: true, face: false },
+        },
+        evaluator: { type: 'quality', passingScore: 75 },
+        processing: { checkpointReduction: true, smoothing: 3 },
+        presentation: { referenceDisplay: 'video-reference', showResults: false },
+      }],
+    }
+
+    new Function(`${createMotionConfigSource(config as never)}\n${createMotionRuntimeSource()}`)()
+
+    await vi.waitFor(() => expect(document.querySelector('[data-motion-reference-status]'))
+      .toHaveTextContent('Video y referencia listos.'))
+    expect(document.querySelector('[data-motion-reference-preview]')).not.toHaveAttribute('hidden')
+    expect(document.querySelector('[data-motion-reference-replay]')).toBeEnabled()
+    expect(publish).toHaveBeenCalledWith({
+      sourceId: 'reference-view',
+      outputId: 'reference_video_results',
+      type: 'json',
+      value: [landmarkFrame],
+    })
   })
 
   it('serializes scoring without build-tool globals or missing helpers', () => {

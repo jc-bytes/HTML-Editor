@@ -79,6 +79,41 @@ describe('editable JS Lab runtime', () => {
     dispose()
   })
 
+  it('loads an unchanged global library before JS Lab and exposes its constructor', async () => {
+    document.body.innerHTML = labMarkup('let result = new ExampleLibrary(7).getValue();')
+    const source = `(function () {
+      "use strict";
+      function ExampleLibrary(value) { this.getValue = function () { return value * 2; }; }
+      var root = typeof self === "object" && self.self === self && self || this;
+      root.ExampleLibrary = ExampleLibrary;
+    }());`
+    const dispose = installExternalJsLabRuntime(window, document, [], [{
+      globalApis: [{ name: 'ExampleLibrary' }], id: 'example-library', source,
+    }])
+
+    document.querySelector<HTMLButtonElement>('[data-builder-js-lab-run]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(document.querySelector('[data-builder-js-lab-result]')?.textContent)
+      .toBe('{\n  "result": 14\n}')
+    dispose()
+  })
+
+  it('contains raw global source in the self-contained Preview/export runtime', async () => {
+    document.body.innerHTML = labMarkup('let result = RawTool.value();')
+    const source = createFunctionBlockRuntimeSource([], [{
+      globalApis: [{ name: 'RawTool' }],
+      id: 'raw-tool',
+      source: 'this.RawTool = { value: function () { return 9; } };',
+    }])
+    Function('window', 'document', source)(window, document)
+
+    document.querySelector<HTMLButtonElement>('[data-builder-js-lab-run]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(document.querySelector('[data-builder-js-lab-result]')?.textContent).toBe('{\n  "result": 9\n}')
+  })
+
   it('provides cloned runtime producer values through readable runtimeValues aliases', async () => {
     document.body.innerHTML = `<section data-builder-runtime-source-id="input-1"
       data-builder-runtime-source-name="Input Number"

@@ -13,6 +13,11 @@ import {
 } from '../../../runtime/motion-runtime'
 import { createFunctionBlockRuntimeSource } from '../../../runtime/functions/function-block-runtime'
 import { createRuntimeValueStoreSource } from '../../../runtime/values/runtime-value-store'
+import {
+  createPythonLabConfigSource,
+  createPythonLabRuntimeSource,
+  PYODIDE_ASSET_FILES,
+} from '../../../runtime/python/python-lab-runtime'
 
 const textDecoder = new TextDecoder()
 const runtimePath = 'builder-runtime/navigation.js'
@@ -20,6 +25,7 @@ const overridesPath = 'builder-runtime/overrides.css'
 const functionRuntimePath = 'builder-runtime/functions.js'
 const valueRuntimePath = 'builder-runtime/runtime-values.js'
 const motionRuntimePath = 'motion-runtime/analysis.js'
+const pythonRuntimePath = 'builder-runtime/python.js'
 
 function bytesToBase64(bytes: Uint8Array) {
   let binary = ''
@@ -38,7 +44,7 @@ function injectNavigationRuntime(
   page: ProjectPage,
 ) {
   const document = new DOMParser().parseFromString(markup, 'text/html')
-  document.querySelectorAll('[data-builder-config], [data-builder-runtime], [data-builder-overrides], [data-builder-runtime-values], [data-builder-function-runtime], [data-motion-config], [data-motion-runtime]')
+  document.querySelectorAll('[data-builder-config], [data-builder-runtime], [data-builder-overrides], [data-builder-runtime-values], [data-builder-function-runtime], [data-builder-python-config], [data-builder-python-runtime], [data-motion-config], [data-motion-runtime]')
     .forEach((node) => node.remove())
   applyContentOverrides(document, bundle.manifest, page.id)
 
@@ -83,11 +89,23 @@ function injectNavigationRuntime(
   runtimeScript.src = relativeProjectPath(page.file, runtimePath)
   document.body.append(configScript, runtimeScript)
 
-  if (document.querySelector('[data-builder-runtime-source-id],[data-builder-function-id],[data-builder-js-lab]')) {
+  if (document.querySelector('[data-builder-runtime-source-id],[data-builder-function-id],[data-builder-js-lab],[data-builder-python-lab],[data-builder-variable-display]')) {
     const valueRuntime = document.createElement('script')
     valueRuntime.dataset.builderRuntimeValues = 'true'
     valueRuntime.src = relativeProjectPath(page.file, valueRuntimePath)
     document.body.append(valueRuntime)
+  }
+
+  if (document.querySelector('[data-builder-python-lab]')) {
+    const config = document.createElement('script')
+    config.dataset.builderPythonConfig = 'true'
+    const relativeAssets = relativeProjectPath(page.file, 'pyodide/')
+    config.textContent = createPythonLabConfigSource(`__RELATIVE__${relativeAssets}`)
+      .replace(JSON.stringify(`__RELATIVE__${relativeAssets}`), `new URL(${JSON.stringify(relativeAssets)},document.baseURI).href`)
+    const runtime = document.createElement('script')
+    runtime.dataset.builderPythonRuntime = 'true'
+    runtime.src = relativeProjectPath(page.file, pythonRuntimePath)
+    document.body.append(config, runtime)
   }
 
   if (document.querySelector('[data-builder-function-id],[data-builder-js-lab]')) {
@@ -152,7 +170,7 @@ export class ZipProjectExporter implements ProjectExporter {
       if (file.path === 'project.json' || file.path === runtimePath || file.path === overridesPath
         || file.path === functionRuntimePath
         || file.path === valueRuntimePath
-        || file.path === motionRuntimePath) {
+        || file.path === motionRuntimePath || file.path === pythonRuntimePath) {
         continue
       }
 
@@ -172,7 +190,9 @@ export class ZipProjectExporter implements ProjectExporter {
       const file = bundle.files.find((candidate) => candidate.path === page.file)
       if (!file) return false
       const markup = textDecoder.decode(file.bytes)
-      return markup.includes('data-builder-runtime-source-id') || markup.includes('data-builder-function-id')
+      return markup.includes('data-builder-runtime-source-id')
+        || markup.includes('data-builder-function-id')
+        || markup.includes('data-builder-variable-display')
     })
     if (usesValueRuntime) archive.file(valueRuntimePath, createRuntimeValueStoreSource())
     const usesFunctionRuntime = bundle.manifest.pages.some((page) => {
@@ -187,6 +207,22 @@ export class ZipProjectExporter implements ProjectExporter {
           ? textDecoder.decode(bundledFunctionRuntime.bytes)
           : createFunctionBlockRuntimeSource(),
       )
+    }
+    const usesPythonLab = bundle.manifest.pages.some((page) => {
+      const file = bundle.files.find((candidate) => candidate.path === page.file)
+      return file ? textDecoder.decode(file.bytes).includes('data-builder-python-lab') : false
+    })
+    if (usesPythonLab) {
+      const bundledPythonRuntime = bundle.files.find((file) => file.path === pythonRuntimePath)
+      archive.file(pythonRuntimePath, bundledPythonRuntime
+        ? textDecoder.decode(bundledPythonRuntime.bytes)
+        : createPythonLabRuntimeSource())
+      for (const asset of PYODIDE_ASSET_FILES) {
+        const assetUrl = new URL(`${import.meta.env.BASE_URL}pyodide/${asset}`, window.location.origin)
+        const response = await fetch(assetUrl)
+        if (!response.ok) throw new Error(`No se pudo incluir Pyodide: ${asset}.`)
+        archive.file(`pyodide/${asset}`, await response.arrayBuffer())
+      }
     }
     if (bundle.manifest.motionActivities?.length) {
       archive.file(motionRuntimePath, createMotionRuntimeSource())

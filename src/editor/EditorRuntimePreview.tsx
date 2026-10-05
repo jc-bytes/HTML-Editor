@@ -10,6 +10,7 @@ import type { EditorPreviewSession } from './editor-preview-session'
 import {
   editorPreviewPageAccess,
   editorPreviewPath,
+  resolveEditorPreviewContext,
   resolveEditorPreviewPath,
 } from './editor-preview-session'
 
@@ -33,6 +34,7 @@ export function EditorRuntimePreview({
 }: EditorRuntimePreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
+  const runtimeActionRef = useRef(onRuntimeAction)
   const [scale, setScale] = useState(1)
   const [routeInput, setRouteInput] = useState('')
   const [routeError, setRouteError] = useState('')
@@ -48,10 +50,35 @@ export function EditorRuntimePreview({
   }, [page, session.bundle, session.context])
 
   useEffect(() => {
+    runtimeActionRef.current = onRuntimeAction
+  }, [onRuntimeAction])
+
+  useEffect(() => {
     if (!page) return
     setRouteInput(editorPreviewPath(page))
     setRouteError('')
   }, [page])
+
+  useEffect(() => {
+    if (!page) return
+    let cancelled = false
+
+    void resolveEditorPreviewContext(
+      session.bundle,
+      page.id,
+      session.context,
+    ).then((context) => {
+      if (cancelled || JSON.stringify(context) === JSON.stringify(session.context)) return
+      runtimeActionRef.current({
+        source: 'builder-navigation-runtime',
+        action: 'navigate',
+        targetPage: page.id,
+        context,
+      })
+    })
+
+    return () => { cancelled = true }
+  }, [page, session.bundle, session.context])
 
   useEffect(() => {
     function receiveRuntimeMessage(event: MessageEvent<unknown>) {

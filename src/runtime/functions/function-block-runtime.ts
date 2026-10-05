@@ -17,6 +17,7 @@ import { installRuntimeValueStore } from '../values/runtime-value-store'
 import {
   createJsLabRuntimeInstallationSource,
   installExternalJsLabRuntime,
+  type RawJavaScriptRuntimeLibrary,
 } from './js-lab-runtime'
 
 export const EXTERNAL_FUNCTION_ATTRIBUTE = 'data-builder-function-id'
@@ -182,6 +183,7 @@ export function installExternalFunctionBlockRuntime(
   runtimeWindow: Window = window,
   runtimeDocument: Document = document,
   registrations: ExternalFunctionRegistration[] = externalFunctionRegistrations,
+  rawLibraries: RawJavaScriptRuntimeLibrary[] = [],
 ) {
   const disposeFunctionBlocks = installFunctionBlockRuntime(
     runtimeWindow,
@@ -197,7 +199,7 @@ export function installExternalFunctionBlockRuntime(
     RUNTIME_OUTPUT_ID_ATTRIBUTE,
     FUNCTION_RESULT_OUTPUT_ID,
   )
-  const disposeJsLab = installExternalJsLabRuntime(runtimeWindow, runtimeDocument, registrations)
+  const disposeJsLab = installExternalJsLabRuntime(runtimeWindow, runtimeDocument, registrations, rawLibraries)
   return () => {
     disposeJsLab()
     disposeFunctionBlocks()
@@ -206,6 +208,7 @@ export function installExternalFunctionBlockRuntime(
 
 export function createFunctionBlockRuntimeSource(
   registrations: ExternalFunctionRegistration[] = externalFunctionRegistrations,
+  rawLibraries: RawJavaScriptRuntimeLibrary[] = [],
 ) {
   const serializedRegistrations = registrations.map((registration) => {
     const serialized = serializeExternalFunctionImplementation(registration.implementation)
@@ -219,6 +222,7 @@ export function createFunctionBlockRuntimeSource(
     `const createExternalFunctionRegistry = ${createExternalFunctionRegistry.toString()};`,
     `const installRuntimeValueStore = ${installRuntimeValueStore.toString()};`,
     `const externalFunctionRegistrations = [${serializedRegistrations}];`,
+    `const rawJavaScriptLibraries = ${JSON.stringify(rawLibraries).replaceAll('<', '\\u003c')};`,
     `(${installFunctionBlockRuntime.toString()})(window, document, externalFunctionRegistrations, createExternalFunctionRegistry, installRuntimeValueStore, ${MAX_EXTERNAL_FUNCTION_JSON_INPUT_CHARACTERS}, ${JSON.stringify(RUNTIME_VALUE_EVENT)}, ${JSON.stringify(RUNTIME_VALUE_STORE_PROPERTY)}, ${JSON.stringify(FUNCTION_INPUT_SOURCE_ATTRIBUTE_PREFIX)}, ${JSON.stringify(RUNTIME_SOURCE_ID_ATTRIBUTE)}, ${JSON.stringify(RUNTIME_OUTPUT_ID_ATTRIBUTE)}, ${JSON.stringify(FUNCTION_RESULT_OUTPUT_ID)});`,
     createJsLabRuntimeInstallationSource(),
   ].join('\n')

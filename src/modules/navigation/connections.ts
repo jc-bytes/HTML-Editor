@@ -12,6 +12,7 @@ export interface ConnectionDraft {
   elementId: string
   sourcePage: string
   targetPage?: string
+  clearContext?: boolean
   url?: string
   context?: NavigationContext
 }
@@ -60,6 +61,7 @@ export function saveConnection(
     event: 'click',
     action: draft.action,
     ...(draft.action === 'navigate' ? { targetPage: draft.targetPage } : {}),
+    ...(draft.action === 'navigate' && draft.clearContext ? { clearContext: true } : {}),
     ...(draft.action === 'navigate' && draft.context
       ? { context: draft.context }
       : {}),

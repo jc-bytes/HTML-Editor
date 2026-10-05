@@ -19,6 +19,20 @@ function importedLibrary(id = 'simple-tools', functionId = 'multiply') {
 }
 
 describe('project external libraries', () => {
+  it('restores raw global JavaScript libraries without registering fake functions', () => {
+    const restored = createProjectExternalLibraries([{
+      description: 'Constructor API.', fileName: 'raw-tool.js', formatVersion: 1,
+      functions: [], globalApis: [{ description: 'Creates a tool.', name: 'RawTool', usage: 'let tool = new RawTool();' }],
+      id: 'raw-tool', kind: 'raw-global', name: 'Raw Tool', source: 'this.RawTool = function RawTool() {};',
+    }])
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) return
+    expect(restored.value.listRawLibraries()).toEqual([expect.objectContaining({
+      id: 'raw-tool', kind: 'raw-global', source: expect.stringContaining('RawTool'),
+    })])
+    expect(restored.value.listFunctionRegistrations().some(({ metadata }) => metadata.id === 'raw-tool')).toBe(false)
+  })
+
   it('combines built-in and persisted imported libraries through one registry', async () => {
     const imported = importedLibrary()
     expect(imported.ok).toBe(true)
@@ -32,8 +46,6 @@ describe('project external libraries', () => {
         ['math-tools', 'built-in'],
         ['array-tools', 'built-in'],
         ['sequence-tools', 'built-in'],
-        ['sign-movement-tools', 'built-in'],
-        ['mediapipe-data', 'built-in'],
         ['vector-tools', 'built-in'],
         ['time-series-tools', 'built-in'],
         ['simple-tools', 'imported'],
@@ -57,14 +69,12 @@ describe('project external libraries', () => {
     if (!conflict.ok) return
     expect(createProjectExternalLibraries([conflict.value]))
       .toEqual(expect.objectContaining({ ok: false }))
-    expect(original.value.listLibraries()).toHaveLength(7)
+    expect(original.value.listLibraries()).toHaveLength(5)
     expect(original.value.listLibraries()[0].id).toBe('math-tools')
     expect(original.value.listLibraries()[1].id).toBe('array-tools')
     expect(original.value.listLibraries()[2].id).toBe('sequence-tools')
-    expect(original.value.listLibraries()[3].id).toBe('sign-movement-tools')
-    expect(original.value.listLibraries()[4].id).toBe('mediapipe-data')
-    expect(original.value.listLibraries()[5].id).toBe('vector-tools')
-    expect(original.value.listLibraries()[6].id).toBe('time-series-tools')
+    expect(original.value.listLibraries()[3].id).toBe('vector-tools')
+    expect(original.value.listLibraries()[4].id).toBe('time-series-tools')
   })
 
   it('preserves imported array metadata and implementations across project serialization', async () => {

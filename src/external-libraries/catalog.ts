@@ -3,8 +3,6 @@ import { createExternalLibraryRegistry } from '../runtime/functions/external-lib
 import { mathToolsLibrary } from './math-tools'
 import { arrayToolsLibrary } from './array-tools'
 import { sequenceToolsLibrary } from './sequence-tools'
-import { signMovementToolsLibrary } from './sign-movement-tools'
-import { mediaPipeDataLibrary } from './mediapipe-data'
 import { vectorToolsLibrary } from './vector-tools'
 import { timeSeriesToolsLibrary } from './time-series-tools'
 
@@ -12,8 +10,6 @@ export const externalLibraries = [
   mathToolsLibrary,
   arrayToolsLibrary,
   sequenceToolsLibrary,
-  signMovementToolsLibrary,
-  mediaPipeDataLibrary,
   vectorToolsLibrary,
   timeSeriesToolsLibrary,
 ]

@@ -61,6 +61,22 @@ describe('new editor project export', () => {
     expect(runtime).toContain('data-builder-js-lab-run')
   })
 
+  it('includes raw global libraries in the offline JS Lab runtime', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'home', name: 'Home', html: '<section data-builder-js-lab></section>',
+    }], 'home')
+    const withRuntime = addProjectFunctionRuntime(bundle, [], [{
+      globalApis: [{ name: 'DynamicTimeWarping' }], id: 'dynamic-time-warping',
+      source: 'this.DynamicTimeWarping = function DynamicTimeWarping() {};',
+    }])
+    const runtime = new TextDecoder().decode(
+      withRuntime.files.find((file) => file.path === 'builder-runtime/functions.js')!.bytes,
+    )
+    expect(runtime).toContain('DynamicTimeWarping')
+    expect(runtime).toContain('rawJavaScriptLibraries')
+    expect(runtime).not.toContain('https://')
+  })
+
   it('fails project runtime generation when a placed function is unavailable', () => {
     const bundle = buildEditorProjectBundle([{
       id: 'home', name: 'Home', html: '<form data-builder-function-id="missing"></form>',
@@ -244,6 +260,31 @@ describe('new editor project export', () => {
     expect(bundle.manifest.dataActions).toEqual([expect.objectContaining({
       action: 'upsert', ownerField: 'user_id',
       fieldMappings: [{ field: 'display_name', inputName: 'display_name' }],
+    })])
+  })
+
+  it('exports a button that saves selected runtime variables', () => {
+    const bundle = buildEditorProjectBundle([{
+      id: 'practice', name: 'Practice', html: `<button data-builder-flow-action="create-record"
+        data-builder-flow-data-source="attempts-table" data-builder-flow-owner-field="user_id"
+        data-builder-flow-field-map='[{"field":"pose_error","runtimeValue":{"key":"js-lab::variables","path":["error_pose"]}}]'
+        data-builder-flow-success-message="Resultado guardado.">Guardar resultado</button>`,
+    }], 'practice', 'Practice', {
+      projectUrl: 'https://school.supabase.co',
+      publishableKey: 'sb_publishable_test_key_123456789',
+      tables: [{
+        id: 'attempts-table', name: 'practice_attempts', access: 'user_owned', relations: [],
+        fields: [{ id: 'pose-error', name: 'pose_error', type: 'number' }],
+      }],
+    })
+
+    expect(bundle.manifest.dataActions).toEqual([expect.objectContaining({
+      action: 'create',
+      ownerField: 'user_id',
+      fieldMappings: [{
+        field: 'pose_error',
+        runtimeValue: { key: 'js-lab::variables', path: ['error_pose'] },
+      }],
     })])
   })
 

@@ -1,109 +1,256 @@
--- Lengua de Señas Panameña (LSP) — first complete schema
--- Paste this same file into the website's Datos > Mis datos > SQL importer,
--- then run it once in Supabase > SQL Editor.
+-- Lengua de Señas Panameña (LSP) — simplified schema and migration
+--
+-- Run this file once in Supabase > SQL Editor. It is safe to run again.
+-- The application keeps only:
+--   1. auth.users            (managed by Supabase Auth)
+--   2. public.practices      (teacher reference videos and landmark sequences)
+--   3. public.practice_attempts (student DTW results)
+--
 
 begin;
 
 create schema if not exists private;
 revoke all on schema private from public;
 
--- @builder-access user_owned
-create table if not exists public.profiles (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null unique references auth.users(id) on delete cascade,
-  display_name text not null default 'Estudiante',
-  avatar_url text,
-  bio text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+-- ---------------------------------------------------------------------------
+-- 1. Preserve the useful data from the tables that are being retired.
+-- ---------------------------------------------------------------------------
 
--- Kept private in the visual editor because users must never assign themselves
--- the teacher role. A user can have both student and teacher rows.
--- @builder-access private
-create table if not exists public.user_roles (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  role text not null check (role in ('student', 'teacher')),
-  created_at timestamptz not null default now(),
-  constraint user_roles_user_role_key unique (user_id, role)
-);
+-- Move profile values into Supabase Auth user metadata. These values are for
+-- display only; never use user_metadata to authorize a user.
+do $$
+begin
+  if to_regclass('public.profiles') is not null then
+    update auth.users as users
+    set raw_user_meta_data = coalesce(users.raw_user_meta_data, '{}'::jsonb)
+      || jsonb_strip_nulls(jsonb_build_object(
+        'display_name', profiles.display_name,
+        'avatar_url', profiles.avatar_url,
+        'bio', profiles.bio
+      ))
+    from public.profiles as profiles
+    where profiles.user_id = users.id;
+  end if;
+end
+$$;
+
+-- Move authorization roles into protected app_metadata. If an old account has
+-- more than one role, keep the most privileged one.
+do $$
+begin
+  if to_regclass('public.user_roles') is not null then
+    update auth.users as users
+    set raw_app_meta_data = jsonb_set(
+      coalesce(users.raw_app_meta_data, '{}'::jsonb),
+      '{role}',
+      to_jsonb(roles.role),
+      true
+    )
+    from (
+      select user_id,
+        case
+          when bool_or(role = 'admin') then 'admin'
+          when bool_or(role = 'teacher') then 'teacher'
+          else 'student'
+        end as role
+      from public.user_roles
+      group by user_id
+    ) as roles
+    where roles.user_id = users.id
+      and nullif(users.raw_app_meta_data ->> 'role', '') is null;
+  end if;
+end
+$$;
+
+-- Existing accounts without an assigned role are students by default.
+update auth.users
+set raw_app_meta_data = jsonb_set(
+  coalesce(raw_app_meta_data, '{}'::jsonb),
+  '{role}',
+  '"student"'::jsonb,
+  true
+)
+where nullif(raw_app_meta_data ->> 'role', '') is null;
+
+-- ---------------------------------------------------------------------------
+-- 2. Remove obsolete automation, policies, and stored tables.
+-- ---------------------------------------------------------------------------
+
+drop trigger if exists on_auth_user_created on auth.users;
+do $$
+begin
+  if to_regclass('public.profiles') is not null then
+    execute 'drop trigger if exists profiles_set_updated_at on public.profiles';
+  end if;
+  if to_regclass('public.practice_attempts') is not null then
+    execute 'drop trigger if exists practice_attempts_refresh_progress on public.practice_attempts';
+  end if;
+end
+$$;
+
+-- Policies on retained tables may depend on an old role helper, so remove them
+-- before replacing that function.
+do $$
+declare policy_row record;
+begin
+  for policy_row in
+    select schemaname, tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename in ('practices', 'practice_attempts')
+  loop
+    execute format(
+      'drop policy if exists %I on %I.%I',
+      policy_row.policyname,
+      policy_row.schemaname,
+      policy_row.tablename
+    );
+  end loop;
+end
+$$;
+
+drop table if exists public.favorite_practices cascade;
+do $$
+begin
+  if exists (
+    select 1 from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'practice_progress'
+      and c.relkind in ('v', 'm')
+  ) then
+    execute 'drop view public.practice_progress cascade';
+  elsif to_regclass('public.practice_progress') is not null then
+    execute 'drop table public.practice_progress cascade';
+  end if;
+end
+$$;
+drop table if exists public.user_roles cascade;
+drop table if exists public.profiles cascade;
+
+drop function if exists private.handle_new_user() cascade;
+drop function if exists private.refresh_practice_progress() cascade;
+drop function if exists private.has_role(uuid, text) cascade;
+drop function if exists private.builder_has_any_role(text[]) cascade;
+
+-- ---------------------------------------------------------------------------
+-- 3. Create or update the two application tables.
+-- ---------------------------------------------------------------------------
 
 -- @builder-access public_read
 create table if not exists public.practices (
   id uuid primary key default gen_random_uuid(),
-  published boolean not null default false,
-  sort_order integer not null default 0,
-  created_at timestamptz not null default now(),
   created_by uuid references auth.users(id) on delete set null,
-  source text not null default 'teacher' check (source in ('system', 'teacher')),
   title text not null,
   description text,
   media_url text,
   mediapipe_reference jsonb,
+  published boolean not null default false,
   difficulty integer not null default 1 check (difficulty between 1 and 5),
   estimated_minutes integer check (estimated_minutes is null or estimated_minutes > 0),
+  source text not null default 'teacher' check (source in ('system', 'teacher')),
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint practices_source_owner_check check (
     source = 'system' or created_by is not null
   )
 );
 
--- Every attempt is history. The three most recent practices come from this
--- table, so a separate "recent" table would duplicate information.
+-- Compatibility additions let this migration upgrade an older generated table.
+alter table public.practices add column if not exists created_by uuid;
+alter table public.practices add column if not exists title text;
+alter table public.practices add column if not exists description text;
+alter table public.practices add column if not exists media_url text;
+alter table public.practices add column if not exists mediapipe_reference jsonb;
+alter table public.practices add column if not exists published boolean not null default false;
+alter table public.practices add column if not exists difficulty integer not null default 1;
+alter table public.practices add column if not exists estimated_minutes integer;
+alter table public.practices add column if not exists source text not null default 'teacher';
+alter table public.practices add column if not exists sort_order integer not null default 0;
+alter table public.practices add column if not exists created_at timestamptz not null default now();
+alter table public.practices add column if not exists updated_at timestamptz not null default now();
+
 -- @builder-access user_owned
 create table if not exists public.practice_attempts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  created_at timestamptz not null default now(),
   practice_id uuid not null references public.practices(id) on delete cascade,
   score numeric check (score is null or score between 0 and 100),
   feedback text,
   mediapipe_result jsonb,
-  duration_seconds integer check (duration_seconds is null or duration_seconds >= 0)
+  duration_seconds integer check (duration_seconds is null or duration_seconds >= 0),
+  created_at timestamptz not null default now()
 );
 
--- One summary row per student and practice for fast progress screens.
--- @builder-access user_owned
-create table if not exists public.practice_progress (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  practice_id uuid not null references public.practices(id) on delete cascade,
-  status text not null default 'not_started'
-    check (status in ('not_started', 'in_progress', 'completed')),
-  best_score numeric check (best_score is null or best_score between 0 and 100),
-  attempts_count integer not null default 0 check (attempts_count >= 0),
-  last_practiced_at timestamptz,
-  constraint practice_progress_user_practice_key unique (user_id, practice_id)
-);
+alter table public.practice_attempts add column if not exists user_id uuid;
+alter table public.practice_attempts add column if not exists practice_id uuid;
+alter table public.practice_attempts add column if not exists score numeric;
+alter table public.practice_attempts add column if not exists feedback text;
+alter table public.practice_attempts add column if not exists mediapipe_result jsonb;
+alter table public.practice_attempts add column if not exists duration_seconds integer;
+alter table public.practice_attempts add column if not exists created_at timestamptz not null default now();
 
--- @builder-access user_owned
-create table if not exists public.favorite_practices (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  practice_id uuid not null references public.practices(id) on delete cascade,
-  constraint favorite_practices_user_practice_key unique (user_id, practice_id)
-);
+-- The UI may hide feedback for now, but the builder's generic motion saver still
+-- supports this optional summary field.
 
-create or replace function private.has_role(requested_user_id uuid, requested_role text)
+-- Add foreign keys missing from older generated versions without duplicating
+-- constraints that already exist.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.practices'::regclass
+      and contype = 'f'
+      and conname = 'practices_created_by_fkey'
+  ) then
+    alter table public.practices
+      add constraint practices_created_by_fkey
+      foreign key (created_by) references auth.users(id) on delete set null;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.practice_attempts'::regclass
+      and contype = 'f'
+      and conname = 'practice_attempts_user_id_fkey'
+  ) then
+    alter table public.practice_attempts
+      add constraint practice_attempts_user_id_fkey
+      foreign key (user_id) references auth.users(id) on delete cascade;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.practice_attempts'::regclass
+      and contype = 'f'
+      and conname = 'practice_attempts_practice_id_fkey'
+  ) then
+    alter table public.practice_attempts
+      add constraint practice_attempts_practice_id_fkey
+      foreign key (practice_id) references public.practices(id) on delete cascade;
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 4. Role helper, timestamps, RLS, and least-privilege grants.
+-- ---------------------------------------------------------------------------
+
+create or replace function private.current_user_has_any_role(required_roles text[])
 returns boolean
 language sql
 stable
-security definer
+security invoker
 set search_path = ''
 as $$
-  select exists (
-    select 1
-    from public.user_roles
-    where user_id = requested_user_id and role = requested_role
-  );
+  select coalesce((select auth.jwt()) -> 'app_metadata' ->> 'role', 'student')
+    = any(required_roles)
+    or coalesce((select auth.jwt()) -> 'app_metadata' ->> 'role', 'student') = 'admin';
 $$;
 
-revoke all on function private.has_role(uuid, text) from public;
+revoke all on function private.current_user_has_any_role(text[]) from public, anon;
 grant usage on schema private to authenticated;
-grant execute on function private.has_role(uuid, text) to authenticated;
+grant execute on function private.current_user_has_any_role(text[]) to authenticated;
 
 create or replace function private.set_updated_at()
 returns trigger
@@ -116,144 +263,176 @@ begin
 end;
 $$;
 
-drop trigger if exists profiles_set_updated_at on public.profiles;
-create trigger profiles_set_updated_at
-before update on public.profiles
-for each row execute function private.set_updated_at();
+revoke all on function private.set_updated_at() from public, anon, authenticated;
 
 drop trigger if exists practices_set_updated_at on public.practices;
 create trigger practices_set_updated_at
 before update on public.practices
 for each row execute function private.set_updated_at();
 
-create or replace function private.handle_new_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  insert into public.profiles (user_id, display_name)
-  values (
-    new.id,
-    coalesce(nullif(new.raw_user_meta_data ->> 'display_name', ''), 'Estudiante')
-  )
-  on conflict (user_id) do nothing;
-
-  insert into public.user_roles (user_id, role)
-  values (new.id, 'student')
-  on conflict (user_id, role) do nothing;
-
-  return new;
-end;
-$$;
-
-revoke all on function private.handle_new_user() from public;
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-after insert on auth.users
-for each row execute function private.handle_new_user();
-
--- Backfill accounts created before this schema was installed.
-insert into public.profiles (user_id, display_name)
-select
-  id,
-  coalesce(nullif(raw_user_meta_data ->> 'display_name', ''), 'Estudiante')
-from auth.users
-on conflict (user_id) do nothing;
-
-insert into public.user_roles (user_id, role)
-select id, 'student'
-from auth.users
-on conflict (user_id, role) do nothing;
-
-alter table public.profiles enable row level security;
-alter table public.user_roles enable row level security;
 alter table public.practices enable row level security;
 alter table public.practice_attempts enable row level security;
-alter table public.practice_progress enable row level security;
-alter table public.favorite_practices enable row level security;
 
-drop policy if exists profiles_read_own on public.profiles;
-drop policy if exists profiles_update_own on public.profiles;
-create policy profiles_read_own on public.profiles
-for select to authenticated using ((select auth.uid()) = user_id);
-create policy profiles_update_own on public.profiles
-for update to authenticated
-using ((select auth.uid()) = user_id)
-with check ((select auth.uid()) = user_id);
-
-revoke all on table public.profiles from anon, authenticated;
-grant select on table public.profiles to authenticated;
-grant update (display_name, avatar_url, bio) on table public.profiles to authenticated;
-
-drop policy if exists user_roles_read_own on public.user_roles;
-create policy user_roles_read_own on public.user_roles
-for select to authenticated using ((select auth.uid()) = user_id);
-revoke all on table public.user_roles from anon, authenticated;
-grant select on table public.user_roles to authenticated;
-
-drop policy if exists practices_public_read on public.practices;
-drop policy if exists practices_teacher_read_own on public.practices;
-drop policy if exists practices_teacher_insert on public.practices;
-drop policy if exists practices_teacher_update on public.practices;
-drop policy if exists practices_teacher_delete on public.practices;
 create policy practices_public_read on public.practices
-for select to anon, authenticated using (published = true);
+for select to anon, authenticated
+using (published = true);
+
 create policy practices_teacher_read_own on public.practices
 for select to authenticated
-using (created_by = (select auth.uid()) and private.has_role((select auth.uid()), 'teacher'));
+using (
+  created_by = (select auth.uid())
+  and private.current_user_has_any_role(array['teacher'])
+);
+
 create policy practices_teacher_insert on public.practices
 for insert to authenticated
 with check (
   created_by = (select auth.uid())
   and source = 'teacher'
-  and private.has_role((select auth.uid()), 'teacher')
+  and private.current_user_has_any_role(array['teacher'])
 );
+
 create policy practices_teacher_update on public.practices
 for update to authenticated
-using (created_by = (select auth.uid()) and private.has_role((select auth.uid()), 'teacher'))
-with check (created_by = (select auth.uid()) and private.has_role((select auth.uid()), 'teacher'));
+using (
+  created_by = (select auth.uid())
+  and private.current_user_has_any_role(array['teacher'])
+)
+with check (
+  created_by = (select auth.uid())
+  and source = 'teacher'
+  and private.current_user_has_any_role(array['teacher'])
+);
+
 create policy practices_teacher_delete on public.practices
 for delete to authenticated
-using (created_by = (select auth.uid()) and private.has_role((select auth.uid()), 'teacher'));
+using (
+  created_by = (select auth.uid())
+  and private.current_user_has_any_role(array['teacher'])
+);
+
+create policy practice_attempts_read_own on public.practice_attempts
+for select to authenticated
+using ((select auth.uid()) = user_id);
+
+create policy practice_attempts_insert_own on public.practice_attempts
+for insert to authenticated
+with check ((select auth.uid()) = user_id);
+
+-- Reference videos stay private; guests may sign only objects that belong to a
+-- published practice, while teachers retain access to their own drafts.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'practice-reference-videos',
+  'practice-reference-videos',
+  false,
+  104857600,
+  array['video/mp4', 'video/webm', 'video/quicktime']
+)
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists practice_reference_videos_read on storage.objects;
+drop policy if exists practice_reference_videos_read_own on storage.objects;
+drop policy if exists practice_reference_videos_insert on storage.objects;
+drop policy if exists practice_reference_videos_update on storage.objects;
+drop policy if exists practice_reference_videos_delete on storage.objects;
+
+create policy practice_reference_videos_read
+on storage.objects
+for select to anon, authenticated
+using (
+  bucket_id = 'practice-reference-videos'
+  and exists (
+    select 1
+    from public.practices as practice
+    where practice.id::text = (storage.foldername(name))[2]
+      and practice.published = true
+  )
+);
+
+create policy practice_reference_videos_read_own
+on storage.objects
+for select to authenticated
+using (
+  bucket_id = 'practice-reference-videos'
+  and exists (
+    select 1
+    from public.practices as practice
+    where practice.id::text = (storage.foldername(name))[2]
+      and practice.created_by = (select auth.uid())
+      and private.current_user_has_any_role(array['teacher'])
+  )
+);
+
+create policy practice_reference_videos_insert
+on storage.objects
+for insert to authenticated
+with check (
+  bucket_id = 'practice-reference-videos'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+  and exists (
+    select 1
+    from public.practices as practice
+    where practice.id::text = (storage.foldername(name))[2]
+      and practice.created_by = (select auth.uid())
+      and private.current_user_has_any_role(array['teacher'])
+  )
+);
+
+create policy practice_reference_videos_update
+on storage.objects
+for update to authenticated
+using (
+  bucket_id = 'practice-reference-videos'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+  and exists (
+    select 1
+    from public.practices as practice
+    where practice.id::text = (storage.foldername(name))[2]
+      and practice.created_by = (select auth.uid())
+      and private.current_user_has_any_role(array['teacher'])
+  )
+)
+with check (
+  bucket_id = 'practice-reference-videos'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+  and exists (
+    select 1
+    from public.practices as practice
+    where practice.id::text = (storage.foldername(name))[2]
+      and practice.created_by = (select auth.uid())
+      and private.current_user_has_any_role(array['teacher'])
+  )
+);
+
+create policy practice_reference_videos_delete
+on storage.objects
+for delete to authenticated
+using (
+  bucket_id = 'practice-reference-videos'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+  and exists (
+    select 1
+    from public.practices as practice
+    where practice.id::text = (storage.foldername(name))[2]
+      and practice.created_by = (select auth.uid())
+      and private.current_user_has_any_role(array['teacher'])
+  )
+);
+-- End reference video policies.
 
 revoke all on table public.practices from anon, authenticated;
 grant select on table public.practices to anon, authenticated;
 grant insert, update, delete on table public.practices to authenticated;
 
-drop policy if exists practice_attempts_own_all on public.practice_attempts;
-create policy practice_attempts_own_all on public.practice_attempts
-for all to authenticated
-using ((select auth.uid()) = user_id)
-with check (
-  (select auth.uid()) = user_id
-  and private.has_role((select auth.uid()), 'student')
-);
 revoke all on table public.practice_attempts from anon, authenticated;
-grant select, insert, update, delete on table public.practice_attempts to authenticated;
+grant select, insert on table public.practice_attempts to authenticated;
 
-drop policy if exists practice_progress_own_all on public.practice_progress;
-create policy practice_progress_own_all on public.practice_progress
-for all to authenticated
-using ((select auth.uid()) = user_id)
-with check (
-  (select auth.uid()) = user_id
-  and private.has_role((select auth.uid()), 'student')
-);
-revoke all on table public.practice_progress from anon, authenticated;
-grant select, insert, update, delete on table public.practice_progress to authenticated;
-
-drop policy if exists favorite_practices_own_all on public.favorite_practices;
-create policy favorite_practices_own_all on public.favorite_practices
-for all to authenticated
-using ((select auth.uid()) = user_id)
-with check (
-  (select auth.uid()) = user_id
-  and private.has_role((select auth.uid()), 'student')
-);
-revoke all on table public.favorite_practices from anon, authenticated;
-grant select, insert, update, delete on table public.favorite_practices to authenticated;
+-- Attempts are immutable history. Any progress summary can be calculated from
+-- practice_attempts in application code when it is actually needed.
 
 create index if not exists practices_published_sort_idx
 on public.practices (published, sort_order);
@@ -263,44 +442,15 @@ create index if not exists practice_attempts_user_recent_idx
 on public.practice_attempts (user_id, created_at desc);
 create index if not exists practice_attempts_practice_idx
 on public.practice_attempts (practice_id);
-create index if not exists practice_progress_user_recent_idx
-on public.practice_progress (user_id, last_practiced_at desc);
-create index if not exists favorite_practices_user_idx
-on public.favorite_practices (user_id, created_at desc);
-
-insert into public.practices (
-  id, published, sort_order, source, title, description,
-  mediapipe_reference, difficulty, estimated_minutes
-) values
-  (
-    '00000000-0000-4000-8000-000000000101', true, 1, 'system',
-    'Saludos básicos',
-    'Practica hola, buenos días y gracias en Lengua de Señas Panameña.',
-    '{"status":"pending_capture","format":"mediapipe_landmarks"}'::jsonb,
-    1, 5
-  ),
-  (
-    '00000000-0000-4000-8000-000000000102', true, 2, 'system',
-    'Alfabeto manual',
-    'Repasa las configuraciones de la mano para deletrear tu nombre.',
-    '{"status":"pending_capture","format":"mediapipe_landmarks"}'::jsonb,
-    2, 8
-  ),
-  (
-    '00000000-0000-4000-8000-000000000103', true, 3, 'system',
-    'Presentación personal',
-    'Combina un saludo, tu nombre y una despedida.',
-    '{"status":"pending_capture","format":"mediapipe_landmarks"}'::jsonb,
-    2, 10
-  )
-on conflict (id) do update set
-  published = excluded.published,
-  sort_order = excluded.sort_order,
-  source = excluded.source,
-  title = excluded.title,
-  description = excluded.description,
-  mediapipe_reference = excluded.mediapipe_reference,
-  difficulty = excluded.difficulty,
-  estimated_minutes = excluded.estimated_minutes;
+create index if not exists practice_attempts_user_practice_score_idx
+on public.practice_attempts (user_id, practice_id, score desc);
 
 commit;
+
+-- Assign teachers/admins from a trusted server or the Supabase SQL Editor:
+-- update auth.users
+-- set raw_app_meta_data = jsonb_set(
+--   coalesce(raw_app_meta_data, '{}'::jsonb),
+--   '{role}', '"teacher"'::jsonb, true
+-- )
+-- where email = 'teacher@example.com';

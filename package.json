@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "prepare:pyodide": "node scripts/prepare-pyodide-assets.mjs",
+    "predev": "npm run prepare:pyodide",
     "dev": "vite",
+    "prebuild": "npm run prepare:pyodide",
     "build": "tsc -b && vite build",
     "check:architecture": "node scripts/check-architecture.mjs",
     "check": "npm run check:architecture && npm run typecheck && npm test && npm run build",
@@ -26,6 +29,7 @@
     "grapesjs-touch": "^0.1.1",
     "grapesjs-tui-image-editor": "^1.0.2",
     "jszip": "^3.10.1",
+    "pyodide": "^314.0.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.4.3"
